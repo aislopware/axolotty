@@ -85,12 +85,15 @@ public enum Intent: Codable, Hashable, Sendable {
     case createSession(SessionID, workspace: WorkspaceID, pane: PaneID, recipe: SpawnRecipe, name: String?)
     case renameSession(SessionID, name: String?)
     case moveSession(SessionID, workspace: WorkspaceID, index: Int)
-    case closeSession(SessionID)
+    /// `reopenable`: the app keeps it for ⇧⌘T, so the server reads which
+    /// Claude Code conversation was in it (`HostEvent.claudeConversation`).
+    case closeSession(SessionID, reopenable: Bool = false)
     /// Closes a worktree session and removes its folder (the branch stays).
     /// Without `force`, a worktree with changes is refused (`.dirty`).
     case removeWorktree(SessionID, force: Bool)
     case split(SessionID, target: PaneID, new: PaneID, axis: SplitTree.Axis, before: Bool, recipe: SpawnRecipe)
-    case closePane(PaneID)
+    /// `reopenable` as for `closeSession`, when it is the session's last pane.
+    case closePane(PaneID, reopenable: Bool = false)
     /// An ended pane's slot gets `new`, started from the same command in the
     /// same directory (the old pane goes).
     case restartPane(PaneID, new: PaneID)

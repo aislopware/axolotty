@@ -389,10 +389,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Every way of closing a session comes here, so ⇧⌘T can bring it back.
     func close(_ host: HostSession, _ sid: SessionID) {
         guard let s = host.session(sid) else { return }
+        let claude = host.state?.claudePane(of: sid)
         model.closed.append(AppModel.ClosedSession(host: host.id, session: sid, workspace: s.workspace,
-                                                   cwd: host.pane(s.focus)?.pwd ?? "", name: s.name,
-                                                   claude: host.state?.panes(of: sid).contains { $0.agent == .claude } ?? false))
-        host.perform(.closeSession(sid))
+                                                   cwd: host.pane(claude ?? s.focus)?.pwd ?? "", name: s.name,
+                                                   claude: claude != nil))
+        host.perform(.closeSession(sid, reopenable: true))
     }
 
     @objc func reopenClosedSession(_ sender: Any?) {

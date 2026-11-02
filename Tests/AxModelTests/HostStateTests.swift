@@ -29,6 +29,20 @@ enum JSONEncoderShim {
         #expect(s.invariantViolations.isEmpty)
     }
 
+    /// Reopening brings back the focused pane's Claude Code if it has one,
+    /// else the first in tree order: the app and the server must agree.
+    @Test func claudePanePrefersTheFocusedOne() {
+        var (s, _, sid, p1, p2) = sample()
+        #expect(s.claudePane(of: sid) == nil)
+        s.panes[p2]!.agent = .claude
+        s.sessions[sid]!.focus = p1
+        #expect(s.claudePane(of: sid) == p2)
+        s.panes[p1]!.agent = .claude
+        #expect(s.claudePane(of: sid) == p1)
+        s.sessions[sid]!.focus = p2
+        #expect(s.claudePane(of: sid) == p2)
+    }
+
     @Test func activityRollsUpByUrgency() {
         var (s, w, sid, p1, p2) = sample()
         s.panes[p1]!.status.report(id: "", state: .working)

@@ -50,10 +50,14 @@ enum Attach {
         let (attached, attachedSink) = AsyncStream<Bool>.makeStream()
         let (ends, endSink) = AsyncStream<End>.makeStream()
         let watcher = Task {
+            var first = true
             for await e in c.events {
                 switch e {
                 case .attached(p):
-                    attachedSink.yield(true)
+                    // Later ones follow a resync or a gap: the mirror took a
+                    // fresh snapshot and skipped output, so paint it whole.
+                    if first { attachedSink.yield(true) } else { draw(mirror) }
+                    first = false
                 case .deltas:
                     if c.replica?.panes[p]?.exitStatus != nil || c.replica?.panes[p] == nil { endSink.yield(.ended) }
                 case .disconnected:
@@ -72,16 +76,7 @@ enum Attach {
             break
         }
         sendSize(c, p)
-        mirror.withTerminal { t in
-            let rows = Int(t.rows)
-            let lines = t.text(.vt, trim: false, unwrap: false).split(separator: "\n", omittingEmptySubsequences: false)
-            let screen = lines.suffix(rows).joined(separator: "\r\n")
-            let cur = t.cursor
-            let out = "\u{1B}[0m\u{1B}[H\u{1B}[2J" + screen + "\u{1B}[0m\u{1B}[\(cur.y + 1);\(cur.x + 1)H"
-                + (cur.visible ? "\u{1B}[?25h" : "\u{1B}[?25l")
-            out.utf8CString.withUnsafeBufferPointer { b in writeAll(b.baseAddress!, b.count - 1) }
-            gate.set()
-        }
+        draw(mirror) { gate.set() }
 
         let winch = DispatchSource.makeSignalSource(signal: SIGWINCH, queue: .global())
         signal(SIGWINCH, SIG_IGN)
@@ -103,12 +98,18 @@ enum Attach {
                     cont.onTermination = { _ in src.cancel() }
                     src.resume()
                 }
+                // A character split across two reads waits for its rest.
+                var carry: [UInt8] = []
                 for await bytes in input {
                     if let i = bytes.firstIndex(of: detachKey) {
-                        if i > 0 { c.send(.text(p, String(decoding: bytes[..<i], as: UTF8.self))) }
+                        let head = carry + bytes[..<i]
+                        if !head.isEmpty { c.send(.text(p, String(decoding: head, as: UTF8.self))) }
                         return .detached
                     }
-                    c.send(.text(p, String(decoding: bytes, as: UTF8.self)))
+                    let all = carry + bytes
+                    let cut = completeUTF8(all)
+                    carry = Array(all[cut...])
+                    if cut > 0 { c.send(.text(p, String(decoding: all[..<cut], as: UTF8.self))) }
                 }
                 return .detached
             }
@@ -131,14 +132,43 @@ enum Attach {
         line.utf8CString.withUnsafeBufferPointer { b in writeAll(b.baseAddress!, b.count - 1) }
     }
 
-    /// This terminal's size becomes the pane's.
+    /// Paints the mirror's screen over this terminal's, then `after` (under
+    /// the mirror's lock, so no output slips between).
+    private static func draw(_ mirror: MirrorTerminal, after: () -> Void = {}) {
+        mirror.withTerminal { t in
+            let rows = Int(t.rows)
+            let lines = t.text(.vt, trim: false, unwrap: false).split(separator: "\n", omittingEmptySubsequences: false)
+            let screen = lines.suffix(rows).joined(separator: "\r\n")
+            let cur = t.cursor
+            let out = "\u{1B}[0m\u{1B}[H\u{1B}[2J" + screen + "\u{1B}[0m\u{1B}[\(cur.y + 1);\(cur.x + 1)H"
+                + (cur.visible ? "\u{1B}[?25h" : "\u{1B}[?25l")
+            out.utf8CString.withUnsafeBufferPointer { b in writeAll(b.baseAddress!, b.count - 1) }
+            after()
+        }
+    }
+
+    /// How many leading bytes of `b` end on a whole UTF-8 character: a lead
+    /// byte at the end without all its continuation bytes is held back.
+    static func completeUTF8(_ b: [UInt8]) -> Int {
+        var i = b.count - 1
+        var back = 0
+        while i >= 0, back < 3, b[i] & 0xC0 == 0x80 { i -= 1; back += 1 }
+        guard i >= 0 else { return b.count }
+        let lead = b[i]
+        let need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1
+        return b.count - i < need ? i : b.count
+    }
+
+    /// This terminal's size becomes the pane's: take the size first, so the
+    /// server applies the viewport that follows (it ignores one from a client
+    /// that doesn't drive the size).
     private static func sendSize(_ c: HostConnection, _ p: PaneID) {
         var ws = winsize()
         guard ioctl(1, TIOCGWINSZ, &ws) == 0, ws.ws_col > 0, ws.ws_row > 0 else { return }
         let cw = ws.ws_xpixel > 0 ? ws.ws_xpixel / ws.ws_col : 8
         let ch = ws.ws_ypixel > 0 ? ws.ws_ypixel / ws.ws_row : 16
-        c.send(.viewport(p, cols: ws.ws_col, rows: ws.ws_row, cellWidth: cw, cellHeight: ch))
         c.send(.takeSize(p))
+        c.send(.viewport(p, cols: ws.ws_col, rows: ws.ws_row, cellWidth: cw, cellHeight: ch))
     }
 
     private static func writeAll(_ base: UnsafeRawPointer, _ count: Int) {

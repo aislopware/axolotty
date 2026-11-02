@@ -467,12 +467,13 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
     }
 
     @objc func closePane(_ sender: Any?) {
-        if tree.count == 1, let s = host.session(sessionID) {
+        let last = tree.count == 1
+        if last, let s = host.session(sessionID) {
             model.closed.append(AppModel.ClosedSession(host: host.id, session: sessionID, workspace: s.workspace,
                                                        cwd: host.pane(focused)?.pwd ?? "", name: s.name,
                                                        claude: host.pane(focused)?.agent == .claude))
         }
-        host.perform(.closePane(focused))
+        host.perform(.closePane(focused, reopenable: last))
     }
 
     @objc func focusNextPane(_ sender: Any?) { cycle(1) }

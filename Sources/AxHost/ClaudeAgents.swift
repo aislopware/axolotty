@@ -18,7 +18,7 @@
 //
 // The same list is read once when a person closes a session that has
 // Claude Code in front: its `sessionId` (live processes only) is what
-// reopening the session resumes (`Server.rememberClaude`).
+// reopening the session resumes (`Server.closeLater`).
 import AxModel
 import AxSys
 import CoreServices
@@ -131,15 +131,7 @@ nonisolated enum ClaudeAgents {
 
     // MARK: Executables
 
-    private static let searchPath: [String] = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
-        let env = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        return env + [home + "/.local/bin", home + "/.claude/local", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
-    }()
-
-    static func find(_ name: String) -> String? {
-        searchPath.lazy.map { $0 + "/" + name }.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    static func find(_ name: String) -> String? { Executables.find(name) }
 
     static let claude = find("claude")
     static let tmux = find("tmux")

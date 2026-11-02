@@ -19,14 +19,7 @@ enum AgentPresets {
     }
 
     /// Probed once per launch: a menu must open instantly.
-    private static let installed: Set<AgentKind> = {
-        let home = NSHomeDirectory()
-        var dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        dirs += ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.bun/bin", "\(home)/.npm-global/bin",
-                 "\(home)/.cargo/bin", "\(home)/go/bin", "\(home)/.volta/bin"]
-        let fm = FileManager.default
-        return Set(order.filter { a in dirs.contains { fm.isExecutableFile(atPath: "\($0)/\(a.executable)") } })
-    }()
+    private static let installed: Set<AgentKind> = Set(order.filter { Executables.find($0.executable) != nil })
 
     /// The line typed into a new session's shell to start `agent`, with
     /// `args` (already quoted). A local Claude Code gets Axolotty's MCP tools

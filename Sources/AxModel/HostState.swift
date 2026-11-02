@@ -146,6 +146,16 @@ public struct HostState: Hashable, Codable, Sendable {
         return panes[s.focus]?.displayTitle ?? "session"
     }
 
+    /// The pane whose program reopening a closed session brings back: the
+    /// focused pane when Claude Code is in front of it, else the first such
+    /// pane in tree order. The app takes its folder; the server reads its
+    /// conversation, so both pick the same pane.
+    public func claudePane(of session: SessionID) -> PaneID? {
+        guard let s = sessions[session] else { return nil }
+        if panes[s.focus]?.agent == .claude { return s.focus }
+        return s.tree.panes.first { panes[$0]?.agent == .claude }
+    }
+
     /// Sessions in sidebar order across all workspaces.
     public var orderedSessions: [SessionID] { workspaces.flatMap(\.sessions) }
 
