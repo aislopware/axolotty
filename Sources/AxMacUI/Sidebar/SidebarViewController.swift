@@ -1,4 +1,5 @@
 import AppKit
+import AxClient
 import AxModel
 import AxProtocol
 
@@ -113,7 +114,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         tokens.append(model.anyChange.observe { [weak self] host, change in
             switch change {
             case .connected, .deltas, .disconnected: self?.reload()
-            case .event, .latency: break
+            case .latency: self?.refreshHost(host)
+            case .event: break
             }
         })
         tokens.append(model.hostsChanged.observe { [weak self] in self?.reload() })
@@ -153,18 +155,27 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         var children: [Spec]
     }
 
+    /// Projects and their sessions; under a section per machine once there
+    /// is more than one (a machine still connecting shows its section empty).
     private func specs() -> [Spec] {
-        var out: [Spec] = []
-        for host in model.hosts {
-            guard let st = host.state else { continue }
-            for w in st.workspaces {
+        func projects(_ host: HostSession) -> [Spec] {
+            guard let st = host.state else { return [] }
+            return st.workspaces.map { w in
                 let sessions = w.sessions.filter { st.sessions[$0] != nil }
-                out.append(Spec(kind: .workspace(host.id, w.id),
-                                children: sessions.map { Spec(kind: .session(host.id, $0), children: []) }))
+                return Spec(kind: .workspace(host.id, w.id),
+                            children: sessions.map { Spec(kind: .session(host.id, $0), children: []) })
             }
         }
-        return out
+        guard model.hosts.count > 1 else { return model.hosts.flatMap(projects) }
+        return model.hosts.map { Spec(kind: .host($0.id), children: projects($0)) }
     }
+
+    private var collapsedHosts: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: "collapsedHosts") ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: "collapsedHosts") }
+    }
+
+    private func hostKey(_ id: UUID) -> String? { model.host(id).map { $0.isLocal ? "local" : $0.endpoint.description } }
 
     private func node(_ kind: SidebarNode.Kind) -> SidebarNode {
         if let n = nodes[kind] { return n }
@@ -233,8 +244,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     private func restoreExpansion(_ list: [SidebarNode]) {
         let closed = collapsed
+        let closedHosts = collapsedHosts
         for n in list {
             switch n.kind {
+            case let .host(h):
+                let shouldExpand = !(hostKey(h).map(closedHosts.contains) ?? false)
+                if shouldExpand, !outline.isItemExpanded(n) { outline.expandItem(n) }
+                if !shouldExpand, outline.isItemExpanded(n) { outline.collapseItem(n) }
+                restoreExpansion(n.children)
             case let .workspace(_, w):
                 let shouldExpand = !closed.contains(w.raw.uuidString)
                 if shouldExpand, !outline.isItemExpanded(n) { outline.expandItem(n) }
@@ -243,6 +260,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                 break
             }
         }
+    }
+
+    /// A machine's section only (its round trip moves every heartbeat).
+    private func refreshHost(_ host: HostSession) {
+        guard let n = nodes[.host(host.id)] else { return }
+        let row = outline.row(forItem: n)
+        guard row >= 0, let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) else { return }
+        configure(cell, n)
     }
 
     /// Updates titles, glyphs and meta of the rows on screen.
@@ -263,6 +288,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         selected = (host, session)
         guard isViewLoaded else { return }
         // Reveal: expand the workspace that holds it.
+        if let hn = nodes[.host(host)], !outline.isItemExpanded(hn) { outline.expandItem(hn) }
         if let h = model.host(host), let ws = h.session(session)?.workspace, let wn = nodes[.workspace(host, ws)],
            !outline.isItemExpanded(wn)
         {
@@ -304,7 +330,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         let row = outline.clickedRow
         guard row >= 0, let n = outline.item(atRow: row) as? SidebarNode else { return }
         switch n.kind {
-        case .workspace:
+        case .host, .workspace:
             if outline.isItemExpanded(n) { outline.animator().collapseItem(n) } else { outline.animator().expandItem(n) }
         case let .session(h, sid):
             // Re-clicking the selected row still returns focus to its terminal.
@@ -316,6 +342,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         if let n = notification.userInfo?["NSObject"] as? SidebarNode, case let .workspace(_, w) = n.kind {
             collapsed.insert(w.raw.uuidString)
         }
+        if let n = notification.userInfo?["NSObject"] as? SidebarNode, case let .host(h) = n.kind, let k = hostKey(h) {
+            collapsedHosts.insert(k)
+        }
         outline.movePlate(animated: false)
         refreshVisibleRows()
     }
@@ -323,6 +352,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func outlineViewItemDidExpand(_ notification: Notification) {
         if let n = notification.userInfo?["NSObject"] as? SidebarNode, case let .workspace(_, w) = n.kind {
             collapsed.remove(w.raw.uuidString)
+        }
+        if let n = notification.userInfo?["NSObject"] as? SidebarNode, case let .host(h) = n.kind, let k = hostKey(h) {
+            collapsedHosts.remove(k)
         }
         outline.movePlate(animated: false)
         refreshVisibleRows()
@@ -352,8 +384,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         guard let n = item as? SidebarNode else { return SidebarMetric.sessionRow }
         if n.isSession { return SidebarMetric.sessionRow }
-        // Projects are parted by space, never rules.
-        let first = outlineView.row(forItem: n) == 0 || roots.first === n
+        if case .host = n.kind {
+            return SidebarMetric.hostRow + (roots.first === n ? SidebarMetric.firstGap : SidebarMetric.hostGap)
+        }
+        // Projects are parted by space, never rules; the first under a
+        // machine's label sits close to it.
+        let parent = outline.parent(forItem: n) as? SidebarNode
+        let first = (parent?.children.first ?? roots.first) === n
         return SidebarMetric.headerRow + (first ? SidebarMetric.firstGap : SidebarMetric.headerGap)
     }
 
@@ -365,6 +402,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         guard let n = item as? SidebarNode else { return nil }
         let cell: NSView
         switch n.kind {
+        case .host:
+            cell = outlineView.makeView(withIdentifier: .init("host"), owner: nil) ?? {
+                let c = HostCell()
+                c.identifier = .init("host")
+                return c
+            }()
         case .workspace:
             cell = outlineView.makeView(withIdentifier: .init("workspace"), owner: nil) ?? {
                 let c = WorkspaceCell()
@@ -386,6 +429,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         guard let host = model.host(n.hostID) else { return }
         let h = host
         switch n.kind {
+        case .host:
+            guard let c = cell as? HostCell else { return }
+            let s = Self.hostStatus(host)
+            c.set(name: host.isLocal ? "This Mac" : host.name, symbol: Self.hostSymbol(host), meta: s.meta,
+                  retrying: s.retrying, waiting: s.waiting)
+            c.setAccessibilityLabel(host.isLocal ? "This Mac" : "\(host.name), \(s.meta.isEmpty ? "connected" : s.meta)")
         case let .workspace(_, wid):
             guard let c = cell as? WorkspaceCell, let st = host.state, let w = st.workspace(wid) else { return }
             c.set(name: w.name, key: w.root.isEmpty ? w.name : w.root)
@@ -563,6 +612,34 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         return true
     }
 
+    // MARK: Machines
+
+    /// The section's right side: round trip when healthy, else the state.
+    static func hostStatus(_ h: HostSession) -> (meta: String, retrying: Bool, waiting: Bool) {
+        switch h.phase {
+        case .connected:
+            guard !h.isLocal, let rtt = h.rtt else { return ("", false, false) }
+            let ms = Double(rtt.components.attoseconds) / 1e15 + Double(rtt.components.seconds) * 1000
+            return (ms < 1 ? "<1 ms" : "\(Int(ms.rounded())) ms", false, false)
+        case .connecting: return ("Connecting", true, false)
+        case .offline: return ("Reconnecting", true, false)
+        case .failed(.needsLogin(_)): return ("Sign in", false, true)
+        case .failed(.notInstalled): return ("Not set up", false, true)
+        case .failed(.incompatible(_)): return ("Needs update", false, true)
+        case .failed(.denied): return ("Not allowed", false, true)
+        }
+    }
+
+    /// The kind of Mac, from its name: a laptop unless it says otherwise.
+    static func hostSymbol(_ h: HostSession) -> String {
+        let n = (h.isLocal ? (Host.current().localizedName ?? "") : h.name).lowercased()
+        if n.contains("mini") { return "macmini" }
+        if n.contains("studio") { return "macstudio" }
+        if n.contains("imac") { return "desktopcomputer" }
+        if n.contains("mac pro") { return "macpro.gen3" }
+        return "laptopcomputer"
+    }
+
     // MARK: Context menu
 
     /// Whether `dir` is inside a git repository (a `.git` here or above).
@@ -580,16 +657,25 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let row = outline.clickedRow
-        guard row >= 0, let n = outline.item(atRow: row) as? SidebarNode, let host = model.host(n.hostID),
-              let st = host.state
-        else { return }
+        guard row >= 0, let n = outline.item(atRow: row) as? SidebarNode, let host = model.host(n.hostID) else { return }
         func add(_ title: String, _ handler: @escaping () -> Void) {
             let item = NSMenuItem(title: title, action: #selector(runMenuClosure(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = MenuClosure(handler)
             menu.addItem(item)
         }
+        if case .host = n.kind {
+            if host.phase != .connected { add("Reconnect Now") { host.retry() } }
+            if !host.isLocal {
+                if host.phase != .connected { menu.addItem(.separator()) }
+                add("Disconnect") { [weak self] in self?.model.forget(host) }
+            }
+            return
+        }
+        guard let st = host.state else { return }
         switch n.kind {
+        case .host:
+            break
         case let .session(_, sid):
             add("Rename…") { [weak self] in self?.rename(host, sid) }
             if st.sessions[sid]?.worktree != nil {

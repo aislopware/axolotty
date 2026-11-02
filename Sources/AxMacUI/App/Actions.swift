@@ -7,6 +7,7 @@ import AppKit
     // App
     @objc optional func showCommandPalette(_ sender: Any?)
     @objc optional func showJumpToAgent(_ sender: Any?)
+    @objc optional func showConnectToHost(_ sender: Any?)
     @objc optional func showSettings(_ sender: Any?)
 
     // Window
@@ -127,6 +128,8 @@ struct Command: Identifiable {
                     action: #selector((any AxActions).openFolder(_:))),
             Command(id: "reopen", title: "Reopen Closed Session", menu: .file, key: "t", modifiers: cs,
                     action: #selector((any AxActions).reopenClosedSession(_:))),
+            Command(id: "connect-host", title: "Connect to Host…", menu: .file, key: "k", modifiers: cs,
+                    action: #selector((any AxActions).showConnectToHost(_:)), separatorBefore: true),
             Command(id: "close-pane", title: "Close Pane", menu: .file, key: "w", modifiers: cmd,
                     action: #selector((any AxActions).closePane(_:)), separatorBefore: true),
             Command(id: "close-session", title: "Close Session", menu: .file, key: "w", modifiers: [.command, .option],

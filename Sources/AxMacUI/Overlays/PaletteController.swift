@@ -1,4 +1,5 @@
 import AppKit
+import AxClient
 import AxModel
 import AxProtocol
 import QuartzCore
@@ -8,7 +9,7 @@ import QuartzCore
 /// shadow all come from the one design-system shape). Fuzzy-matched sections,
 /// keyboard first. Selection is a neutral plate, never the accent.
 final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    enum Mode { case commands, agents, worktree }
+    enum Mode { case commands, agents, worktree, hosts }
 
     private let model: AppModel
     private weak var owner: MainWindowController?
@@ -35,10 +36,20 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     }
     private var worktree: WorktreeTarget?
 
+    /// Connect to Host: the person's Macs on the tailnet, and what answered
+    /// on each (a round trip when Axolotty is there, nil when nothing is).
+    private var peers: [TailnetPeer]?
+    private var probes: [String: Duration?] = [:]
+    private var scan: Task<Void, Never>?
+
     enum Item {
         case command(Command)
         case session(HostSession, SessionID)
         case worktree(String)
+        /// A machine to connect to: what to call it and the name to dial.
+        case host(name: String, dial: String)
+        /// Says something; does nothing.
+        case note
     }
 
     struct Entry {
@@ -126,12 +137,14 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         case .commands: "Type a command…"
         case .agents: "Go to session…"
         case .worktree: "Branch for a new worktree…"
+        case .hosts: "Connect to a Mac on your tailnet…"
         }
         let lead: ProgramIdentity? = switch mode {
         case .worktree: worktree.map { $0.chosen.map(ProgramIdentity.of) ?? .shell }
         default: nil
         }
         surface.lead(lead)
+        if mode == .hosts { startScan() } else { scan?.cancel() }
         field.placeholderAttributedString = NSAttributedString(
             string: prompt,
             attributes: [.font: Axo.Font.field, .foregroundColor: Axo.Color.textTertiary])
@@ -174,6 +187,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     func dismiss(restoreFocus: Bool = true) {
         guard isVisible, let owner else { return }
         isVisible = false
+        scan?.cancel()
         let host = owner.shell.overlay
         host.capturesOutsideClicks = false
         host.onOutsideClick = nil
@@ -197,7 +211,101 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         case .commands: return [("Commands", commands)]
         case .agents: return agentSections()
         case .worktree: return worktreeSections()
+        case .hosts: return hostSections()
         }
+    }
+
+    // MARK: Connect to Host
+
+    private func startScan() {
+        scan?.cancel()
+        peers = nil
+        probes = [:]
+        scan = Task { [weak self] in
+            let found = await TailnetDirectory.scan()
+            guard let self, !Task.isCancelled else { return }
+            peers = found
+            relist()
+            // Every online Mac is asked at once; each row settles as it answers.
+            await withTaskGroup(of: (String, Duration?).self) { group in
+                for p in found where p.online { group.addTask { (p.dialName, await TailnetDirectory.probe(p.dialName)) } }
+                for await (dial, took) in group {
+                    guard !Task.isCancelled else { return }
+                    probes[dial] = .some(took)
+                    relist()
+                }
+            }
+        }
+    }
+
+    /// The list changed under the person: refilter, keeping the selection's place.
+    private func relist() {
+        guard isVisible, mode == .hosts else { return }
+        let keep = table.selectedRow
+        lockedList = nil
+        refilter()
+        if keep > 0, keep < rows.count, case .entry = rows[keep] { table.selectRowIndexes([keep], byExtendingSelection: false) }
+    }
+
+    /// Macs that answered first (they connect now), then those still asked
+    /// or with nothing listening, then the ones away. What is typed is also
+    /// offered as an address. Detail says how the link would go: direct or
+    /// through which relay, and its round trip.
+    private func hostSections() -> [(String, [Entry])] {
+        var out: [(String, [Entry])] = []
+        let typed = field.stringValue.trimmingCharacters(in: .whitespaces)
+        func here(_ dial: String) -> HostSession? { model.host(at: .tcp(host: dial, port: TailnetDirectory.port)) }
+        func symbol(_ name: String) -> String {
+            let n = name.lowercased()
+            return n.contains("mini") ? "macmini" : n.contains("studio") ? "macstudio" : n.contains("imac") ? "desktopcomputer" : "laptopcomputer"
+        }
+        guard let peers else {
+            out.append(("Your tailnet", [Entry(item: .note, title: "Looking for your Macs…", detail: "", symbol: "antenna.radiowaves.left.and.right",
+                                               chord: "", literal: true)]))
+            return out
+        }
+        var ready: [Entry] = [], other: [Entry] = [], away: [Entry] = []
+        for p in peers {
+            let path = p.relay.map { "via \($0)" } ?? "direct"
+            var e = Entry(item: .host(name: p.name, dial: p.dialName), title: p.name, detail: "", symbol: symbol(p.name), chord: "",
+                          alias: p.dialName)
+            if !p.online {
+                e.detail = "Offline · connects when it's back"
+                away.append(e)
+            } else if let h = here(p.dialName) {
+                e.detail = h.phase == .connected ? "Connected" : "Connecting"
+                ready.append(e)
+            } else if let probe = probes[p.dialName] {
+                if let took = probe {
+                    e.detail = "\(path) · \(Self.ms(took))"
+                    ready.append(e)
+                } else {
+                    e.detail = "Axolotty isn't running there"
+                    other.append(e)
+                }
+            } else {
+                e.detail = "\(path) · asking…"
+                other.append(e)
+            }
+        }
+        if !ready.isEmpty { out.append(("Ready", ready)) }
+        if !other.isEmpty { out.append(("On your tailnet", other)) }
+        if !away.isEmpty { out.append(("Away", away)) }
+        if !typed.isEmpty, !peers.contains(where: { $0.name.lowercased() == typed.lowercased() || $0.dialName == typed }) {
+            out.append(("Address", [Entry(item: .host(name: typed, dial: typed), title: typed, detail: "tailnet name or address",
+                                          symbol: "network", chord: "", literal: true)]))
+        }
+        if peers.isEmpty, typed.isEmpty {
+            let why = TailscaleCLI.path == nil ? "Tailscale isn't installed on this Mac" : "No other Macs of yours are on the tailnet"
+            out.append(("Your tailnet", [Entry(item: .note, title: why, detail: "type a name or address", symbol: "info.circle",
+                                               chord: "", literal: true)]))
+        }
+        return out
+    }
+
+    static func ms(_ d: Duration) -> String {
+        let v = Double(d.components.attoseconds) / 1e15 + Double(d.components.seconds) * 1000
+        return v < 1 ? "<1 ms" : "\(Int(v.rounded())) ms"
     }
 
     /// A new branch named by what is typed (from the base), then existing
@@ -290,7 +398,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             "palette": "command", "new-session": "plus.rectangle",
             "new-worktree": "arrow.triangle.branch", "open-editor": "chevron.left.forwardslash.chevron.right",
             "prev-prompt": "chevron.up.2", "next-prompt": "chevron.down.2",
-            "new-window": "macwindow.badge.plus", "open-folder": "folder",
+            "new-window": "macwindow.badge.plus", "connect-host": "laptopcomputer.and.arrow.down", "open-folder": "folder",
             "reopen": "arrow.uturn.backward", "close-pane": "xmark.rectangle", "close-session": "xmark.square",
             "close-window": "xmark", "clear": "eraser", "find": "magnifyingglass", "find-next": "chevron.down", "find-previous": "chevron.up", "toggle-sidebar": "sidebar.left",
             "font-bigger": "textformat.size.larger",
@@ -393,6 +501,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
 
     private func activate(_ row: Int) {
         guard row >= 0, row < rows.count, case let .entry(e) = rows[row], let owner else { return }
+        if case .note = e.item { return }
         dismiss()
         switch e.item {
         case let .command(c):
@@ -400,6 +509,12 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             NSApp.sendAction(c.action, to: nil, from: self)
         case let .session(h, sid):
             owner.show(h, sid)
+        case let .host(name, dial):
+            let h = model.connect(to: AppModel.SavedHost(name: name, host: dial))
+            // Its sessions come in as it connects; the first is shown then.
+            if let first = h.state?.orderedSessions.first { owner.show(h, first) }
+        case .note:
+            break
         case let .worktree(branch):
             guard let t = worktree else { return }
             Task { await owner.createSession(t.host, in: t.workspace, cwd: t.dir, name: branch, launch: owner.launchLine(t.chosen, t.host),

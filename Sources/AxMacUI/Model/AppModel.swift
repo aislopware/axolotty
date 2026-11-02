@@ -69,6 +69,59 @@ final class AppModel {
         }
     }
 
+    // MARK: Remote hosts
+
+    /// A host this Mac connects to over the tailnet, kept across launches.
+    struct SavedHost: Codable, Equatable {
+        var name: String
+        var host: String
+        var port: UInt16 = TailnetDirectory.port
+        var endpoint: HostEndpoint { .tcp(host: host, port: port) }
+    }
+
+    private(set) var saved: [SavedHost] {
+        get {
+            (UserDefaults.standard.data(forKey: "remoteHosts")).flatMap { try? JSONDecoder().decode([SavedHost].self, from: $0) } ?? []
+        }
+        set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: "remoteHosts") }
+    }
+
+    /// Connects every host kept from the last launch, in the background.
+    func startRemotes() {
+        for s in saved where host(at: s.endpoint) == nil { addRemote(s) }
+    }
+
+    func host(at endpoint: HostEndpoint) -> HostSession? { hosts.first { $0.endpoint == endpoint } }
+
+    /// Connects to a host and keeps it; one already here is tried again now.
+    @discardableResult
+    func connect(to s: SavedHost) -> HostSession {
+        if let h = host(at: s.endpoint) {
+            h.retry()
+            return h
+        }
+        saved = saved.filter { $0.endpoint != s.endpoint } + [s]
+        return addRemote(s)
+    }
+
+    @discardableResult
+    private func addRemote(_ s: SavedHost) -> HostSession {
+        let h = HostSession(endpoint: s.endpoint, client: clientID, clientName: Host.current().localizedName ?? "Mac",
+                            isLocal: false)
+        h.label = s.name
+        add(h)
+        return h
+    }
+
+    /// Disconnects and forgets a remote host. Its sessions keep running there.
+    func forget(_ h: HostSession) {
+        guard !h.isLocal else { return }
+        h.stop()
+        hosts.removeAll { $0 === h }
+        saved = saved.filter { $0.endpoint != h.endpoint }
+        hostsChanged.emit()
+    }
+
     func add(_ host: HostSession, prepare: (@MainActor () async -> Void)? = nil) {
         hosts.append(host)
         host.onError = { [weak self] in self?.errors.emit($0) }

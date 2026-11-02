@@ -45,7 +45,11 @@ final class HostSession: Identifiable {
                                     hello: ClientHello(client: client, name: clientName))
     }
 
-    var name: String { state?.name ?? (isLocal ? "This Mac" : endpoint.description) }
+    /// What the person called it when connecting (a tailnet machine's name),
+    /// shown until the host says its own.
+    var label: String?
+
+    var name: String { state?.name ?? label ?? (isLocal ? "This Mac" : endpoint.description) }
 
     /// Connects (after `prepare`, e.g. launching the local server) and keeps
     /// reconnecting with backoff until stopped.
@@ -152,10 +156,22 @@ final class HostSession: Identifiable {
         case .intent(.notAllowed): "Not allowed."
         case .intent(.worktreeFailed): "Couldn't make the worktree. The branch may be checked out elsewhere."
         case .intent(.dirty): "The worktree has uncommitted changes."
-        case .failed(.needsLogin): "The host needs you to sign in."
+        case .failed(.needsLogin(_)): "The host needs you to sign in."
         case .failed(.notInstalled): "Axolotty isn't set up on that host."
-        case .failed(.incompatible): "That host runs a different Axolotty version."
+        case .failed(.incompatible(_)): "That host runs a different Axolotty version."
         case .failed(.denied): "That host doesn't accept this device."
+        }
+    }
+
+    /// What a veiled session says while the link is down, nil while it is up.
+    var linkStatus: (text: String, retrying: Bool)? {
+        switch phase {
+        case .connected: nil
+        case .connecting, .offline: ("Reconnecting to \(isLocal ? "This Mac" : name)", true)
+        case .failed(.needsLogin(_)): ("\(name) needs you to sign in", false)
+        case .failed(.notInstalled): ("Axolotty isn't set up on \(name)", false)
+        case .failed(.incompatible(_)): ("\(name) runs another Axolotty version", false)
+        case .failed(.denied): ("\(name) doesn't accept this Mac", false)
         }
     }
 

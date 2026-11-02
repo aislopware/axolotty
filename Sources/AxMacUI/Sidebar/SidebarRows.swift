@@ -23,6 +23,9 @@ enum SidebarMetric {
     static let headerRow: CGFloat = 32
     static let headerGap: CGFloat = 20  // above every project but the first
     static let firstGap: CGFloat = 2
+    /// A machine's section label, and the space above every one but the first.
+    static let hostRow: CGFloat = 24
+    static let hostGap: CGFloat = 22
     static let slot: CGFloat = 16
     static let slotGap: CGFloat = 7
     static let tile: CGFloat = 20
@@ -41,6 +44,8 @@ enum SidebarMetric {
 /// survive document updates.
 final class SidebarNode: NSObject {
     enum Kind: Hashable {
+        /// A machine's section, shown once there is more than one.
+        case host(UUID)
         case workspace(UUID, WorkspaceID)
         case session(UUID, SessionID)
     }
@@ -52,7 +57,7 @@ final class SidebarNode: NSObject {
 
     var hostID: UUID {
         switch kind {
-        case let .workspace(h, _), let .session(h, _): h
+        case let .host(h), let .workspace(h, _), let .session(h, _): h
         }
     }
 
@@ -269,6 +274,68 @@ final class FadingLabel: NSView {
 /// A project header: hue tile + name (13 semibold, near-full ink). Nothing
 /// else at rest; when collapsed, one dot after the name if a session inside
 /// waits or failed. Hover reveals the disclosure chevron and `+`.
+/// A machine's section label, once the person works on more than one:
+/// its kind of Mac and name in the section voice, and on the right only what
+/// they would act on. A healthy link says its round trip in tertiary digits
+/// and nothing else; a link coming back spins; one that waits on the person
+/// says so in words. Quiet when all is well, plain when it is not.
+///
+///   ⌨ MACBOOK PRO                         4 ms
+///   ⌨ MAC MINI                     ◌ Reconnecting
+final class HostCell: NSTableCellView {
+    let glyph = Symbol("laptopcomputer", size: 11, weight: .medium, color: Axo.Color.textTertiary)
+    let title = Label("", font: Axo.Font.section, color: Axo.Color.textTertiary)
+    let status = StatusGlyphView(frame: .zero)
+    let meta = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
+    var hovering = false { didSet { needsLayout = true } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        for v in [glyph, title, status, meta] as [NSView] { addSubview(v) }
+        textField = title
+        meta.alignment = .right
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    /// `waiting`: the link needs the person (shown in the failure ink);
+    /// `retrying`: it is coming back by itself (a spinner).
+    func set(name: String, symbol: String, meta text: String, retrying: Bool, waiting: Bool) {
+        title.stringValue = name.uppercased()
+        glyph.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        // A spinner says "coming back" by itself; its words would only cost
+        // the name its room, so they move to the tooltip.
+        meta.stringValue = retrying ? "" : text
+        meta.textColor = waiting ? Axo.Color.status(.blocked) : Axo.Color.textTertiary
+        status.activity = retrying ? .working : .idle
+        status.isHidden = !retrying
+        toolTip = text.isEmpty ? nil : "\(name) · \(text)"
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let h = SidebarMetric.hostRow
+        let mid = bounds.height - h / 2
+        let g: CGFloat = 14
+        glyph.frame = NSRect(x: SidebarMetric.textX + 3, y: (mid - g / 2).rounded(), width: g, height: g)
+        let right = SidebarMetric.slotRight(bounds.width)
+        let ms = meta.intrinsicContentSize
+        meta.frame = NSRect(x: right - ms.width, y: (mid - ms.height / 2).rounded(), width: ms.width, height: ms.height)
+        var end = meta.frame.minX - (ms.width > 0 ? 4 : 0)
+        if !status.isHidden {
+            status.frame = NSRect(x: end - 16, y: (mid - 8).rounded(), width: 16, height: 16)
+            end = status.frame.minX - 2
+        }
+        let ts = title.intrinsicContentSize
+        let x = SidebarMetric.nameX
+        title.frame = NSRect(x: x, y: (mid - ts.height / 2).rounded(), width: max(0, min(ts.width, end - x - 6)), height: ts.height)
+    }
+}
+
 final class WorkspaceCell: NSTableCellView {
     let tile = ProjectTile()
     let title = Label("", font: Axo.Font.title, color: Axo.Color.text)

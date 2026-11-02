@@ -83,6 +83,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         content.emptyView.onOpenFolder = { [weak self] in self?.openFolder(nil) }
         sidebar.footer.onJump = { [weak self] activity in self?.jump(to: activity) }
         tokens.append(model.anyChange.observe { [weak self] host, change in self?.hostChanged(host, change) })
+        tokens.append(model.hostsChanged.observe { [weak self] in self?.hostsChanged() })
         tokens.append(model.themeChanged.observe { [weak self] in self?.applyTheme() })
         tokens.append(model.fontChanged.observe { [weak self] in self?.content.refreshAppearance() })
         shell.onLayout = { [weak self] in
@@ -139,19 +140,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         switch change {
         case .connected:
             content.sync(host)
+            content.linkChanged(host)
             if selection == nil || selection?.host === host { selectInitial(host) }
         case .deltas:
             content.sync(host)
             if let s = selection, s.host === host, host.session(s.session) == nil { selectNeighbor(host) }
             if selection == nil { selectInitial(host) }
         case .disconnected:
-            if selection?.host === host || selection == nil {
+            // A session on screen stays there, veiled, while its host comes
+            // back: a drop is routine on a remote link, and the work is still
+            // worth reading. Only a window with nothing of it shown says so whole.
+            content.linkChanged(host)
+            if selection == nil || (selection?.host === host && content.current?.host !== host) {
                 content.showEmpty(.reconnecting(host: host.name))
             }
         case .event:
             break
         case .latency:
             return
+        }
+        refreshChrome()
+    }
+
+    /// A host was added or forgotten: a window on a forgotten one moves on.
+    private func hostsChanged() {
+        content.dropHosts(except: Set(model.hosts.map(\.id)))
+        if let s = selection, !model.hosts.contains(where: { $0 === s.host }) {
+            selection = nil
+            if let local = model.local { selectNeighbor(local) } else { showLauncher() }
         }
         refreshChrome()
     }
@@ -471,6 +487,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     @objc func showCommandPalette(_ sender: Any?) { palette.toggle(.commands) }
     @objc func showJumpToAgent(_ sender: Any?) { palette.toggle(.agents) }
+    @objc func showConnectToHost(_ sender: Any?) { palette.toggle(.hosts) }
 
     /// ⌥⌘T: a session on its own branch, in a worktree of the current project.
     @objc func newWorktreeSession(_ sender: Any?) {

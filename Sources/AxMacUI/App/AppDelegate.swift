@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         attention = AttentionCenter(model: model) { [weak self] in self?.keyMainWindow }
         model.startLocal()
+        model.startRemotes()
         newWindow(nil)
         NSApp.activate()
     }

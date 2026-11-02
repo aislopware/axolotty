@@ -92,6 +92,7 @@ final class SessionViewController: NSViewController {
         stage.addSubview(container)
         current = container
         container.sync(session, animated: false)
+        container.linkChanged(animated: false)
         container.restoreFocus()
     }
 
@@ -115,6 +116,16 @@ final class SessionViewController: NSViewController {
                 drop(key)
             }
         }
+    }
+
+    /// A host's link went down or came back: its cached sessions veil or clear.
+    func linkChanged(_ host: HostSession) {
+        for (key, c) in containers where key.host == host.id { c.linkChanged(animated: c === current) }
+    }
+
+    /// Drops every session of hosts no longer here (forgotten).
+    func dropHosts(except live: Set<UUID>) {
+        for key in containers.keys where !live.contains(key.host) { drop(key) }
     }
 
     func container(_ host: HostSession, _ sid: SessionID) -> PaneContainerView? {

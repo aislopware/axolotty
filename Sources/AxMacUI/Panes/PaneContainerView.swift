@@ -165,6 +165,30 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
             apply(targetFrames())
         }
         layoutDividers()
+        veil?.frame = bounds
+    }
+
+    // MARK: The link
+
+    private var veil: LinkVeil?
+
+    /// The host went out of reach (or came back): the panes stay, veiled.
+    func linkChanged(animated: Bool) {
+        guard let status = host.linkStatus else {
+            veil?.hide(animated: animated)
+            return
+        }
+        let v = veil ?? {
+            let v = LinkVeil(frame: bounds)
+            v.isHidden = true
+            v.onReconnect = { [weak self] in self?.host.retry() }
+            veil = v
+            return v
+        }()
+        if v.superview !== self || subviews.last !== v { addSubview(v, positioned: .above, relativeTo: nil) }
+        v.frame = bounds
+        v.set(status.text, retrying: status.retrying)
+        v.show(animated: animated)
     }
 
     private func apply(_ frames: [PaneID: NSRect]) {
