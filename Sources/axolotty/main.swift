@@ -14,16 +14,12 @@ let usage = """
     usage: axolotty <command> [options]
 
       ls [--json]                         workspaces, sessions and panes with status
-      new [--cwd DIR] [--name NAME] [--workspace NAME] [--worktree BRANCH] [-- CMD…]
+      new [--cwd DIR] [--name NAME] [--worktree BRANCH] [-- CMD…]
                                           new session (prints its pane id); --worktree starts
                                           it in DIR's repository's .worktrees/BRANCH (made
                                           or reused; the branch is created from HEAD)
-      split [--pane P] [--down] [--before] [-- CMD…]
-                                          split a pane (prints the new pane id)
-      send [--pane P] TEXT…               type text into a pane (\\n = Enter)
-      send [--pane P] --paste TEXT… [--no-enter]
-                                          paste (bracketed), then Enter on its own ≥200 ms later:
-                                          how to hand a prompt to an agent's TUI
+      send [--pane P] TEXT… [--no-enter]  paste the text (bracketed), then Enter on its own
+                                          ≥200 ms later: how to hand a prompt to an agent's TUI
       send [--pane P] --keys ctrl+c,enter named keys ([ctrl|alt|shift|super+]key: a-z 0-9
                                           enter esc tab space backspace delete up down left
                                           right home end pageup pagedown f1-f12)
@@ -39,17 +35,8 @@ let usage = """
       wait [--pane P] --for command [--timeout SEC]
                                           the next shell command to finish; prints it and
                                           exits with its status
-      commands [--pane P] [--last N] [--failed] [--json]
-                                          the pane's finished shell commands with exit codes
-      events [--pane P] [--json]          follow activity changes, finished commands,
-                                          exits and notifications (one line or JSON each)
-      ports [--pane P] [--json]           TCP ports the pane's processes (or every pane's) listen on
-      focus [--pane P]                    mark a pane seen
       close [--pane P]                    end a pane's program and close it
-      attach [--pane P]                   use a pane from this terminal (over ssh, another
-                                          emulator); ^] detaches, the program keeps running
       mcp                                 serve these operations to an agent over MCP (stdio)
-      ping                                check the host is up
 
     P is a pane id or a unique prefix (≥ 4 characters); default $AXOLOTTY_PANE_ID.
     """
@@ -118,15 +105,6 @@ switch verb {
 case "-h", "--help", "help":
     print(usage)
 
-case "ping":
-    _ = Options(argv)
-    await run {
-        let start = ContinuousClock.now
-        let (c, st) = try await Ops.connect()
-        await c.ping()
-        print("ok \(st.name) \(ContinuousClock.now - start)")
-    }
-
 case "ls":
     let o = Options(argv, switches: ["json"])
     await run {
@@ -155,28 +133,19 @@ case "ls":
     }
 
 case "new":
-    let o = Options(argv, valued: ["cwd", "name", "workspace", "worktree"])
+    let o = Options(argv, valued: ["cwd", "name", "worktree"])
     await run {
-        let p = try await Ops.newSession(cwd: o.flags["cwd"], name: o.flags["name"], workspace: o.flags["workspace"],
-                                         command: o.command, worktree: o.flags["worktree"])
-        print(p.raw.uuidString.lowercased())
-    }
-
-case "split":
-    let o = Options(argv, valued: ["pane"], switches: ["down", "before"])
-    await run {
-        let p = try await Ops.split(pane: o.flags["pane"], down: o.switches.contains("down"),
-                                    before: o.switches.contains("before"), command: o.command)
+        let p = try await Ops.newSession(cwd: o.flags["cwd"], name: o.flags["name"], command: o.command,
+                                         worktree: o.flags["worktree"])
         print(p.raw.uuidString.lowercased())
     }
 
 case "send":
-    let o = Options(argv, valued: ["pane", "keys"], switches: ["paste", "no-enter", "force"])
+    let o = Options(argv, valued: ["pane", "keys"], switches: ["no-enter", "force"])
     await run {
         let text = (o.positional + o.command).joined(separator: " ").replacingOccurrences(of: "\\n", with: "\n")
-        try await Ops.send(pane: o.flags["pane"], text: text, paste: o.switches.contains("paste"),
-                           enter: !o.switches.contains("no-enter"), keys: try Ops.keys(o.flags["keys"]),
-                           force: o.switches.contains("force"))
+        try await Ops.send(pane: o.flags["pane"], text: text, enter: !o.switches.contains("no-enter"),
+                           keys: try Ops.keys(o.flags["keys"]), force: o.switches.contains("force"))
     }
 
 case "capture":
@@ -200,10 +169,6 @@ case "notify":
         guard let title = o.positional.first else { throw OpError.usage("notify needs a title") }
         try await Ops.notify(pane: o.flags["pane"], title: title, body: o.positional.dropFirst().joined(separator: " "))
     }
-
-case "focus":
-    let o = Options(argv, valued: ["pane"])
-    await run { try await Ops.markSeen(pane: o.flags["pane"]) }
 
 case "close":
     let o = Options(argv, valued: ["pane"])
@@ -231,58 +196,6 @@ case "wait":
         if code != 0 { exit(Int32(min(max(Int(code), 1), 123))) }
     }
 
-case "commands":
-    let o = Options(argv, valued: ["pane", "last"], switches: ["failed", "json"])
-    await run {
-        var list = try await Ops.commands(pane: o.flags["pane"])
-        if o.switches.contains("failed") { list = list.filter(\.failed) }
-        if let n = o.flags["last"].flatMap(Int.init), n >= 0 { list = Array(list.suffix(n)) }
-        if o.switches.contains("json") {
-            print(json(list))
-            return
-        }
-        let time = DateFormatter()
-        time.dateFormat = "HH:mm:ss"
-        for r in list {
-            let code = (r.exitCode.map(String.init) ?? "?").padding(toLength: 4, withPad: " ", startingAt: 0)
-            let took = String(format: "%7.1fs", r.duration)
-            print("\(time.string(from: Date(timeIntervalSince1970: r.endedAt)))  \(code)\(took)  \(r.command)")
-        }
-    }
-
-case "events":
-    let o = Options(argv, valued: ["pane"], switches: ["json"])
-    let asJSON = o.switches.contains("json")
-    setvbuf(stdout, nil, _IOLBF, 0)
-    await run {
-        try await Ops.events(pane: o.flags["pane"]) { e in
-            if asJSON {
-                let enc = JSONEncoder()
-                enc.outputFormatting = [.sortedKeys]
-                if let d = try? enc.encode(e) { print(String(decoding: d, as: UTF8.self)) }
-            } else {
-                print(e.line)
-            }
-        }
-    }
-
-case "ports":
-    let o = Options(argv, valued: ["pane"], switches: ["json"])
-    await run {
-        let panes = try await Ops.ports(pane: o.flags["pane"])
-        if o.switches.contains("json") {
-            print(json(panes.map { PortsRow(pane: $0.id.raw.uuidString.lowercased(), cwd: $0.pwd, ports: $0.ports ?? []) }))
-            return
-        }
-        for info in panes {
-            for port in info.ports ?? [] { print("\(port)  \(Ops.short(info.id))  \(info.pwd)") }
-        }
-    }
-
-case "attach":
-    let o = Options(argv, valued: ["pane"])
-    await run { try await Attach.run(pane: o.flags["pane"] ?? o.positional.first) }
-
 case "mcp":
     _ = Options(argv)
     await MCPServer().serve()
@@ -292,8 +205,3 @@ default:
 }
 exit(Exit.ok.rawValue)
 
-struct PortsRow: Encodable {
-    var pane: String
-    var cwd: String
-    var ports: [UInt16]
-}
