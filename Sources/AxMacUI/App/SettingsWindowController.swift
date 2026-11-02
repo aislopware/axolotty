@@ -7,7 +7,7 @@ final class SettingsWindowController: NSWindowController {
 
     init(model: AppModel) {
         self.model = model
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Settings"
         window.isReleasedWhenClosed = false
@@ -100,5 +100,7 @@ final class SettingsWindowController: NSWindowController {
             grid.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -24),
         ])
         window?.contentView = content
+        // The window is as tall as its three rows, never taller.
+        window?.setContentSize(NSSize(width: max(400, content.fittingSize.width), height: content.fittingSize.height))
     }
 }
