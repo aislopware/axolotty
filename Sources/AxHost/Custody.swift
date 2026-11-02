@@ -1,5 +1,6 @@
 #if os(macOS)
 public import AxModel
+import AxProtocol
 internal import AxSys
 import Foundation
 import Synchronization
@@ -98,6 +99,7 @@ public final class CustodyClient: Sendable {
                 onDisconnect: @escaping @Sendable () -> Void = {}) throws {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw CustodyError.errno(errno) }
+        noSIGPIPE(fd)
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(socketPath.utf8)
@@ -117,8 +119,6 @@ public final class CustodyClient: Sendable {
             throw CustodyError.errno(e)
         }
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
-        var one: Int32 = 1
-        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
 
         // HELLO synchronously, before the reader thread exists.
         var hello = Self.message(UInt8(AXC_HELLO), payload: le(AXC_VERSION))

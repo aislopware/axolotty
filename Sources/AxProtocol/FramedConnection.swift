@@ -58,8 +58,7 @@ public final class FramedConnection: @unchecked Sendable {
         queue = DispatchQueue(label: "axolotty.conn.\(label)", qos: .userInteractive)
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
-        var one: Int32 = 1
-        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        noSIGPIPE(fd)  // again, for a descriptor made elsewhere
         readSource = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         writeSource = DispatchSource.makeWriteSource(fileDescriptor: fd, queue: queue)
         readSource.setCancelHandler { [fd] in _ = Darwin.close(fd) }
@@ -242,11 +241,22 @@ public final class FramedConnection: @unchecked Sendable {
 
 // MARK: - Unix sockets
 
+/// SO_NOSIGPIPE, set the moment a socket exists. Set later it can fail:
+/// XNU refuses any option (EINVAL) on a socket already shut both ways, so
+/// a link whose peer left between connect and the option kept SIGPIPE,
+/// and its first write signalled the whole process. Sockets a listener
+/// accepts inherit it.
+public func noSIGPIPE(_ fd: Int32) {
+    var one: Int32 = 1
+    _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+}
+
 public enum UnixSocket {
     /// Connects to a Unix stream socket. Returns the fd (blocking).
     public static func connect(path: String) throws -> Int32 {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(.EIO) }
+        noSIGPIPE(fd)
         var addr = try address(path)
         let rc = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -265,6 +275,7 @@ public enum UnixSocket {
     public static func listen(path: String, backlog: Int32 = 64) throws -> Int32 {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(.EIO) }
+        noSIGPIPE(fd)
         var addr = try address(path)
         unlink(path)
         let rc = withUnsafePointer(to: &addr) {
@@ -322,6 +333,7 @@ public enum TCPSocket {
             ai = a.pointee.ai_next
             let fd = socket(a.pointee.ai_family, a.pointee.ai_socktype, a.pointee.ai_protocol)
             guard fd >= 0 else { continue }
+            noSIGPIPE(fd)
             _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
             var rc = Darwin.connect(fd, a.pointee.ai_addr, a.pointee.ai_addrlen)
             if rc != 0, errno == EINPROGRESS {
@@ -374,6 +386,7 @@ public enum TCPSocket {
         defer { freeaddrinfo(res) }
         let fd = socket(a.pointee.ai_family, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(.EIO) }
+        noSIGPIPE(fd)
         var one: Int32 = 1
         _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
         if a.pointee.ai_family == AF_INET6 {

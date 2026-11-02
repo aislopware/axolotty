@@ -360,9 +360,7 @@ public actor Server {
                     guard c >= 0 else { return }
                     _ = fcntl(c, F_SETFL, fcntl(c, F_GETFL) & ~O_NONBLOCK)
                     _ = fcntl(c, F_SETFD, FD_CLOEXEC)
-                    var one: Int32 = 1
-                    _ = setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-                    TCPSocket.tune(c)
+                    TCPSocket.tune(c)  // no SIGPIPE: inherited from the listener
                     let peer = TCPSocket.peerAddress(c) ?? ""
                     admission.async {
                         let conn = FramedConnection(fd: c, label: "tailnet \(peer)")

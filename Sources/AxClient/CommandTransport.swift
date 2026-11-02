@@ -1,4 +1,5 @@
 #if os(macOS)
+import AxProtocol
 import Darwin
 public import Foundation
 import Synchronization
@@ -32,6 +33,7 @@ public final class CommandChild: @unchecked Sendable {
         guard let exe = argv.first, !exe.isEmpty else { throw POSIXError(.EINVAL) }
         var pair: [Int32] = [-1, -1]
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0 else { throw POSIXError(.EMFILE) }
+        noSIGPIPE(pair[0])
         var err: [Int32] = [-1, -1]
         guard pipe(&err) == 0 else {
             Darwin.close(pair[0])
@@ -87,7 +89,8 @@ public final class CommandChild: @unchecked Sendable {
         Thread.detachNewThread { [weak self] in
             var st: Int32 = 0
             while waitpid(pid, &st, 0) < 0, errno == EINTR {}
-            queue.async { self?.exited(st) }
+            let status = st
+            queue.async { self?.exited(status) }
         }
     }
 
