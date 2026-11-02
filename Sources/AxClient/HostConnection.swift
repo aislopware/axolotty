@@ -95,17 +95,17 @@ public final class HostConnection: @unchecked Sendable {
         #endif
         /// Set when the host says why it closed (incompatible, denied).
         var refusal: LinkFailure?
-        var lastHeard = ContinuousClock.now
-        var pings: [UInt64: ContinuousClock.Instant] = [:]
+        /// The open link's liveness (remote links; see `LinkLiveness`).
+        var liveness: LinkLiveness?
         var heartbeat: Task<Void, Never>?
         var rtt: Duration?
     }
 
-    /// Heartbeats, Slopty's third-generation numbers: a ping every `beat`
-    /// on remote links; a link that has said nothing for `silence` (three
-    /// beats) is dead and is redialled at once.
-    static let beat: Duration = .seconds(2)
-    static let silence: Duration = .seconds(6)
+    /// How a remote link is judged alive (`LinkLiveness.Timing.standard`
+    /// unless a test shortens it).
+    public let timing: LinkLiveness.Timing
+    private let epoch = ContinuousClock.now
+    private var now: Duration { ContinuousClock.now - epoch }
 
     /// The redial ladder. Remote: 250 ms doubling to 2 s; once the host has
     /// been gone a minute, 4 s doubling to 30 s. Local: 100 ms to 5 s.
@@ -123,9 +123,10 @@ public final class HostConnection: @unchecked Sendable {
 
     private let state = Mutex(State())
 
-    public init(endpoint: HostEndpoint, hello: ClientHello) {
+    public init(endpoint: HostEndpoint, hello: ClientHello, timing: LinkLiveness.Timing = .standard) {
         self.endpoint = endpoint
         self.hello = hello
+        self.timing = timing
         (events, sink) = AsyncStream.makeStream()
     }
 
@@ -138,6 +139,13 @@ public final class HostConnection: @unchecked Sendable {
 
     /// The last heartbeat's round trip (remote links).
     public var rtt: Duration? { state.withLock { $0.rtt } }
+
+    /// Whether the open remote link is alive, quiet (a ping went
+    /// unanswered) or dead; nil with no link or on a local one.
+    public var linkState: LinkLiveness.State? {
+        let t = now
+        return state.withLock { $0.conn == nil ? nil : $0.liveness?.state(at: t) }
+    }
 
     // MARK: Connecting
 
@@ -196,7 +204,7 @@ public final class HostConnection: @unchecked Sendable {
                 s.conn = conn
                 s.welcome = c
                 s.refusal = nil
-                s.lastHeard = .now
+                s.liveness = nil
             }
             conn.start(onFrame: { [weak self] in self?.receive($0, on: conn) },
                        onClose: { [weak self] e in self?.closed(conn, e) })
@@ -221,7 +229,7 @@ public final class HostConnection: @unchecked Sendable {
             #endif
             s.heartbeat?.cancel()
             s.heartbeat = nil
-            s.pings = [:]
+            s.liveness = nil
             s.welcome = nil
             s.intents = [:]
             s.captures = [:]
@@ -281,18 +289,18 @@ public final class HostConnection: @unchecked Sendable {
     /// A live link that has gone quiet is dropped first, so it is replaced
     /// rather than waited on.
     public func kick() {
-        let (conn, stale, idle) = state.withLock { s -> (FramedConnection?, Bool, Bool) in
+        let t = now
+        let (conn, heard, idle) = state.withLock { s -> (FramedConnection?, Duration?, Bool) in
             s.redials = 0
             s.downSince = nil
-            let quiet = ContinuousClock.now - s.lastHeard
-            return (s.conn, quiet > Self.beat, s.conn == nil && s.wantConnected)
+            return (s.conn, s.liveness?.lastHeard, s.conn == nil && s.wantConnected)
         }
-        if let conn, stale, endpoint.isRemote {
-            // Ask; an answer within a second keeps the link.
+        if let conn, let heard, t - heard > timing.beat / 2, endpoint.isRemote {
+            // Ask; an answer within one beat keeps the link.
             conn.send(ClientMessage.ping(0))
-            conn.queue.asyncAfter(deadline: .now() + 1) { [weak self, weak conn] in
+            conn.queue.asyncAfter(deadline: .now() + .nanoseconds(Int(timing.beat / .nanoseconds(1)))) { [weak self, weak conn] in
                 guard let self, let conn else { return }
-                if ContinuousClock.now - state.withLock({ $0.lastHeard }) > .milliseconds(1500) {
+                if state.withLock({ ($0.liveness?.lastHeard ?? heard) <= heard }) {
                     conn.close(ConnectionError.refused("silent"))
                 }
             }
@@ -306,23 +314,29 @@ public final class HostConnection: @unchecked Sendable {
         }
     }
 
-    /// Pings every `beat`; a link silent for `silence` is closed (and redialled).
+    /// Drives `LinkLiveness`: sleeps until it next has something to say,
+    /// sends the pings it asks for, and closes the link (to be redialled)
+    /// when it calls it dead.
     private func startHeartbeat(_ conn: FramedConnection) {
+        let (epoch, timing) = (epoch, timing)
         let task = Task { [weak self, weak conn] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.beat)
+                guard let wake = self?.state.withLock({ s -> Duration? in
+                    s.conn === conn ? s.liveness?.nextCheck(after: ContinuousClock.now - epoch) : nil
+                }) else { return }
+                try? await Task.sleep(until: epoch + wake, tolerance: timing.beat / 100, clock: .continuous)
                 guard let self, let conn, !Task.isCancelled else { return }
-                let (live, silent) = state.withLock { s -> (Bool, Bool) in
-                    (s.conn === conn, ContinuousClock.now - s.lastHeard > Self.silence)
+                let t = ContinuousClock.now - epoch
+                let verdict = state.withLock { s -> (LinkLiveness.State, UInt64?)? in
+                    guard s.conn === conn, s.liveness != nil else { return nil }
+                    return (s.liveness!.state(at: t), s.liveness!.pingIfDue(at: t))
                 }
-                guard live else { return }
-                if silent {
+                guard let (alive, ping) = verdict else { return }
+                if alive == .dead {
                     conn.close(ConnectionError.refused("host silent"))
                     return
                 }
-                let n = UInt64.random(in: 1 ... .max)
-                state.withLock { $0.pings[n] = .now }
-                conn.send(ClientMessage.ping(n))
+                if let ping { conn.send(ClientMessage.ping(ping)) }
             }
         }
         state.withLock { $0.heartbeat = task }
@@ -349,7 +363,8 @@ public final class HostConnection: @unchecked Sendable {
     // MARK: Receiving (connection queue)
 
     private func receive(_ frame: Frame, on conn: FramedConnection) {
-        state.withLock { $0.lastHeard = .now }
+        let t = now
+        state.withLock { $0.liveness?.heard(at: t) }
         switch frame {
         case let .control(json):
             guard let msg = try? MessageCodec.host(json) else { return }
@@ -382,7 +397,11 @@ public final class HostConnection: @unchecked Sendable {
                 return (s.welcome, s.mirrors, s.appearance)
             }
             if let appearance { conn.send(ClientMessage.appearance(appearance)) }
-            if endpoint.isRemote { startHeartbeat(conn) }
+            if endpoint.isRemote {
+                let t = now
+                state.withLock { $0.liveness = LinkLiveness(timing: timing, now: t) }
+                startHeartbeat(conn)
+            }
             // Resume every mirror where it left off (byte-exact when the journal still holds it).
             for (id, m) in mirrors {
                 conn.send(ClientMessage.attach(id, have: m.isReady ? m.offset : nil))
@@ -407,10 +426,10 @@ public final class HostConnection: @unchecked Sendable {
         case let .captured(token, text):
             state.withLock { $0.captures.removeValue(forKey: token) }?.resume(returning: text)
         case let .pong(n):
-            let (waiter, sent) = state.withLock { s in (s.pongs.removeValue(forKey: n), s.pings.removeValue(forKey: n)) }
+            let t = now
+            let (waiter, rtt) = state.withLock { s in (s.pongs.removeValue(forKey: n), s.liveness?.pong(n, at: t)) }
             waiter?.resume()
-            if let sent {
-                let rtt = ContinuousClock.now - sent
+            if let rtt {
                 state.withLock { $0.rtt = rtt }
                 sink.yield(.latency(rtt))
             }
