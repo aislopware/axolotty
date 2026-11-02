@@ -81,6 +81,9 @@ public final class HostConnection: @unchecked Sendable {
         var intents: [UUID: CheckedContinuation<Result<Void, ConnectionError>, Never>] = [:]
         var captures: [UUID: CheckedContinuation<String?, Never>] = [:]
         var pongs: [UInt64: CheckedContinuation<Void, Never>] = [:]
+        var gits: [UUID: CheckedContinuation<GitReport?, Never>] = [:]
+        /// What the host said it can do in its welcome.
+        var hostFeatures: Set<String> = []
         /// A kick's ping, until its pong comes.
         var kickPing: UInt64?
         var unacked: [PaneID: UInt64] = [:]
@@ -247,6 +250,7 @@ public final class HostConnection: @unchecked Sendable {
             taken.intents = s.intents
             taken.captures = s.captures
             taken.pongs = s.pongs
+            taken.gits = s.gits
             taken.wantConnected = s.wantConnected
             taken.refusal = s.refusal
             #if os(macOS)
@@ -260,6 +264,7 @@ public final class HostConnection: @unchecked Sendable {
             s.intents = [:]
             s.captures = [:]
             s.pongs = [:]
+            s.gits = [:]
             s.kickPing = nil
             return true
         }
@@ -267,6 +272,7 @@ public final class HostConnection: @unchecked Sendable {
         taken.intents.values.forEach { $0.resume(returning: .failure(.closed)) }
         taken.captures.values.forEach { $0.resume(returning: nil) }
         taken.pongs.values.forEach { $0.resume() }
+        taken.gits.values.forEach { $0.resume(returning: nil) }
         let banner = conn.bannerText
         Task { [weak self] in
             var failure = taken.refusal
@@ -435,6 +441,7 @@ public final class HostConnection: @unchecked Sendable {
         case let .welcome(h):
             let (c, mirrors, appearance) = state.withLock { s in
                 s.replica = h.state
+                s.hostFeatures = Set(h.features ?? [])
                 s.epoch = h.epoch
                 s.backoff = .milliseconds(100)
                 s.redials = 0
@@ -471,6 +478,8 @@ public final class HostConnection: @unchecked Sendable {
             sink.yield(.event(e))
         case let .captured(token, text):
             state.withLock { $0.captures.removeValue(forKey: token) }?.resume(returning: text)
+        case let .gitTree(token, report):
+            state.withLock { $0.gits.removeValue(forKey: token) }?.resume(returning: report)
         case let .pong(n):
             let t = now
             let (waiter, rtt) = state.withLock { s in
@@ -546,6 +555,20 @@ public final class HostConnection: @unchecked Sendable {
             } else {
                 c.resume(returning: nil)
             }
+        }
+    }
+
+    /// The branch and changes of the working tree at `path` on the host; nil
+    /// with no link, or from a host too old to say.
+    public func git(_ path: String) async -> GitReport? {
+        let token = UUID()
+        return await withCheckedContinuation { c in
+            let conn = state.withLock { s -> FramedConnection? in
+                guard let conn = s.conn, s.welcome == nil, s.hostFeatures.contains("git") else { return nil }
+                s.gits[token] = c
+                return conn
+            }
+            if let conn { conn.send(ClientMessage.git(token, path: path)) } else { c.resume(returning: nil) }
         }
     }
 

@@ -485,6 +485,10 @@ public actor Server {
             link.conn.send(HostMessage.captured(token, panes[id]?.capture(scrollback: scrollback)))
         case let .ping(n):
             link.conn.send(HostMessage.pong(n))
+        case let .git(token, path):
+            // Git may take a while (2 s at most): off the server's own work.
+            let conn = link.conn
+            Task.detached(priority: .utility) { conn.send(HostMessage.gitTree(token, GitReport.read(path))) }
         }
     }
 

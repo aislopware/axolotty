@@ -1,5 +1,6 @@
 import AppKit
 import AxModel
+import AxProtocol
 
 /// A row's hover card: a title, then one fact per line, each led by a mark.
 ///

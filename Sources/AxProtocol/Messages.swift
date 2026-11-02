@@ -174,6 +174,10 @@ public enum ClientMessage: Codable, Sendable {
     /// The pane's text, plain (CLI, agents).
     case capture(UUID, PaneID, scrollback: Bool)
     case ping(UInt64)
+    /// The branch and changes of the working tree at a path on the host
+    /// (feature "git"): a far pane's band and hover card show them as a
+    /// near one's do.
+    case git(UUID, path: String)
 }
 
 public enum HostEvent: Codable, Hashable, Sendable {
@@ -219,6 +223,8 @@ public enum HostMessage: Codable, Sendable {
     case event(HostEvent)
     case captured(UUID, String?)
     case pong(UInt64)
+    /// The answer to `ClientMessage.git`.
+    case gitTree(UUID, GitReport)
     case error(String)
     /// The client speaks another wire generation; the host closes the link.
     /// One side needs updating (`generation` is the host's).

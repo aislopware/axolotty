@@ -256,7 +256,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             content.band.update(nil, key: key)
             content.band.isHidden = content.current == nil  // the empty sheet says it
             content.band.chip.isHidden = true
-            refreshChanges("")
+            branchFor = nil
+            content.band.diff.set(nil)
             window?.title = "Axolotty"
             return
         }
@@ -276,22 +277,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
         window?.title = title
         updateChip(st, sid)
-        if host.isLocal, !cwd.isEmpty {
-            if branchFor != cwd {
-                branchFor = cwd
-                branch = GitBranch.cached(cwd) ?? nil
-                Task { [weak self] in
-                    let b = await GitBranch.lookup(cwd)
-                    guard let self, self.branchFor == cwd else { return }
-                    self.branch = b
-                    self.content.band.update(band(), key: key)
-                }
-            }
-        } else {
+        // Branch and diff chip follow the focused pane's tree, wherever it is.
+        if cwd.isEmpty {
+            branchFor = nil
             branch = nil
+            content.band.diff.set(nil)
+        } else {
+            let place = "\(host.id) \(cwd)"
+            if branchFor != place {
+                branchFor = place
+                let hit = GitFacts.cached(host, cwd)
+                branch = hit?.branch
+                content.band.diff.set(hit?.changes)
+            }
+            Task { [weak self] in
+                let r = await GitFacts.lookup(host, cwd)
+                guard let self, self.branchFor == place else { return }
+                self.branch = r.branch
+                self.content.band.update(band(), key: key)
+                self.content.band.diff.set(r.changes)
+                self.content.band.needsLayout = true
+            }
         }
         content.band.update(band(), key: key)
-        refreshChanges(host.isLocal ? cwd : "")
+        content.band.needsLayout = true
     }
 
     /// The chip speaks only when the shown session wants the person: an agent
@@ -570,22 +579,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     // MARK: Changes
-
-    /// The diff chip follows the focused pane's tree (local hosts).
-    private func refreshChanges(_ cwd: String) {
-        guard !cwd.isEmpty else {
-            content.band.diff.set(nil)
-            content.band.needsLayout = true
-            return
-        }
-        if case let .some(hit) = GitChangesReader.cached(cwd) { content.band.diff.set(hit) }
-        Task { [weak self] in
-            let c = await GitChangesReader.lookup(cwd)
-            guard let self, self.currentCwd == cwd else { return }
-            self.content.band.diff.set(c)
-            self.content.band.needsLayout = true
-        }
-    }
 
     private var currentCwd: String? {
         guard let (host, sid) = selection, host.isLocal, let st = host.state, let s = st.sessions[sid] else { return nil }

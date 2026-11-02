@@ -1,5 +1,6 @@
 import AppKit
 import AxModel
+import AxProtocol
 
 /// The band's diff chip: "+412 −96" in 11 pt tabular green and red, on a
 /// hover plate. Hidden when the tree is clean or not a repository. A click

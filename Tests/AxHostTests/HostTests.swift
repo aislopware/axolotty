@@ -30,6 +30,42 @@ struct HostTests {
         await fx.tearDown()
     }
 
+    /// A far pane's band shows its branch and changes as a near one's does:
+    /// the host reads its own tree and says so (`ClientMessage.git`).
+    @Test func theHostReadsItsOwnTreesBranchAndChanges() async throws {
+        let fx = try await HostFixture()
+        let c = try await fx.client()
+        let repo = fx.paths.root.appending(path: "repo").path(percentEncoded: false)
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        func git(_ args: String...) throws {
+            let p = Process()
+            p.executableURL = URL(filePath: "/usr/bin/git")
+            p.arguments = ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"] + args
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try p.run()
+            p.waitUntilExit()
+            #expect(p.terminationStatus == 0, "git \(args.joined(separator: " "))")
+        }
+        try git("init", "-q", "-b", "trunk")
+        try "one\ntwo\n".write(toFile: repo + "/a.txt", atomically: true, encoding: .utf8)
+        try git("add", "a.txt")
+        try git("commit", "-q", "-m", "first")
+        try "one\n2\nthree\n".write(toFile: repo + "/a.txt", atomically: true, encoding: .utf8)
+        try "new\n".write(toFile: repo + "/b.txt", atomically: true, encoding: .utf8)
+
+        let r = try #require(await c.git(repo + "/"))
+        #expect(r.branch == "trunk")
+        let files = r.changes?.files.sorted { $0.path < $1.path } ?? []
+        #expect(files.map(\.path) == ["a.txt", "b.txt"])
+        #expect(files.map(\.kind) == [.modified, .untracked])
+        #expect((r.changes?.added, r.changes?.removed) == (3, 1), "a: +2 −1, b: +1")
+
+        let none = await c.git(fx.paths.root.path(percentEncoded: false))
+        #expect(none == GitReport(branch: nil, changes: nil), "not a repository")
+        await fx.tearDown()
+    }
+
     @Test func sessionStreamsIntoAMirror() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()

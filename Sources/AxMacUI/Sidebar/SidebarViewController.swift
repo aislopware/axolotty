@@ -481,13 +481,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             // Detail lives in the hover card, not on the row.
             if let pane = st.sessions[sid].flatMap({ st.panes[$0.focus] }) {
                 c.card = hoverCard(title: title, activity: activity, since: secondsInState(st, sid, activity),
-                                   pane: pane, local: host.isLocal)
+                                   pane: pane, git: GitFacts.cached(host, pane.pwd))
                 let pwd = pane.pwd
-                c.onHover = host.isLocal && !pwd.isEmpty ? { [weak self, weak outline = self.outline] in
+                c.onHover = !pwd.isEmpty ? { [weak self, weak outline = self.outline, weak host] in
                     Task { @MainActor in
-                        async let b = GitBranch.lookup(pwd)
-                        async let g = GitChangesReader.lookup(pwd)
-                        _ = await (b, g)
+                        guard let host else { return }
+                        _ = await GitFacts.lookup(host, pwd)
                         guard let self, let outline else { return }
                         let row = outline.row(forItem: n)
                         guard row >= 0, let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) else { return }
@@ -504,9 +503,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     /// Title; state and time in it; what the agent asks or says; folder;
     /// branch with ahead/behind and the working tree's diff.
-    /// Git facts come from caches filled on hover (local hosts only).
+    /// Git facts come from caches filled on hover (read where the tree is).
     private func hoverCard(title: String, activity: Activity, since: Double?, pane: PaneInfo,
-                           local: Bool) -> HoverCard
+                           git: GitReport?) -> HoverCard
     {
         var card = HoverCard(title: title)
         if let state = Self.stateLine(activity, since: since) { card.facts.append(.init(.dot(activity), state)) }
@@ -523,12 +522,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
         if !pane.pwd.isEmpty {
             card.facts.append(.init(.symbol("folder"), BandView.abbreviate(pane.pwd), truncation: .byTruncatingMiddle))
-            if local {
-                let branch = GitBranch.cached(pane.pwd) ?? nil
-                let changes = GitChangesReader.cached(pane.pwd) ?? nil
-                if let line = HoverCard.branchLine(branch, changes: changes) {
-                    card.facts.append(.init(.symbol("arrow.triangle.branch"), attributed: line, truncation: .byTruncatingMiddle))
-                }
+            if let line = HoverCard.branchLine(git?.branch, changes: git?.changes) {
+                card.facts.append(.init(.symbol("arrow.triangle.branch"), attributed: line, truncation: .byTruncatingMiddle))
             }
         }
         return card
