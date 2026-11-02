@@ -329,6 +329,12 @@ public actor Server {
 
     private func handle(_ msg: ClientMessage, from link: Link) async throws {
         if case let .hello(h) = msg {
+            guard h.protocolVersion == Wire.version else {
+                link.conn.send(HostMessage.incompatible(generation: Wire.version))
+                let conn = link.conn
+                conn.queue.asyncAfter(deadline: .now() + .milliseconds(200)) { conn.close() }
+                return
+            }
             link.hello = h
             link.conn.send(HostMessage.welcome(HostHello(host: state.host, name: state.name, epoch: epoch, state: state)))
             return

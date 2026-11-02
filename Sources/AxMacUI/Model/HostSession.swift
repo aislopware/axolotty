@@ -10,6 +10,8 @@ enum HostChange {
     case deltas([HostState.Delta])
     case event(HostEvent)
     case disconnected(String?)
+    /// A new round-trip reading (remote hosts).
+    case latency
 }
 
 /// The app's link to one server: its document replica, connection phase and
@@ -19,6 +21,8 @@ final class HostSession: Identifiable {
         case connecting
         case connected
         case offline(String?)
+        /// Waits for the person: a login, an install, an update (see `LinkFailure`).
+        case failed(LinkFailure)
     }
 
     let id = UUID()
@@ -27,6 +31,8 @@ final class HostSession: Identifiable {
     let isLocal: Bool
     private(set) var state: HostState?
     private(set) var phase: Phase = .connecting
+    /// The last heartbeat's round trip (remote hosts).
+    private(set) var rtt: Duration?
     let changes = Signal<HostChange>()
     /// Reports failed intents (the app shows a toast).
     var onError: ((String) -> Void)?
@@ -61,6 +67,10 @@ final class HostSession: Identifiable {
             do {
                 try await connection.connect(reconnect: true)
                 return
+            } catch let ConnectionError.failed(f) {
+                phase = .failed(f)
+                changes.emit(.disconnected(nil))
+                return
             } catch {
                 phase = .offline("\(error)")
                 try? await Task.sleep(for: delay)
@@ -72,6 +82,17 @@ final class HostSession: Identifiable {
     func stop() {
         loop?.cancel()
         connection.disconnect()
+    }
+
+    /// Tries again now (after a login, an install, a network change).
+    func retry() {
+        if case .failed = phase {
+            phase = .connecting
+            changes.emit(.disconnected(nil))
+            Task { await connectLoop() }
+        } else {
+            connection.kick()
+        }
     }
 
     private func handle(_ event: ConnectionEvent) {
@@ -88,8 +109,13 @@ final class HostSession: Identifiable {
         case .attached, .detached:
             break
         case let .disconnected(reason):
-            phase = .offline(reason)
+            if case .failed = phase {} else { phase = .offline(reason) }
             changes.emit(.disconnected(reason))
+        case let .failed(f):
+            phase = .failed(f)
+        case let .latency(d):
+            rtt = d
+            changes.emit(.latency)
         }
     }
 
@@ -126,6 +152,10 @@ final class HostSession: Identifiable {
         case .intent(.notAllowed): "Not allowed."
         case .intent(.worktreeFailed): "Couldn't make the worktree. The branch may be checked out elsewhere."
         case .intent(.dirty): "The worktree has uncommitted changes."
+        case .failed(.needsLogin): "The host needs you to sign in."
+        case .failed(.notInstalled): "Axolotty isn't set up on that host."
+        case .failed(.incompatible): "That host runs a different Axolotty version."
+        case .failed(.denied): "That host doesn't accept this device."
         }
     }
 

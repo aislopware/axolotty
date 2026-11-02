@@ -113,7 +113,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         tokens.append(model.anyChange.observe { [weak self] host, change in
             switch change {
             case .connected, .deltas, .disconnected: self?.reload()
-            case .event: break
+            case .event, .latency: break
             }
         })
         tokens.append(model.hostsChanged.observe { [weak self] in self?.reload() })

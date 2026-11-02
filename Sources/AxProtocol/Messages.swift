@@ -113,7 +113,11 @@ public enum IntentError: String, Codable, Sendable, Error {
 // MARK: - Messages
 
 public struct ClientHello: Codable, Hashable, Sendable {
+    /// The wire generation (`Wire.version`). Within one generation every
+    /// change is additive; a different one is refused with `.incompatible`.
     public var protocolVersion: Int
+    /// Optional abilities this side has (`Wire.features`); absent from older peers.
+    public var features: [String]?
     public var client: ClientID
     public var name: String
     /// When true, the host also sends state and attention events (apps); the CLI
@@ -122,6 +126,7 @@ public struct ClientHello: Codable, Hashable, Sendable {
 
     public init(client: ClientID, name: String, subscribe: Bool = true) {
         protocolVersion = Wire.version
+        features = Wire.features
         self.client = client
         self.name = name
         self.subscribe = subscribe
@@ -184,6 +189,7 @@ public enum HostEvent: Codable, Hashable, Sendable {
 
 public struct HostHello: Codable, Hashable, Sendable {
     public var protocolVersion: Int
+    public var features: [String]?
     public var host: HostID
     public var name: String
     /// Unique per server start; a new epoch means "drop your replica".
@@ -192,6 +198,7 @@ public struct HostHello: Codable, Hashable, Sendable {
 
     public init(host: HostID, name: String, epoch: UUID, state: HostState) {
         protocolVersion = Wire.version
+        features = Wire.features
         self.host = host
         self.name = name
         self.epoch = epoch
@@ -213,6 +220,9 @@ public enum HostMessage: Codable, Sendable {
     case captured(UUID, String?)
     case pong(UInt64)
     case error(String)
+    /// The client speaks another wire generation; the host closes the link.
+    /// One side needs updating (`generation` is the host's).
+    case incompatible(generation: Int)
 }
 
 // MARK: - Codec

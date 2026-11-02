@@ -33,8 +33,18 @@ public final class FramedConnection: @unchecked Sendable {
     public var pendingBytes: Int { out.withLock { $0.pending } }
     public var isClosed: Bool { closedFlag.load(ordering: .acquiring) }
 
+    /// Bytes to skip up to and including `preamble` before any frame (a
+    /// remote command's banner); nil once seen or when there is none.
+    private var preamble: Data?
+    private var banner = Data()
+    /// What came before the preamble (an ssh banner or an rc file's echo),
+    /// for diagnostics; at most 4 KiB.
+    public private(set) var bannerText = ""
+
     /// Takes ownership of `fd` (made non-blocking, close-on-exec, no SIGPIPE).
-    public init(fd: Int32, label: String) {
+    /// With `preamble`, everything the peer sends before it is skipped.
+    public init(fd: Int32, label: String, preamble: Data? = nil) {
+        self.preamble = preamble
         self.fd = fd
         queue = DispatchQueue(label: "axolotty.conn.\(label)", qos: .userInteractive)
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
@@ -109,7 +119,15 @@ public final class FramedConnection: @unchecked Sendable {
         while true {
             let n = buf.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
             if n > 0 {
-                decoder.feed(buf[0 ..< n])
+                if preamble != nil {
+                    guard let rest = skipBanner(buf[0 ..< n]) else {
+                        if n < buf.count { return }
+                        continue
+                    }
+                    decoder.feed(rest)
+                } else {
+                    decoder.feed(buf[0 ..< n])
+                }
                 do {
                     while let frame = try decoder.next() { onFrame?(frame) }
                 } catch {
@@ -126,6 +144,23 @@ public final class FramedConnection: @unchecked Sendable {
                 return
             }
         }
+    }
+
+    /// Feeds banner bytes; returns what follows the preamble once it is seen.
+    private func skipBanner(_ chunk: ArraySlice<UInt8>) -> Data? {
+        guard let magic = preamble else { return Data(chunk) }
+        banner.append(contentsOf: chunk)
+        guard let r = banner.range(of: magic) else {
+            // Keep a tail long enough to complete a split preamble; give up
+            // on a peer that talks a megabyte without ever saying it.
+            if banner.count > 1 << 20 { close(WireError.malformed("no bridge preamble")) }
+            return nil
+        }
+        bannerText = String(decoding: banner[banner.startIndex ..< r.lowerBound].suffix(4096), as: UTF8.self)
+        let rest = Data(banner[r.upperBound...])
+        preamble = nil
+        banner = Data()
+        return rest
     }
 
     // MARK: Writing (on queue)
@@ -236,5 +271,109 @@ public enum UnixSocket {
             dst[bytes.count] = 0
         }
         return addr
+    }
+}
+
+// MARK: - TCP (the tailnet)
+
+/// TCP for links over a tailnet: Tailscale (WireGuard) already encrypts and
+/// authenticates the path, so frames go bare, with Nagle off so a keystroke
+/// leaves the moment it is typed.
+public enum TCPSocket {
+    /// Connects to `host` (a name or address) within `timeout` seconds.
+    public static func connect(host: String, port: UInt16, timeout: Double = 5) throws -> Int32 {
+        var hints = addrinfo()
+        hints.ai_socktype = SOCK_STREAM
+        hints.ai_family = AF_UNSPEC
+        var res: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, String(port), &hints, &res) == 0, let first = res else { throw POSIXError(.EHOSTUNREACH) }
+        defer { freeaddrinfo(res) }
+        var lastError = POSIXErrorCode.EHOSTUNREACH
+        var ai: UnsafeMutablePointer<addrinfo>? = first
+        while let a = ai {
+            ai = a.pointee.ai_next
+            let fd = socket(a.pointee.ai_family, a.pointee.ai_socktype, a.pointee.ai_protocol)
+            guard fd >= 0 else { continue }
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+            var rc = Darwin.connect(fd, a.pointee.ai_addr, a.pointee.ai_addrlen)
+            if rc != 0, errno == EINPROGRESS {
+                var p = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                rc = poll(&p, 1, Int32(timeout * 1000)) == 1 ? 0 : -1
+                var err: Int32 = 0
+                var len = socklen_t(MemoryLayout<Int32>.size)
+                if rc == 0, getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0, err != 0 {
+                    rc = -1
+                    errno = err
+                } else if rc != 0 {
+                    errno = ETIMEDOUT
+                }
+            }
+            if rc == 0 {
+                _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK)
+                tune(fd)
+                return fd
+            }
+            lastError = POSIXErrorCode(rawValue: errno) ?? .ECONNREFUSED
+            Darwin.close(fd)
+        }
+        throw POSIXError(lastError)
+    }
+
+    /// Low latency for interactive frames: no Nagle, low-delay DSCP, and
+    /// keepalives so a dead path is noticed even when nobody types.
+    public static func tune(_ fd: Int32) {
+        var one: Int32 = 1
+        _ = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
+        _ = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, socklen_t(MemoryLayout<Int32>.size))
+        var idle: Int32 = 10
+        _ = setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, socklen_t(MemoryLayout<Int32>.size))
+        var tos: Int32 = 0xB8  // DSCP EF: expedited forwarding
+        _ = setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, socklen_t(MemoryLayout<Int32>.size))
+        _ = setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, &tos, socklen_t(MemoryLayout<Int32>.size))
+    }
+
+    /// Listens on one numeric address (a tailnet IP). Returns the fd.
+    public static func listen(address: String, port: UInt16, backlog: Int32 = 16) throws -> Int32 {
+        var hints = addrinfo()
+        hints.ai_socktype = SOCK_STREAM
+        hints.ai_flags = AI_NUMERICHOST | AI_PASSIVE
+        var res: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(address, String(port), &hints, &res) == 0, let a = res else { throw POSIXError(.EADDRNOTAVAIL) }
+        defer { freeaddrinfo(res) }
+        let fd = socket(a.pointee.ai_family, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw POSIXError(.EIO) }
+        var one: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
+        if a.pointee.ai_family == AF_INET6 {
+            _ = setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, socklen_t(MemoryLayout<Int32>.size))
+        }
+        guard Darwin.bind(fd, a.pointee.ai_addr, a.pointee.ai_addrlen) == 0, Darwin.listen(fd, backlog) == 0 else {
+            let e = errno
+            Darwin.close(fd)
+            throw POSIXError(POSIXErrorCode(rawValue: e) ?? .EADDRINUSE)
+        }
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        return fd
+    }
+
+    /// The peer's "ip:port" (for `tailscale whois`).
+    public static func peerAddress(_ fd: Int32) -> String? {
+        var ss = sockaddr_storage()
+        var len = socklen_t(MemoryLayout<sockaddr_storage>.size)
+        let ok = withUnsafeMutablePointer(to: &ss) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getpeername(fd, $0, &len) == 0 }
+        }
+        guard ok else { return nil }
+        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        var serv = [CChar](repeating: 0, count: Int(NI_MAXSERV))
+        let rc = withUnsafePointer(to: &ss) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getnameinfo($0, len, &host, socklen_t(host.count), &serv, socklen_t(serv.count), NI_NUMERICHOST | NI_NUMERICSERV)
+            }
+        }
+        guard rc == 0 else { return nil }
+        func str(_ c: [CChar]) -> String { String(decoding: c.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
+        let h = str(host), p = str(serv)
+        return h.contains(":") ? "[\(h)]:\(p)" : "\(h):\(p)"
     }
 }

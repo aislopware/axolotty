@@ -36,6 +36,8 @@ let usage = """
       attach [--pane P]                   use a pane from this terminal (over ssh, another
                                           emulator); ^] detaches, the program keeps running
       mcp                                 serve these operations to an agent over MCP (stdio)
+      bridge                              this host's server on stdin/stdout, for a client
+                                          that reaches it through ssh (starts the server)
 
     P is a pane id or a unique prefix (≥ 4 characters); default $AXOLOTTY_PANE_ID.
     """
@@ -182,6 +184,10 @@ case "wait":
 case "attach":
     let o = Options(argv, valued: ["pane"])
     await run { try await Attach.run(pane: o.flags["pane"] ?? o.positional.first) }
+
+case "bridge":
+    _ = Options(argv)
+    Bridge.run()
 
 case "mcp":
     _ = Options(argv)
