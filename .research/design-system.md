@@ -188,8 +188,6 @@ A waiting program's ask is worded once (`StatusRecord.ask`) for the strip, the h
 
 **Inside tmux:** tmux doesn't pass Claude Code's OSC 7501 probe, so for a pane whose foreground is a tmux client, the host asks Claude Code with `claude agents --json`. It asks only when FSEvents on `~/.claude/sessions` says one of that pane's sessions changed, never on a timer. Sessions are matched by process ancestry. The results become `agents:<pid>` records: busy is working, waiting is blocked (permission or question), and idle after work is done. They give way, and the pane is no longer read from outside, as soon as its Claude reports natively. Details and sources: `.research/claude-status-2026.md`.
 
-**Finishes stay quiet in front:** an agent finishing while the app is active makes no toast (its row turns green); in the background it posts a passive banner.
-
 **A grace second:** a state change waits one second before it toasts or posts a banner, then re-checks the state, so a permission a rule grants at once never reaches the person. The row and the Dock badge change at once.
 
 **Progress:** OSC 7501 `progress=` (Claude Code reports the share of its todos done) turns the row's spinner into an arc, as OSC 9;4 does (the arc is the only progress display).
