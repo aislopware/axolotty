@@ -1364,13 +1364,32 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     // MARK: Drag and drop (files paste as shell-quoted paths)
 
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { .copy }
+    /// Over a far pane, files say where they will go before they are let go.
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        if let far = linkContext.far, sending == nil, Self.fileURLs(sender.draggingPasteboard) != nil {
+            dropHinted = true
+            say("Drop to send to \(far.name)", "Drop to send", linger: nil)
+        }
+        return .copy
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { endDropHint() }
+    override func draggingEnded(_ sender: any NSDraggingInfo) { endDropHint() }
+
+    private var dropHinted = false
+
+    private func endDropHint() {
+        guard dropHinted else { return }
+        dropHinted = false
+        badge.hide()
+    }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         let pb = sender.draggingPasteboard
         if let urls = Self.fileURLs(pb) {
             // On a far pane a path here means nothing: the files go there.
             if let far = linkContext.far {
+                endDropHint()
                 sendFar(urls.map { .file($0) }, to: far)
                 return true
             }
