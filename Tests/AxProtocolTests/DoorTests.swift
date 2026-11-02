@@ -14,6 +14,7 @@ struct DoorTests {
         "Sources/AxProtocol/SendLanes.swift",
         "Sources/AxProtocol/Frame.swift",
         "Sources/AxClient/LinkLiveness.swift",
+        "Sources/AxClient/EchoPredictor.swift",
     ]
 
     /// What reads the wall clock, sleeps, or touches a descriptor.

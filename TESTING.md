@@ -50,9 +50,9 @@ it measured becomes a model, and the gate holds the model in virtual time.
 
 | Layer | What it holds | Where |
 |---|---|---|
-| Pure doors | Scheduling, pacing, liveness and redial rules, to the millisecond | `SendLanesModelTests`, `LinkLivenessTests`, `RemoteLinkTests.redialsClimbSloptysLadder`, `DoorTests` |
+| Pure doors | Scheduling, pacing, liveness, redial and echo-prediction rules, to the millisecond | `SendLanesModelTests`, `LinkLivenessTests`, `RemoteLinkTests.redialsClimbSloptysLadder`, `EchoPredictorTests`, `DoorTests` |
 | Simulated link | Echo latency beside a flood, rate drops, loss, all in virtual time over a TCP model | `LinkSimTests`, `AxTestSupport/LinkSim.swift` |
-| Model-based | `SendLanes` against a reference model over random op sequences, shrunk | `SendLanesModelTests` |
+| Model-based | `SendLanes` against a reference model over random op sequences, shrunk; echo prediction against a simulated shell across a delayed link | `SendLanesModelTests`, `EchoPredictorTests` |
 | Fuzzing | A peer's bytes, structure-aware, against invariants | `WireFuzzTests` |
 | Metamorphic | The terminal engine over Ghostty's fuzz corpus: chunked feed equals one feed; a snapshot restores; snapshot mid-stream then continue equals uninterrupted | `AxVTTests/Relations.swift` |
 | Differential | The mirror shows what the host's terminal shows; a mirror never answers queries the host answers | `FaultyLinkTests.mirrorsTheHost`, `Relations.Replies` |
