@@ -143,5 +143,19 @@ import Testing
         _ = rig.term.write("!")
         rig.frame.update(from: rig.term)
         #expect(rig.renderer.prepare(rig.frame))
+        // What a shell sends around each prompt besides the prompt itself
+        // changes nothing on screen: no rows to draw (the view skips the frame).
+        for quiet in ["\u{1B}]0;title\u{07}", "\u{1B}]7;file://h/tmp\u{07}", "\u{07}", "\u{1B}[6n"] {
+            _ = rig.term.write(quiet)
+            rig.frame.update(from: rig.term)
+            #expect(!rig.renderer.prepare(rig.frame), "\(quiet.debugDescription) draws nothing")
+        }
+        // A selection is drawn in the rows: selecting and clearing redraw them.
+        rig.term.selectAll()
+        rig.frame.update(from: rig.term)
+        #expect(rig.renderer.prepare(rig.frame), "selected")
+        rig.term.clearSelection()
+        rig.frame.update(from: rig.term)
+        #expect(rig.renderer.prepare(rig.frame), "cleared")
     }
 }

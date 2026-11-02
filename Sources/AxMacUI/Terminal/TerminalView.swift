@@ -358,16 +358,21 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private func render(_ now: Double) {
         guard let renderer, let frameState, let m = metalLayer, bounds.width > 0, bounds.height > 0 else { return }
         let generation = mirror.generation
-        let changed = generation != lastGeneration || needsRender
+        var changed = generation != lastGeneration || needsRender
         var cursorInfo = frameState.cursor
         if changed {
+            let asked = needsRender
             if generation != lastGeneration { checkPrediction() }
             updateFrame(frameState)
-            renderer.prepare(frameState, selectionBackground: colors.selection)
+            let dirty = renderer.prepare(frameState, selectionBackground: colors.selection)
             cursorInfo = frameState.cursor
             if generation != lastGeneration { cursor.noteActivity(now) }
             lastGeneration = generation
             needsRender = false
+            // Output that changed nothing on screen (a title, a cwd report, a
+            // bell, a reply to a query): no rows to draw, no frame, unless the
+            // cursor moved. A frame asked for by name is drawn regardless.
+            changed = dirty || asked || needsRender
         }
         cursor.reduceMotion = Axo.Motion.reduced
         let out = cursor.frame(now, cursor: cursorInfo, focused: isCursorFocused)
