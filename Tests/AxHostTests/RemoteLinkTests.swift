@@ -3,6 +3,7 @@ import AxHost
 import AxModel
 import AxProtocol
 import Foundation
+import Synchronization
 import Testing
 
 /// Links to a host through a command (the ssh path) and over TCP (the tailnet path).
@@ -51,6 +52,31 @@ struct RemoteLinkTests {
         #expect(HostConnection.redialDelay(after: .seconds(2), downFor: .seconds(61), remote: true) == .seconds(4))
         #expect(walk(.seconds(90), 5) == [.seconds(4), .seconds(8), .seconds(16), .seconds(30), .seconds(30)])
         #expect(walk(.seconds(90), 8, remote: false).last == .seconds(5))
+    }
+
+    /// A command's standard error is read until its end and never after: a
+    /// read once the pipe is closed lands on whatever file took its number.
+    /// Here another thread keeps opening /dev/zero, so a late read finds
+    /// NULs (found by `--repeat-until fail`: a parallel test's zeroed ring file).
+    @Test func stderrIsNeverReadPastItsEnd() async throws {
+        let stop = Atomic<Bool>(false)
+        let squatter = Thread {
+            while !stop.load(ordering: .relaxed) {
+                // Several at once, so whichever number the pipe had is taken.
+                let fds = (0 ..< 16).map { _ in open("/dev/zero", O_RDONLY) }
+                for fd in fds where fd >= 0 { close(fd) }
+            }
+        }
+        squatter.start()
+        defer { stop.store(true, ordering: .relaxed) }
+        for i in 0 ..< 400 {
+            let child = try CommandChild.spawn(["/bin/sh", "-c", "echo said\(i) >&2"])
+            _ = await child.finish()
+            let tail = child.stderrTail
+            #expect(tail == "said\(i)", "run \(i): \(tail.prefix(40).debugDescription)")
+            if tail != "said\(i)" { break }
+            close(child.fd)
+        }
     }
 
     @Test func aCommandThatNeedsALoginStopsRetrying() async throws {

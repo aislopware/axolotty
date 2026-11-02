@@ -19,6 +19,9 @@ public final class CommandChild: @unchecked Sendable {
 
     private struct State {
         var stderr = Data()
+        /// The pipe reached its end. Its number is closed and may be any
+        /// other file's now, so it is never read again.
+        var stderrEnded = false
         var status: Int32?
         var waiters: [CheckedContinuation<Int32, Never>] = []
     }
@@ -96,12 +99,17 @@ public final class CommandChild: @unchecked Sendable {
         }
     }
 
+    /// Runs on `queue` only, from the pipe's source and from `reap`.
     private func drainStderr() {
+        guard !state.withLock({ $0.stderrEnded }) else { return }
         var buf = [UInt8](repeating: 0, count: 4096)
         while true {
             let n = buf.withUnsafeMutableBytes { Darwin.read(errFD, $0.baseAddress, $0.count) }
             guard n > 0 else {
-                if n == 0 { errSource.cancel() }
+                if n == 0 {
+                    state.withLock { $0.stderrEnded = true }
+                    errSource.cancel()
+                }
                 return
             }
             state.withLock { s in
