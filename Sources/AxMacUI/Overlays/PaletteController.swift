@@ -233,7 +233,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     }
 
     /// Go to Session: every session, grouped by what it needs from you,
-    /// newest change first. The
+    /// newest change first (idle ones in sidebar order). The
     /// one question with many agents running is "who needs me", and sidebar
     /// order (by project) does not answer it. Detail is the project and how
     /// long the session has been in its state; nothing else.
@@ -265,7 +265,8 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         let narrow = field.stringValue.first.flatMap { c in order.first { $0.2 == c && c != " " }?.0 }
         return order.compactMap { a, title, _ in
             guard narrow == nil || narrow == a, let hits = groups[a] else { return nil }
-            return (title, hits.sorted { $0.since > $1.since }.map(\.entry))
+            // Idle sessions keep sidebar order (their ⌘n); the rest, newest change first.
+            return (title, (a == .idle ? hits : hits.sorted { $0.since > $1.since }).map(\.entry))
         }
     }
 
@@ -277,7 +278,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             "prev-prompt": "chevron.up.2", "next-prompt": "chevron.down.2",
             "new-window": "macwindow.badge.plus", "open-folder": "folder",
             "reopen": "arrow.uturn.backward", "close-pane": "xmark.rectangle", "close-session": "xmark.square",
-            "close-window": "xmark", "clear": "eraser", "toggle-sidebar": "sidebar.left",
+            "close-window": "xmark", "clear": "eraser", "find": "magnifyingglass", "find-next": "chevron.down", "find-previous": "chevron.up", "toggle-sidebar": "sidebar.left",
             "font-bigger": "textformat.size.larger",
             "font-smaller": "textformat.size.smaller", "font-reset": "textformat.size", "top": "arrow.up.to.line",
             "bottom": "arrow.down.to.line", "fullscreen": "arrow.up.left.and.arrow.down.right",
