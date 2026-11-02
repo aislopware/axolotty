@@ -156,7 +156,6 @@ enum Axo {
         static let sidebarWidth: CGFloat = 248
         static let sidebarMin: CGFloat = 200
         static let sidebarMax: CGFloat = 360
-        static let statusBarHeight: CGFloat = 24
 
         // Controls
         static let controlSmall: CGFloat = 22

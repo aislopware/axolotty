@@ -80,21 +80,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             Task { await self.createSession(host, in: wid, cwd: nil, name: nil, launch: self.launchLine(agent, host)) }
         }
         content.emptyView.onOpenFolder = { [weak self] in self?.openFolder(nil) }
-        content.status.onJump = { [weak self] activity in self?.jump(to: activity, forward: true) }
-        sidebar.footer.onJump = { [weak self] activity in self?.jump(to: activity, forward: true) }
-        sidebar.footer.onCycleAppearance = { [weak self] in
-            guard let self else { return }
-            let order = Preferences.ThemeMode.allCases
-            let i = order.firstIndex(of: self.model.prefs.themeMode) ?? 0
-            self.model.prefs.themeMode = order[(i + 1) % order.count]
-            self.model.applyTheme()
-        }
-        sidebar.footer.update(theme: model.prefs.themeMode)
+        sidebar.footer.onJump = { [weak self] activity in self?.jump(to: activity) }
         tokens.append(model.anyChange.observe { [weak self] host, change in self?.hostChanged(host, change) })
-        tokens.append(model.themeChanged.observe { [weak self] in
-            self?.applyTheme()
-            if let self { self.sidebar.footer.update(theme: self.model.prefs.themeMode) }
-        })
+        tokens.append(model.themeChanged.observe { [weak self] in self?.applyTheme() })
         tokens.append(model.fontChanged.observe { [weak self] in self?.content.refreshAppearance() })
         shell.onLayout = { [weak self] in
             guard let self else { return }
@@ -224,7 +212,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             content.band.update(nil, key: key)
             content.band.isHidden = content.current == nil  // the empty sheet says it
             content.band.chip.isHidden = true
-            content.status.update(branch: nil, cwd: "", counts: counts, key: key)
             refreshChanges("")
             window?.title = "Axolotty"
             return
@@ -241,8 +228,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         func band() -> BandView.Context {
             BandView.Context(project: ws?.name ?? host.name, projectKey: ws.map { $0.root.isEmpty ? $0.name : $0.root } ?? host.name,
                              session: identity.rowTitle(title), identity: identity, activity: activity, since: since,
-                             branch: branch, lastRun: identity == .shell ? nil : st.identityPane(of: sid)?.lastRun,
-                             subagents: st.panes(of: sid).reduce(0) { $0 + $1.status.subagentsWorking })
+                             branch: branch, subagents: st.panes(of: sid).reduce(0) { $0 + $1.status.subagentsWorking })
         }
         window?.title = title
         updateChip(st, sid)
@@ -254,7 +240,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                     let b = await GitBranch.lookup(cwd)
                     guard let self, self.branchFor == cwd else { return }
                     self.branch = b
-                    self.content.status.update(branch: b, cwd: cwd, counts: counts, key: key)
                     self.content.band.update(band(), key: key)
                 }
             }
@@ -263,7 +248,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
         content.band.update(band(), key: key)
         content.band.ports.set(host.isLocal ? Array(Set(st.panes(of: sid).flatMap { $0.ports ?? [] })).sorted() : [])
-        content.status.update(branch: branch, cwd: cwd, counts: counts, key: key)
         refreshChanges(host.isLocal ? cwd : "")
     }
 
@@ -440,11 +424,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         show(h, s)
     }
 
-    @objc func selectNextAttention(_ sender: Any?) { jump(to: nil, forward: true) }
+    @objc func selectNextAttention(_ sender: Any?) { jump(to: nil) }
 
     /// Cycles through panes that need the person (waiting first), or through
-    /// panes of one activity when the status bar asks.
-    private func jump(to activity: Activity?, forward: Bool) {
+    /// panes of one activity when the sidebar's census asks.
+    private func jump(to activity: Activity?) {
         var list = model.attentionPanes()
         if let activity {
             list = model.hosts.flatMap { h in
@@ -456,17 +440,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard !list.isEmpty else { return }
         let current = content.current?.focused
         let i = list.firstIndex { $0.1.id == current }
-        let next = i.map { (forward ? $0 + 1 : $0 - 1 + list.count) % list.count } ?? 0
+        let next = i.map { ($0 + 1) % list.count } ?? 0
         let (h, p) = list[next]
         reveal(h, p.id)
     }
 
     // MARK: Actions: view
-
-    @objc func toggleStatusBar(_ sender: Any?) {
-        model.prefs.showStatusBar.toggle()
-        for w in NSApp.windows { (w.windowController as? MainWindowController)?.content.view.needsLayout = true }
-    }
 
     @objc func increaseFontSize(_ sender: Any?) { model.setFontSize(model.prefs.fontSize + 1) }
     @objc func decreaseFontSize(_ sender: Any?) { model.setFontSize(model.prefs.fontSize - 1) }
@@ -613,9 +592,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return !(currentCwd ?? "").isEmpty
         case #selector(toggleSessionSidebar(_:)):
             item.title = shell.collapsed ? "Show Sidebar" : "Hide Sidebar"
-            return true
-        case #selector(toggleStatusBar(_:)):
-            item.title = model.prefs.showStatusBar ? "Hide Status Bar" : "Show Status Bar"
             return true
         case #selector(selectNextAttention(_:)):
             return !model.attentionPanes().isEmpty

@@ -7,7 +7,6 @@ import QuartzCore
 final class SessionViewController: NSViewController {
     private let model: AppModel
     let band = BandView()
-    let status = StatusBarView()
     private let stage = FlippedView()
     private let empty = EmptyStateView()
 
@@ -40,29 +39,23 @@ final class SessionViewController: NSViewController {
         let root = GroundView()
         root.addSubview(stage)
         root.addSubview(band)
-        root.addSubview(status)
         root.addSubview(empty)
         stage.wantsLayer = true
         empty.isHidden = true
         view = root
     }
 
-    var showsStatusBar: Bool { model.prefs.showStatusBar }
-
     override func viewDidLayout() {
         super.viewDidLayout()
         let b = view.bounds
         let top = bandHeight
-        let statusH = showsStatusBar ? Axo.Metric.statusBarHeight : 0
         let inset = Axo.Metric.sheetInset
         band.frame = NSRect(x: 0, y: 0, width: b.width, height: top)
         // The header's text starts on the terminal's first column.
         band.leadingInset = max(leadingClearance, (stageLeading + Axo.Metric.panePaddingX).rounded())
         band.trailingInset = inset + Axo.Space.md
         stage.frame = NSRect(x: stageLeading.rounded(), y: top, width: max(0, b.width - stageLeading.rounded() - inset),
-                             height: max(0, b.height - top - statusH - inset))
-        status.frame = NSRect(x: 0, y: b.height - statusH, width: b.width, height: statusH)
-        status.isHidden = !showsStatusBar
+                             height: max(0, b.height - top - inset))
         current?.frame = stage.bounds
         empty.frame = stage.frame
     }

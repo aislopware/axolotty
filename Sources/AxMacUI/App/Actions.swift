@@ -15,7 +15,6 @@ import AppKit
     /// Not `toggleSidebar:`: NSWindow implements that itself (for split view
     /// controllers) and would swallow the action before it reaches us.
     @objc optional func toggleSessionSidebar(_ sender: Any?)
-    @objc optional func toggleStatusBar(_ sender: Any?)
 
     // Workspace and session
     @objc optional func newSession(_ sender: Any?)
@@ -137,8 +136,6 @@ struct Command: Identifiable {
 
             Command(id: "toggle-sidebar", title: "Toggle Sidebar", menu: .view, key: "s", modifiers: cc,
                     action: #selector((any AxActions).toggleSessionSidebar(_:)), separatorBefore: true),
-            Command(id: "toggle-status", title: "Toggle Status Bar", menu: .view, key: "/", modifiers: co,
-                    action: #selector((any AxActions).toggleStatusBar(_:))),
             Command(id: "font-bigger", title: "Bigger", menu: .view, key: "+", modifiers: cmd,
                     action: #selector((any AxActions).increaseFontSize(_:)), separatorBefore: true),
             Command(id: "font-smaller", title: "Smaller", menu: .view, key: "-", modifiers: cmd,

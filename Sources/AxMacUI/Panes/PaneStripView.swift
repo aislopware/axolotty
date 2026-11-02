@@ -10,8 +10,7 @@ import AxModel
 /// - Leading: the program icon (carrying its state badge) on the text column, the name
 ///   (12 medium), then the cwd relative to the project (12, tertiary; hidden
 ///   below 280 pt).
-/// - Trailing: elapsed m:ss while working; after a run, its receipt ("✓ 4m
-///   12s", the check green while unseen); zoom and close on hover only.
+/// - Trailing: elapsed m:ss while working; zoom and close on hover only.
 /// - Focus is ink, not a border: the focused strip's name is full ink, the
 ///   others tertiary.
 /// - Needs you: the strip floods with the state's wash and the name becomes
@@ -26,7 +25,6 @@ final class PaneStripView: NSView {
     private let name = Label("", font: Axo.Font.smallStrong, color: Axo.Color.text)
     private let path = Label("", font: Axo.Font.small, color: Axo.Color.textTertiary)
     private let elapsed = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
-    private let check = Symbol("checkmark", size: 9, weight: .bold, color: Axo.Color.textTertiary)
     private let zoom = IconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "Zoom Pane", size: .small)
     private let close = IconButton(symbol: "xmark", label: "Close Pane", size: .small)
     private let wash = CALayer()
@@ -42,8 +40,6 @@ final class PaneStripView: NSView {
         var since: Double
         /// The agent's question while it waits (or "Failed").
         var question: String?
-        /// Seconds the last run took.
-        var lastRun: Double?
         var focused: Bool
     }
 
@@ -61,7 +57,7 @@ final class PaneStripView: NSView {
         zoom.action = #selector(zoomClicked)
         close.target = self
         close.action = #selector(closeClicked)
-        for v in [icon, name, path, check, elapsed, zoom, close] as [NSView] { addSubview(v) }
+        for v in [icon, name, path, elapsed, zoom, close] as [NSView] { addSubview(v) }
     }
 
     @available(*, unavailable)
@@ -119,13 +115,6 @@ final class PaneStripView: NSView {
     /// Called by the update path and by the owner's 1 s tick while working.
     func tickElapsed() {
         guard let m = model else { return }
-        let receipt = (m.activity == .done || m.activity == .idle) ? m.lastRun : nil
-        check.isHidden = receipt == nil || hovering
-        check.contentTintColor = m.activity == .done ? Axo.Color.status(.done) : Axo.Color.textTertiary
-        if let receipt {
-            elapsed.stringValue = BandView.duration(receipt)
-            return
-        }
         guard m.activity == .working, m.since > 0 else {
             elapsed.stringValue = ""
             return
@@ -170,10 +159,6 @@ final class PaneStripView: NSView {
             let e = elapsed.intrinsicContentSize
             elapsed.frame = NSRect(x: right - ceil(e.width), y: (mid - e.height / 2).rounded(), width: ceil(e.width), height: e.height)
             right = elapsed.frame.minX - Axo.Space.md
-            if !check.isHidden {
-                check.frame = NSRect(x: elapsed.frame.minX - 2 - 12, y: (mid - 8).rounded(), width: 12, height: 16)
-                right = check.frame.minX - Axo.Space.md
-            }
         }
         // The mark's ink (14 of the 16 pt slot) starts on the terminal's text column.
         icon.frame = NSRect(x: Axo.Metric.panePaddingX - 1, y: (mid - 8).rounded(), width: 16, height: 16)

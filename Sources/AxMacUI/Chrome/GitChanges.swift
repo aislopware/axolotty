@@ -164,3 +164,47 @@ enum GitChangesReader {
         return String(decoding: box.data, as: UTF8.self)
     }
 }
+
+/// Reads the current git branch for a directory (walks up to `.git`, follows
+/// `gitdir:` files for worktrees). Cached; runs off the main thread.
+enum GitBranch {
+    private static var cache: [String: (branch: String?, at: Date)] = [:]
+
+    static func cached(_ dir: String) -> String?? {
+        guard let hit = cache[dir], Date().timeIntervalSince(hit.at) < 5 else { return nil }
+        return .some(hit.branch)
+    }
+
+    static func lookup(_ dir: String) async -> String? {
+        if let hit = cached(dir) { return hit }
+        let branch = await Task.detached(priority: .utility) { read(dir) }.value
+        cache[dir] = (branch, Date())
+        return branch
+    }
+
+    nonisolated static func read(_ dir: String) -> String? {
+        var url = URL(filePath: dir, directoryHint: .isDirectory)
+        let fm = FileManager.default
+        for _ in 0 ..< 32 {
+            let git = url.appending(path: ".git")
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: git.path(percentEncoded: false), isDirectory: &isDir) {
+                var gitDir = git
+                if !isDir.boolValue, let s = try? String(contentsOf: git, encoding: .utf8),
+                   let line = s.split(separator: "\n").first, line.hasPrefix("gitdir:")
+                {
+                    let p = line.dropFirst(7).trimmingCharacters(in: .whitespaces)
+                    gitDir = p.hasPrefix("/") ? URL(filePath: p) : url.appending(path: p)
+                }
+                guard let head = try? String(contentsOf: gitDir.appending(path: "HEAD"), encoding: .utf8) else { return nil }
+                let h = head.trimmingCharacters(in: .whitespacesAndNewlines)
+                if h.hasPrefix("ref: refs/heads/") { return String(h.dropFirst(16)) }
+                return String(h.prefix(7))
+            }
+            let parent = url.deletingLastPathComponent()
+            if parent.path(percentEncoded: false) == url.path(percentEncoded: false) { break }
+            url = parent
+        }
+        return nil
+    }
+}

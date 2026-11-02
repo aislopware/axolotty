@@ -397,9 +397,7 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         }
         return PaneStripView.Model(identity: identity, name: identity.rowTitle(p.displayTitle),
                                    path: Self.relative(p.pwd, to: root), activity: p.activity,
-                                   since: p.activitySince, question: question,
-                                   // A receipt belongs to an agent: none once the pane is a plain shell again.
-                                   lastRun: p.agent != nil || !app.isEmpty ? p.lastRun : nil, focused: focused)
+                                   since: p.activitySince, question: question, focused: focused)
     }
 
     /// The cwd as the strip says it: relative to the project ("Sources/AxModel"),

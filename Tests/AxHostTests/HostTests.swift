@@ -228,25 +228,6 @@ struct HostTests {
         await fx.tearDown()
     }
 
-    @Test func aFinishedRunLeavesItsLengthAsAReceipt() async throws {
-        let fx = try await HostFixture()
-        let c = try await fx.client()
-        let (_, _, p) = try await makeSession(c)
-        #expect(c.replica?.panes[p]?.lastRun == nil)
-        c.send(.report(p, id: "hook", state: .working, app: "claude", message: "thinking"))
-        #expect(await until { c.replica?.panes[p]?.activity == .working })
-        try await Task.sleep(for: .milliseconds(300))
-        c.send(.report(p, id: "hook", state: .done, app: "claude", message: "finished"))
-        #expect(await until { c.replica?.panes[p]?.activity == .done })
-        let run = try #require(c.replica?.panes[p]?.lastRun)
-        #expect(run >= 0.25 && run < 5)
-        // Seeing it keeps the receipt; the next run replaces it only when it ends.
-        c.send(.seen(p))
-        #expect(await until { c.replica?.panes[p]?.activity == .idle })
-        #expect(c.replica?.panes[p]?.lastRun == run)
-        await fx.tearDown()
-    }
-
     @Test func theMacStaysAwakeOnlyWhileSomethingWorks() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()

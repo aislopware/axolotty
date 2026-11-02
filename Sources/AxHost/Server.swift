@@ -853,7 +853,6 @@ public actor Server {
         let after = info.activity
         guard after != before else { return }
         let now = Date().timeIntervalSince1970
-        if before == .working, info.activitySince > 0 { info.lastRun = now - info.activitySince }
         info.activitySince = now
         guard live, after == .blocked || after == .done || after == .error else { return }
         let message = after == .blocked ? info.status.headline?.ask : info.status.headline?.message

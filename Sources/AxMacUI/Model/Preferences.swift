@@ -15,20 +15,18 @@ final class Preferences {
     var fontFamily: String { didSet { defaults.set(fontFamily, forKey: "fontFamily") } }
     var themeMode: ThemeMode { didSet { defaults.set(themeMode.rawValue, forKey: "themeMode") } }
     var optionAsAlt: OptionAsAlt { didSet { defaults.set(optionAsAlt.rawValue, forKey: "optionAsAlt") } }
-    var showStatusBar: Bool { didSet { defaults.set(showStatusBar, forKey: "showStatusBar") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
             "fontSize": Double(Axo.Font.terminalSize), "themeMode": ThemeMode.system.rawValue,
-            "optionAsAlt": OptionAsAlt.off.rawValue, "showStatusBar": false, "fontFamily": "",
+            "optionAsAlt": OptionAsAlt.off.rawValue, "fontFamily": "",
         ])
         fontFamily = defaults.string(forKey: "fontFamily") ?? ""
         let size = CGFloat(defaults.double(forKey: "fontSize"))
         fontSize = min(max(size, Axo.Font.terminalRange.lowerBound), Axo.Font.terminalRange.upperBound)
         themeMode = ThemeMode(rawValue: defaults.string(forKey: "themeMode") ?? "") ?? .system
         optionAsAlt = OptionAsAlt(rawValue: defaults.string(forKey: "optionAsAlt") ?? "") ?? .off
-        showStatusBar = defaults.bool(forKey: "showStatusBar")
     }
 
     /// The theme in use for an effective system appearance.

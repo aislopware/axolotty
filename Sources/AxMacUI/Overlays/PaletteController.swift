@@ -292,7 +292,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             "new-window": "macwindow.badge.plus", "open-folder": "folder",
             "reopen": "arrow.uturn.backward", "close-pane": "xmark.rectangle", "close-session": "xmark.square",
             "close-window": "xmark", "clear": "eraser", "toggle-sidebar": "sidebar.left",
-            "toggle-status": "rectangle.bottomthird.inset.filled", "font-bigger": "textformat.size.larger",
+            "font-bigger": "textformat.size.larger",
             "font-smaller": "textformat.size.smaller", "font-reset": "textformat.size", "top": "arrow.up.to.line",
             "bottom": "arrow.down.to.line", "fullscreen": "arrow.up.left.and.arrow.down.right",
             "prev-session": "chevron.up", "next-session": "chevron.down", "next-attention": "bell.badge",

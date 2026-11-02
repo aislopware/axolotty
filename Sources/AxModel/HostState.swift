@@ -18,9 +18,6 @@ public struct PaneInfo: Hashable, Codable, Sendable, Identifiable {
     /// TCP ports something in this pane's process tree listens on (a dev
     /// server an agent started), sorted. nil when none.
     public var ports: [UInt16]?
-    /// Seconds the last working stretch lasted, kept after it ends, for the
-    /// "Worked 4m 12s" receipt. Nil until an agent has worked in this pane.
-    public var lastRun: Double?
     /// The shell's last finished command (OSC 133 C…D), for receipts,
     /// notifications and `axolotty wait --for command`.
     public var lastCommand: CommandRecord?

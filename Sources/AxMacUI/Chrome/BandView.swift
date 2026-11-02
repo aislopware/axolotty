@@ -12,9 +12,8 @@ import AxModel
 ///   ink), a compact chevron, the program icon (carrying its state badge) and
 ///   the session title (13, secondary ink), then the git branch (12, tertiary).
 /// - Trailing, the state: working shows a magenta spinner and the elapsed
-///   time; waiting or failed show the chip with the agent's own words. When
-///   a run ends it leaves a receipt, "✓ Worked 4m 12s": the check is green
-///   while the finish is unseen, tertiary after. One cue per state.
+///   time; waiting or failed show the chip with the agent's own words. One
+///   cue per state.
 ///
 /// No rule below and no fill of its own. Drags the window.
 final class BandView: NSView {
@@ -29,7 +28,6 @@ final class BandView: NSView {
     let ports = PortChip()
     private let spinner = StatusGlyphView(frame: .zero)
     private let elapsed = Label("", font: Axo.Font.meta, color: Axo.Color.textSecondary)
-    private let check = Symbol("checkmark", size: 10, weight: .bold, color: Axo.Color.textTertiary)
     let chip = Chip()
     var leadingInset: CGFloat = 12 { didSet { needsLayout = true } }
     var trailingInset: CGFloat = 56 { didSet { needsLayout = true } }
@@ -42,7 +40,7 @@ final class BandView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         diff.isHidden = true
-        for v in [tile, project, chevron, icon, title, branchGlyph, branch, diff, ports, spinner, check, elapsed, chip] as [NSView] {
+        for v in [tile, project, chevron, icon, title, branchGlyph, branch, diff, ports, spinner, elapsed, chip] as [NSView] {
             addSubview(v)
         }
         chip.isHidden = true
@@ -69,18 +67,8 @@ final class BandView: NSView {
         /// When the session entered `activity` (seconds since 1970; 0 unknown).
         var since: Double
         var branch: String?
-        /// Seconds the agent's last run took (the receipt), if it has run.
-        var lastRun: Double?
         /// Subagents working under the agent ("Working 4:12 · 2 subagents").
         var subagents = 0
-    }
-
-    /// "12s", "4m 12s", "1h 24m".
-    static func duration(_ s: Double) -> String {
-        let t = max(0, Int(s.rounded()))
-        if t < 60 { return "\(t)s" }
-        if t < 3600 { return t % 60 == 0 ? "\(t / 60)m" : "\(t / 60)m \(t % 60)s" }
-        return "\(t / 3600)h \(t / 60 % 60)m"
     }
 
     /// Shows a session's context, or the app name alone when nothing is open.
@@ -102,17 +90,8 @@ final class BandView: NSView {
         subagents = c.subagents
         spinner.activity = c.activity == .working ? .working : .idle
         let working = c.activity == .working
-        let receipt = !working && (c.activity == .done || c.activity == .idle) && c.lastRun != nil
         spinner.isHidden = !working
-        check.isHidden = !receipt
-        elapsed.isHidden = !working && !receipt
-        if receipt, let run = c.lastRun {
-            elapsed.stringValue = "Worked " + Self.duration(run)
-            elapsed.textColor = Axo.Color.textTertiary
-            check.contentTintColor = c.activity == .done ? Axo.Color.status(.done) : Axo.Color.textTertiary
-        } else {
-            elapsed.textColor = Axo.Color.textSecondary
-        }
+        elapsed.isHidden = !working
         refreshElapsed()
         if working, tick == nil {
             let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -133,7 +112,7 @@ final class BandView: NSView {
         if !on {
             project.stringValue = "Axolotty"
             project.textColor = Axo.Color.textSecondary
-            for v in [branchGlyph, branch, diff, spinner, check, elapsed] as [NSView] { v.isHidden = true }
+            for v in [branchGlyph, branch, diff, spinner, elapsed] as [NSView] { v.isHidden = true }
             ports.set([])
             tick?.invalidate()
             tick = nil
@@ -182,9 +161,8 @@ final class BandView: NSView {
         } else if !elapsed.isHidden {
             let e = elapsed.intrinsicContentSize
             elapsed.frame = NSRect(x: right - ceil(e.width), y: (mid - e.height / 2).rounded(), width: ceil(e.width), height: e.height)
-            let mark: NSView = spinner.isHidden ? check : spinner
-            mark.frame = NSRect(x: elapsed.frame.minX - Axo.Space.xs - 16, y: (mid - 8).rounded(), width: 16, height: 16)
-            right = mark.frame.minX - Axo.Space.md
+            spinner.frame = NSRect(x: elapsed.frame.minX - Axo.Space.xs - 16, y: (mid - 8).rounded(), width: 16, height: 16)
+            right = spinner.frame.minX - Axo.Space.md
         }
 
         var x = leadingInset

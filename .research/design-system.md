@@ -90,9 +90,7 @@ Shortcuts and counts use monospaced digits (`Axo.Font.shortcut`, `.meta`). The t
 - **Terminal pane padding:** 14 left and right, 10 top, 8 bottom. Leftover rows fall to the bottom.
 - **Unfocused panes:** dimmed by a ground overlay at 0.28 dark, 0.22 light. The cursor turns hollow.
 - **Minimum contrast:** text keeps 3:1 against its own ground (`ax_min_contrast` in AxFrame). Truecolor a theme cannot remap is moved toward black or white by the least amount needed. The theme's own mid-tones survive.
-- **Status bar:** off by default.
-- **Sidebar footer** (`Sidebar/SidebarFooter.swift`): 36, on the frame, no rule. Settings and the appearance toggle (Match System → Night → Day, glyph says which) leading; the census trailing as compact buttons (glyph + count, noun in the tooltip) that jump to the next session in that state. Zero counts hide.
-- **Receipt:** when an agent's run ends the host keeps its length (`PaneInfo.lastRun`). The band shows "✓ Worked 4m 12s" (tertiary; the check green while the finish is unseen) and a split's strip shows "✓ 4m 12s", until the next run starts.
+- **Sidebar footer** (`Sidebar/SidebarFooter.swift`): 36, on the frame, no rule. Settings leading; the census trailing as compact buttons (glyph + count, noun in the tooltip) that jump to the next session in that state. Zero counts hide.
 
 ## 4. Sidebar (`Sidebar/SidebarRows.swift`)
 
