@@ -1,16 +1,19 @@
 import AppKit
 import AxModel
 
-/// The band: the context header above the sheets, painted in frame ink. It
-/// answers *what is this, and how is it doing*, where the eyes already are
-/// (design-system §1.3: the sidebar answers *which*). Shown with the sidebar
-/// open or closed; with it open the text starts on the terminal's text column.
+/// The band: the header above the sheets, painted in frame ink. It says what
+/// nothing else on screen says (design-system §1.3: the sidebar answers
+/// *which*), so it changes with the sidebar:
 ///
-///     [tile] project  ›  [icon] session title   ⑂ branch        ◌ Working 4:12
+///     sidebar open:                  ⑂ branch +12 −3              ◌ Working 4:12
+///     sidebar hidden: [tile] project › [icon] title   ⑂ branch     ◌ Working 4:12
 ///
-/// - Leading, the path: the project's 16 pt tile and name (13 semibold, full
-///   ink), a compact chevron, the program icon (carrying its state badge) and
-///   the session title (13, secondary ink), then the git branch (12, tertiary).
+/// - With the sidebar open, the selected row already names the project and
+///   the session, so the band starts on the terminal's text column with the
+///   facts the row lacks: the git branch (12, tertiary) and the diff chip.
+/// - With it hidden, the identity comes back in front: the project's 16 pt
+///   tile and name (13 semibold, full ink), a compact chevron, the program
+///   icon (carrying its state badge) and the session title (13, secondary).
 /// - Trailing, the state: working shows a cyan spinner and the elapsed
 ///   time; waiting or failed show the chip with the agent's own words. One
 ///   cue per state.
@@ -30,6 +33,15 @@ final class BandView: NSView {
     let chip = Chip()
     var leadingInset: CGFloat = 12 { didSet { needsLayout = true } }
     var trailingInset: CGFloat = 56 { didSet { needsLayout = true } }
+    /// False while the sidebar shows the selected session (its row says it).
+    var showsIdentity = true {
+        didSet {
+            guard showsIdentity != oldValue else { return }
+            applyIdentity(animated: window != nil)
+            needsLayout = true
+        }
+    }
+    private var hasContext = false
 
     private var activity: Activity = .idle
     private var since: Double = 0
@@ -105,9 +117,42 @@ final class BandView: NSView {
         needsLayout = true
     }
 
+    private var identityViews: [NSView] { [tile, project, chevron, icon, title] }
+
+    /// The path fades rather than pops when the sidebar comes and goes.
+    private func applyIdentity(animated: Bool) {
+        let on = hasContext && showsIdentity
+        let views = identityViews
+        if on { for v in views { v.isHidden = false } }
+        guard animated, !Axo.Motion.reduced else {
+            for v in views {
+                v.alphaValue = 1
+                v.isHidden = !on && hasContext
+            }
+            return
+        }
+        if on { for v in views { v.alphaValue = 0 } }
+        NSAnimationContext.runAnimationGroup { ctx in
+            let beat = on ? Axo.Motion.swift : Axo.Motion.tickOut
+            ctx.duration = beat.duration
+            ctx.timingFunction = beat.curve
+            for v in views { v.animator().alphaValue = on ? 1 : 0 }
+        } completionHandler: {
+            MainActor.assumeIsolated {
+                guard !(self.hasContext && self.showsIdentity) else { return }
+                for v in views where self.hasContext {
+                    v.isHidden = true
+                    v.alphaValue = 1
+                }
+            }
+        }
+    }
+
     private func setPath(_ c: Context?) {
         let on = c != nil
-        for v in [tile, chevron, icon, title] as [NSView] { v.isHidden = !on }
+        hasContext = on
+        for v in [tile, chevron, icon, title] as [NSView] { v.isHidden = !on || !showsIdentity }
+        project.isHidden = on && !showsIdentity
         if !on {
             project.stringValue = "Axolotty"
             project.textColor = Axo.Color.textSecondary
@@ -145,10 +190,6 @@ final class BandView: NSView {
     override func layout() {
         super.layout()
         let mid = bounds.height / 2
-        func centre(_ v: NSView, x: CGFloat, size: NSSize) -> CGFloat {
-            v.frame = NSRect(x: x, y: (mid - size.height / 2).rounded(), width: size.width, height: size.height)
-            return v.frame.maxX
-        }
 
         // Trailing state cluster first: the path truncates against it.
         var right = bounds.width - trailingInset
@@ -164,6 +205,10 @@ final class BandView: NSView {
         }
 
         var x = leadingInset
+        if hasContext, !showsIdentity {
+            layoutFacts(from: x - Axo.Space.lg, right: right)
+            return
+        }
         if !tile.isHidden {
             x = centre(tile, x: x, size: NSSize(width: 16, height: 16)) + Axo.Space.sm
         }
@@ -177,10 +222,22 @@ final class BandView: NSView {
 
         // Title and branch share what is left; the branch gives way first.
         let ts = title.intrinsicContentSize
-        let bs = branch.isHidden ? .zero : branch.intrinsicContentSize
         let room = max(0, right - x)
         let tw = min(ceil(ts.width), room)
         x = centre(title, x: x, size: NSSize(width: tw, height: ts.height))
+        layoutFacts(from: x, right: right)
+    }
+
+    /// Places `v` vertically centred at `x`; returns its trailing edge.
+    private func centre(_ v: NSView, x: CGFloat, size: NSSize) -> CGFloat {
+        v.frame = NSRect(x: x, y: (bounds.height / 2 - size.height / 2).rounded(), width: size.width, height: size.height)
+        return v.frame.maxX
+    }
+
+    /// The branch and the diff after `x`; the branch gives way first.
+    private func layoutFacts(from x: CGFloat, right: CGFloat) {
+        var x = x
+        let bs = branch.isHidden ? .zero : branch.intrinsicContentSize
         let left = right - x - Axo.Space.lg
         let showBranch = !branch.isHidden && left >= 14 + Axo.Space.xs + 40
         branchGlyph.alphaValue = showBranch ? 1 : 0

@@ -54,6 +54,7 @@ final class SessionViewController: NSViewController {
         // The header's text starts on the terminal's first column.
         band.leadingInset = max(leadingClearance, (stageLeading + Axo.Metric.panePaddingX).rounded())
         band.trailingInset = inset + Axo.Space.md
+        band.showsIdentity = stageLeading > 0
         stage.frame = NSRect(x: stageLeading.rounded(), y: top, width: max(0, b.width - stageLeading.rounded() - inset),
                              height: max(0, b.height - top - inset))
         current?.frame = stage.bounds

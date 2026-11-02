@@ -14,7 +14,7 @@ This file describes what ships in `Sources/AxMacUI`, measured from the build, no
 2. **Gutters are the dividers.** No line at rest anywhere in the window: not under the band, not at the sidebar seam, not between panes. Hovering a gutter shows a 2 × 28 `borderStrong` grip; dragging tints it accent and runs it the full length. The palette's rule under its field is the only line left.
 3. **Say a thing once per question.**
    - The sidebar answers *which*: projects, sessions, and their state badges.
-   - The band answers *what, and how is it doing*, for the shown session, with the sidebar open or closed: project › program and title, branch, then working time or the chip.
+   - The band says only what nothing else on screen says. Beside the open sidebar (whose selected row names the project and session) it carries the branch, the diff and the state: working time or the chip. With the sidebar hidden, project › program and title come back in front, fading in over 200 ms.
    - In splits, each pane's strip answers *who is this, and do they need me*.
    - The folder lives in the prompt; the strip shows it only relative to the project.
 4. **Icons carry identity; colour carries meaning.** No cue does two jobs.
@@ -84,7 +84,7 @@ Shortcuts and counts use monospaced digits (`Axo.Font.shortcut`, `.meta`). The t
 
 - **Band:** 40 tall (empty `.unifiedCompact` toolbar), painted in `frame`. Every point of it is a terminal row, so it is never taller.
   - The traffic lights, then our own sidebar toggle and "+" (28 targets, 14 glyphs), centred on the band.
-  - Context header (`Chrome/BandView.swift`): 16 pt project tile, project name 13 semibold full ink, `chevron.compact.right` in tertiary, program icon with its badge, session title 13 secondary, then `arrow.triangle.branch` and the branch in 12 tertiary (it gives way first when narrow). With the sidebar open it starts on the terminal's text column (14 inside the sheet); hidden, 20 pt after "+".
+  - Header (`Chrome/BandView.swift`). Sidebar open: `arrow.triangle.branch` and the branch in 12 tertiary, then the diff chip, starting on the terminal's text column (14 inside the sheet). Sidebar hidden: 16 pt project tile, project name 13 semibold full ink, `chevron.compact.right` in tertiary, program icon with its badge, session title 13 secondary, then the branch (it gives way first when narrow), 20 pt after "+".
   - Trailing state: working shows a cyan spinner and "Working m:ss" in tabular digits, ticking each second; waiting or failed show the chip with the agent's own question. Idle shows nothing.
   - The band drags the window.
 - **Sheets:** stage inset 0 / 6 / 6 / 0 (top, right, bottom, left with the sidebar open; 6 on the left when it is hidden). The empty state is a sheet too.
