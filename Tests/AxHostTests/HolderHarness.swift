@@ -1,6 +1,7 @@
 import AxHost
 import AxModel
 import AxProtocol
+import AxTestSupport
 import CryptoKit
 import Foundation
 import Synchronization
@@ -49,6 +50,7 @@ final class HolderFixture: Sendable {
     private let exitSink: AsyncStream<(PaneID, ChildStatus)>.Continuation
 
     init() throws {
+        _ = sigpipeTrap
         let root = URL(filePath: "/tmp/axt-\(UUID().uuidString.prefix(8).lowercased())", directoryHint: .isDirectory)
         paths = RuntimePaths(root: root)
         try paths.prepare()

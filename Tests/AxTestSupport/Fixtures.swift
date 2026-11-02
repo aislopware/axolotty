@@ -34,3 +34,21 @@ public struct SeededRNG: RandomNumberGenerator, Sendable {
         return state
     }
 }
+
+/// A heartbeat line from a long test, on standard error: a watchdog that
+/// sees no output for minutes takes the run for stuck (`scripts/watchdog.sh`).
+public func progress(_ line: String) {
+    FileHandle.standardError.write(Data("… \(line)\n".utf8))
+}
+
+/// SIGPIPE in the test process, said instead of dying of it. A kernel
+/// SIGPIPE that reaches the whole process, not the writing thread, comes from
+/// a write into a pipe whose reader is gone (sockets here set SO_NOSIGPIPE).
+/// Production processes ignore it, so the test process does too, but says
+/// so on standard error; `scripts/deep.sh` fails a step whose log has the line.
+public let sigpipeTrap: Void = {
+    signal(SIGPIPE) { _ in
+        let line = "AXTEST SIGPIPE: a write into a pipe whose reader is gone\n"
+        _ = line.withCString { write(2, $0, strlen($0)) }
+    }
+}()

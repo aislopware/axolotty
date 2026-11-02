@@ -12,6 +12,10 @@ public enum AxolottyApp {
             }
             exit(0)
         }
+        // As the daemons do: a write into a pipe whose reader is gone (a git or
+        // ssh that exited) is an error to handle, not a reason for the app to
+        // die. Sockets already say so themselves (SO_NOSIGPIPE).
+        signal(SIGPIPE, SIG_IGN)
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate

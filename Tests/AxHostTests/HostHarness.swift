@@ -2,6 +2,7 @@ import AxClient
 import AxHost
 import AxModel
 import AxProtocol
+import AxTestSupport
 import AxVT
 import Foundation
 import Testing
@@ -14,6 +15,7 @@ final class HostFixture: @unchecked Sendable {
     private(set) var host: Server
 
     init(configure: (inout ServerConfig) -> Void = { _ in }) async throws {
+        _ = sigpipeTrap
         let root = URL(filePath: "/tmp/axh-\(UUID().uuidString.prefix(8).lowercased())", directoryHint: .isDirectory)
         paths = RuntimePaths(root: root)
         var c = ServerConfig(paths: paths, holderExecutable: PtydBinary.url, name: "Test Host")
