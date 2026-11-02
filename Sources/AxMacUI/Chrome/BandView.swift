@@ -25,7 +25,6 @@ final class BandView: NSView {
     private let branchGlyph = Symbol("arrow.triangle.branch", size: 10, weight: .medium, color: Axo.Color.textTertiary)
     private let branch = Label("", font: Axo.Font.small, color: Axo.Color.textTertiary)
     let diff = DiffChip()
-    let ports = PortChip()
     private let spinner = StatusGlyphView(frame: .zero)
     private let elapsed = Label("", font: Axo.Font.meta, color: Axo.Color.textSecondary)
     let chip = Chip()
@@ -40,7 +39,7 @@ final class BandView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         diff.isHidden = true
-        for v in [tile, project, chevron, icon, title, branchGlyph, branch, diff, ports, spinner, elapsed, chip] as [NSView] {
+        for v in [tile, project, chevron, icon, title, branchGlyph, branch, diff, spinner, elapsed, chip] as [NSView] {
             addSubview(v)
         }
         chip.isHidden = true
@@ -113,7 +112,6 @@ final class BandView: NSView {
             project.stringValue = "Axolotty"
             project.textColor = Axo.Color.textSecondary
             for v in [branchGlyph, branch, diff, spinner, elapsed] as [NSView] { v.isHidden = true }
-            ports.set([])
             tick?.invalidate()
             tick = nil
             needsLayout = true
@@ -189,8 +187,7 @@ final class BandView: NSView {
         branch.alphaValue = showBranch ? 1 : 0
         // The diff chip sits after the branch (or the title), and goes before the branch does.
         let ds = diff.isHidden ? .zero : diff.fittingSize
-        let os = ports.isHidden ? .zero : ports.fittingSize
-        let diffW = (diff.isHidden ? 0 : ds.width + Axo.Space.sm) + (ports.isHidden ? 0 : os.width + Axo.Space.xs)
+        let diffW = diff.isHidden ? 0 : ds.width + Axo.Space.sm
         if showBranch {
             x = centre(branchGlyph, x: x + Axo.Space.lg, size: NSSize(width: 14, height: 16)) + Axo.Space.xs
             x = centre(branch, x: x, size: NSSize(width: max(0, min(ceil(bs.width), left - 14 - Axo.Space.xs - diffW)), height: bs.height))
@@ -198,12 +195,7 @@ final class BandView: NSView {
         if !diff.isHidden {
             let dx = x + (showBranch ? Axo.Space.sm : Axo.Space.lg)
             diff.alphaValue = dx + ds.width <= right ? 1 : 0
-            x = centre(diff, x: dx, size: ds)
-        }
-        if !ports.isHidden {
-            let px = x + (diff.isHidden ? (showBranch ? Axo.Space.sm : Axo.Space.lg) : Axo.Space.xs)
-            ports.alphaValue = px + os.width <= right ? 1 : 0
-            _ = centre(ports, x: px, size: os)
+            _ = centre(diff, x: dx, size: ds)
         }
     }
 }

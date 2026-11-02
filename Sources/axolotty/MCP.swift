@@ -174,7 +174,6 @@ final class MCPServer: Sendable {
                     if let h = i.status.headline, !h.message.isEmpty {
                         facts.append("\"\(h.state == .blocked ? h.ask : h.message)\"")
                     }
-                    if let ports = i.ports { facts.append("ports " + ports.map(String.init).joined(separator: ",")) }
                     if let c = i.lastCommand {
                         facts.append("last command `\(c.command)` exit \(c.exitCode.map(String.init) ?? "?")")
                     }

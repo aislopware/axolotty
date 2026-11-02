@@ -75,6 +75,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         sidebar.onRemoveWorktree = { [weak self] host, sid in self?.removeWorktree(host, sid) }
         sidebar.onCloseSession = { [weak self] host, sid in self?.close(host, sid) }
         content.band.chip.onClick = { [weak self] in self?.content.current?.restoreFocus() }
+        content.band.diff.onClick = { [weak self] in self?.openInEditor(nil) }
         content.emptyView.onLaunch = { [weak self] agent, wid in
             guard let self, let host = self.currentHost else { return }
             Task { await self.createSession(host, in: wid, cwd: nil, name: nil, launch: self.launchLine(agent, host)) }
@@ -247,7 +248,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             branch = nil
         }
         content.band.update(band(), key: key)
-        content.band.ports.set(host.isLocal ? Array(Set(st.panes(of: sid).flatMap { $0.ports ?? [] })).sorted() : [])
         refreshChanges(host.isLocal ? cwd : "")
     }
 
@@ -539,46 +539,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard let cwd = currentCwd, !cwd.isEmpty else { NSSound.beep(); return }
         LinkOpener.openFolder(LinkOpener.projectRoot(cwd))
     }
-
-    @objc func showChanges(_ sender: Any?) {
-        guard let cwd = currentCwd, !cwd.isEmpty, let (host, sid) = selection else { return }
-        let workspace = host.session(sid)?.workspace
-        Task { [weak self] in
-            guard let self, let c = await GitChangesReader.lookup(cwd, fresh: true), !c.isEmpty else { NSSound.beep(); return }
-            self.content.band.diff.set(c)
-            self.content.band.layoutSubtreeIfNeeded()
-            let reviewer = [AgentKind.claude, .codex].first { AgentPresets.available(local: true).contains($0) }
-            let actions = ChangesPopover.Actions(
-                open: { NSWorkspace.shared.open(URL(filePath: $0)) },
-                diff: { [weak self] path in self?.showDiff(path, root: c.root) },
-                review: reviewer.map { agent in
-                    { [weak self] in
-                        guard let self else { return }
-                        let prompt = Self.shellQuote("Review the uncommitted changes in this repository (git diff HEAD) and list problems.")
-                        let launch = self.launchLine(agent, host, args: prompt)
-                        Task { await self.createSession(host, in: workspace, cwd: c.root, name: "Review", launch: launch) }
-                    }
-                })
-            let anchor: NSView = self.content.band.diff.isHidden ? self.content.band : self.content.band.diff
-            ChangesPopover.toggle(c, branch: self.branch, from: anchor, actions: actions)
-        }
-    }
-
-    /// `git diff` for one file in a split to the right, through the person's
-    /// pager (so `delta` applies); the pane closes when the pager quits.
-    private func showDiff(_ path: String, root: String) {
-        let f = Self.shellQuote(path)
-        // Titled with the file (OSC 2) so the pane strip names what it shows.
-        let title = Self.shellQuote((path as NSString).lastPathComponent)
-        let script = "printf '\\033]2;%s\\007' \(title); if git ls-files --error-unmatch -- \(f) >/dev/null 2>&1; then git diff HEAD -- \(f); "
-            + "else git diff --no-index -- /dev/null \(f); fi; exit 0"
-        // LESS without -F so a short diff stays on screen until q; -c paints
-        // from the top (plain less writes a short file up from the last row).
-        content.current?.split(.horizontal, recipe: SpawnRecipe(command: ["/bin/zsh", "-lc", script], cwd: root,
-                                                                 env: ["LESS": "-Rc"]))
-    }
-
-    static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {

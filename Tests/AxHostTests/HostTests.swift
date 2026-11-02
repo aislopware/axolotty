@@ -279,18 +279,6 @@ struct HostTests {
         await fx.tearDown()
     }
 
-    @Test func aListeningPortIsReported() async throws {
-        let fx = try await HostFixture()
-        let c = try await fx.client()
-        let (_, _, p) = try await makeSession(c)
-        // In the background, so the shell stays in front: ports count anywhere in the tree.
-        c.send(.text(p, "python3 -c 'import socket,time;s=socket.socket();s.bind((\"127.0.0.1\",0));s.listen();time.sleep(30)' & echo started\n"))
-        #expect(await until { (c.replica?.panes[p]?.ports?.count ?? 0) == 1 })
-        c.send(.text(p, "kill %1\n"))
-        #expect(await until { c.replica?.panes[p]?.ports == nil })
-        await fx.tearDown()
-    }
-
     @Test func progressFollowsOSC94() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()

@@ -427,7 +427,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             // Detail lives in the hover card, not on the row.
             if let pane = st.sessions[sid].flatMap({ st.panes[$0.focus] }) {
                 c.card = hoverCard(title: title, activity: activity, since: secondsInState(st, sid, activity),
-                                   pane: pane, ports: st.panes(of: sid).flatMap { $0.ports ?? [] }, local: host.isLocal)
+                                   pane: pane, local: host.isLocal)
                 let pwd = pane.pwd
                 c.onHover = host.isLocal && !pwd.isEmpty ? { [weak self, weak outline = self.outline] in
                     Task { @MainActor in
@@ -449,10 +449,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     /// Title; state and time in it; what the agent asks or says; folder;
-    /// branch with ahead/behind and the working tree's diff; listening ports.
+    /// branch with ahead/behind and the working tree's diff.
     /// Git facts come from caches filled on hover (local hosts only).
     private func hoverCard(title: String, activity: Activity, since: Double?, pane: PaneInfo,
-                           ports: [UInt16], local: Bool) -> HoverCard
+                           local: Bool) -> HoverCard
     {
         var card = HoverCard(title: title)
         if let state = Self.stateLine(activity, since: since) { card.facts.append(.init(.dot(activity), state)) }
@@ -476,9 +476,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                     card.facts.append(.init(.symbol("arrow.triangle.branch"), attributed: line, truncation: .byTruncatingMiddle))
                 }
             }
-        }
-        if let line = HoverCard.portsLine(Array(Set(ports)).sorted()) {
-            card.facts.append(.init(.symbol("network"), line))
         }
         return card
     }

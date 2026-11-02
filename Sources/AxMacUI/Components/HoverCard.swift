@@ -72,14 +72,6 @@ struct HoverCard: Equatable {
         }
         return s.length > 0 ? s : nil
     }
-
-    /// "localhost:5173 · 8080 · 9229 +2".
-    static func portsLine(_ ports: [UInt16]) -> String? {
-        guard let first = ports.first else { return nil }
-        var parts = ["localhost:\(first)"] + ports.dropFirst().prefix(3).map { String($0) }
-        if ports.count > 4 { parts.append("+\(ports.count - 4)") }
-        return parts.joined(separator: " · ")
-    }
 }
 
 /// The card's body, drawn by `Tooltip` in the window's overlay layer.

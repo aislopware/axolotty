@@ -329,11 +329,4 @@ enum Ops {
         case .gone: throw OpError(message: "host went away", exit: .unreachable)
         }
     }
-
-    /// Every pane's listening ports, or one pane's.
-    static func ports(pane: String?) async throws(OpError) -> [PaneInfo] {
-        let (_, st) = try await connect()
-        if let pane { return [st.panes[try resolvePane(pane, in: st)]].compactMap { $0 } }
-        return st.panes.values.filter { $0.ports != nil }.sorted { $0.id.raw.uuidString < $1.id.raw.uuidString }
-    }
 }

@@ -693,10 +693,6 @@ public actor Server {
             guard var info = state.panes[id] else { return }
             info.readsSecret = on ? true : nil
             if info != state.panes[id] { commit([.pane(info)]) }
-        case let .ports(id, ports):
-            guard var info = state.panes[id] else { return }
-            info.ports = ports.isEmpty ? nil : ports
-            if info != state.panes[id] { commit([.pane(info)]) }
         case let .ended(id):
             // The terminal closed; the exit status follows from the holder.
             _ = id

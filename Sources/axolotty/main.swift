@@ -43,7 +43,6 @@ let usage = """
                                           the pane's finished shell commands with exit codes
       events [--pane P] [--json]          follow activity changes, finished commands,
                                           exits and notifications (one line or JSON each)
-      ports [--pane P] [--json]           TCP ports the pane's processes (or every pane's) listen on
       focus [--pane P]                    mark a pane seen
       close [--pane P]                    end a pane's program and close it
       attach [--pane P]                   use a pane from this terminal (over ssh, another
@@ -266,19 +265,6 @@ case "events":
         }
     }
 
-case "ports":
-    let o = Options(argv, valued: ["pane"], switches: ["json"])
-    await run {
-        let panes = try await Ops.ports(pane: o.flags["pane"])
-        if o.switches.contains("json") {
-            print(json(panes.map { PortsRow(pane: $0.id.raw.uuidString.lowercased(), cwd: $0.pwd, ports: $0.ports ?? []) }))
-            return
-        }
-        for info in panes {
-            for port in info.ports ?? [] { print("\(port)  \(Ops.short(info.id))  \(info.pwd)") }
-        }
-    }
-
 case "attach":
     let o = Options(argv, valued: ["pane"])
     await run { try await Attach.run(pane: o.flags["pane"] ?? o.positional.first) }
@@ -291,9 +277,3 @@ default:
     fail("unknown command \(verb)\n\(usage)", .usage)
 }
 exit(Exit.ok.rawValue)
-
-struct PortsRow: Encodable {
-    var pane: String
-    var cwd: String
-    var ports: [UInt16]
-}

@@ -91,10 +91,6 @@ pid_t ax_proc_ppid(pid_t pid);
 /// always NUL-terminated). Returns length or -1. Uses KERN_PROCARGS2.
 int ax_proc_cmdline(pid_t pid, char *buf, size_t cap);
 
-/// TCP ports listened on by `root` or any process below it (at most 256
-/// processes, depth first), sorted and unique. Returns how many were written
-/// (≤ cap). Same-user processes only, which is every pane's.
-int ax_proc_listening_ports(pid_t root, uint16_t *out, int cap);
 
 #pragma mark - Descriptor passing (SCM_RIGHTS)
 

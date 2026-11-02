@@ -7,7 +7,6 @@ import AppKit
     // App
     @objc optional func showCommandPalette(_ sender: Any?)
     @objc optional func showJumpToAgent(_ sender: Any?)
-    @objc optional func showChanges(_ sender: Any?)
     @objc optional func showSettings(_ sender: Any?)
 
     // Window
@@ -161,8 +160,6 @@ struct Command: Identifiable {
                     action: #selector((any AxActions).showJumpToAgent(_:)), inPalette: false, separatorBefore: true),
             Command(id: "next-attention", title: "Next Waiting Agent", menu: .session, key: "u", modifiers: cs,
                     action: #selector((any AxActions).selectNextAttention(_:))),
-            Command(id: "show-changes", title: "Show Changes", menu: .session, key: "c", modifiers: cs,
-                    action: #selector((any AxActions).showChanges(_:))),
             Command(id: "open-editor", title: "Open in Editor", menu: .session, key: "o", modifiers: co,
                     action: #selector((any AxActions).openInEditor(_:)), separatorBefore: true),
             Command(id: "remove-worktree", title: "Remove Worktree…", menu: .session, key: "", modifiers: [],

@@ -13,7 +13,6 @@ enum PaneSignal: Sendable {
     /// pid and socket flags, for status from inside tmux).
     case foreground(PaneID, program: String, agent: AgentKind?, cwd: String?, leader: Int32, argv: [String])
     case readsSecret(PaneID, Bool)
-    case ports(PaneID, [UInt16])
     case ended(PaneID)
 }
 
@@ -61,8 +60,6 @@ final class PaneHost: @unchecked Sendable {
     private var cellWidth: UInt32 = 8
     private var cellHeight: UInt32 = 16
     private var lastForeground: (String, String?) = ("", nil)
-    private var ports: [UInt16] = []
-    private var portPolls = 0
     private var readsSecret = false
 
     private final class Subscriber {
@@ -442,7 +439,6 @@ final class PaneHost: @unchecked Sendable {
         queue.async { [self] in
             guard !ended else { return }
             checkSecret()  // also catches echo coming back on with no output
-            scanPorts()
             let pgid = ax_pty_foreground_pgid(master)
             let leader = pgid > 0 ? pgid : pid
             var name = [CChar](repeating: 0, count: 64)
@@ -463,19 +459,6 @@ final class PaneHost: @unchecked Sendable {
                                       agent: AgentKind.identify(processName: program, argv: argv), cwd: cwd,
                                       leader: leader, argv: argv))
         }
-    }
-
-    /// Every other poll (2 s): which TCP ports the pane's processes listen on.
-    /// A dev server started in the background still counts.
-    private func scanPorts() {
-        portPolls += 1
-        guard portPolls % 2 == 1 else { return }
-        var buf = [UInt16](repeating: 0, count: 16)
-        let n = Int(ax_proc_listening_ports(pid, &buf, Int32(buf.count)))
-        let now = Array(buf.prefix(max(0, n)))
-        guard now != ports else { return }
-        ports = now
-        signals.yield(.ports(id, now))
     }
 
     // MARK: Checkpoints

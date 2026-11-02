@@ -18,10 +18,7 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
   - ⌘-click links and `file:line`;
   - Find (⌘F);
   - Secure Keyboard Entry while a program reads a password.
-- **What agents produced:**
-  - the diff chip and Changes popover (⇧⌘C);
-  - listening ports with one-click open;
-  - Open in Editor (⌥⌘O).
+- **What agents produced:** the diff chip in the band, and Open in Editor (⌥⌘O) to read it.
 - **Look:** Axolotty Night and Day, following the system or fixed, in any installed monospaced font.
 
 ## Agents drive Axolotty

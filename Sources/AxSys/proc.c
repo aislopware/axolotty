@@ -3,7 +3,6 @@
 #include "AxSys.h"
 
 #include <errno.h>
-#include <arpa/inet.h>
 #include <libproc.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,54 +101,4 @@ int ax_proc_cmdline(pid_t pid, char *buf, size_t cap) {
   buf[w] = '\0';
   free(raw);
   return (int)w;
-}
-
-static void add_port(uint16_t port, uint16_t *out, int *n, int cap) {
-  for (int i = 0; i < *n; i++)
-    if (out[i] == port) return;
-  if (*n >= cap) return;
-  int i = *n;
-  while (i > 0 && out[i - 1] > port) {
-    out[i] = out[i - 1];
-    i--;
-  }
-  out[i] = port;
-  (*n)++;
-}
-
-static void scan_fds(pid_t pid, uint16_t *out, int *n, int cap) {
-  int bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, NULL, 0);
-  if (bytes <= 0) return;
-  struct proc_fdinfo *fds = malloc((size_t)bytes);
-  if (!fds) return;
-  bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fds, bytes);
-  int count = bytes > 0 ? bytes / (int)sizeof(struct proc_fdinfo) : 0;
-  for (int i = 0; i < count; i++) {
-    if (fds[i].proc_fdtype != PROX_FDTYPE_SOCKET) continue;
-    struct socket_fdinfo si;
-    int r = proc_pidfdinfo(pid, fds[i].proc_fd, PROC_PIDFDSOCKETINFO, &si, sizeof(si));
-    if (r != (int)sizeof(si)) continue;
-    if (si.psi.soi_kind != SOCKINFO_TCP) continue;
-    if (si.psi.soi_proto.pri_tcp.tcpsi_state != TSI_S_LISTEN) continue;
-    uint16_t port = ntohs((uint16_t)si.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport);
-    if (port) add_port(port, out, n, cap);
-  }
-  free(fds);
-}
-
-int ax_proc_listening_ports(pid_t root, uint16_t *out, int cap) {
-  if (!out || cap <= 0 || root <= 0) return 0;
-  enum { MAX_PROCS = 256 };
-  pid_t stack[MAX_PROCS];
-  int top = 0, seen = 0, n = 0;
-  stack[top++] = root;
-  while (top > 0 && seen < MAX_PROCS) {
-    pid_t p = stack[--top];
-    seen++;
-    scan_fds(p, out, &n, cap);
-    pid_t kids[64];
-    int k = ax_proc_children(p, kids, 64);
-    for (int i = 0; i < k && top < MAX_PROCS; i++) stack[top++] = kids[i];
-  }
-  return n;
 }
