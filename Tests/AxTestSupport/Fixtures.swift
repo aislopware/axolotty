@@ -41,14 +41,47 @@ public func progress(_ line: String) {
     FileHandle.standardError.write(Data("… \(line)\n".utf8))
 }
 
-/// SIGPIPE in the test process, said instead of dying of it. A kernel
-/// SIGPIPE that reaches the whole process, not the writing thread, comes from
-/// a write into a pipe whose reader is gone (sockets here set SO_NOSIGPIPE).
-/// Production processes ignore it, so the test process does too, but says
-/// so on standard error; `scripts/deep.sh` fails a step whose log has the line.
+/// SIGPIPE in the test process, said instead of dying of it. XNU raises a
+/// write's EPIPE as a signal to the whole process, not the writing thread,
+/// when the descriptor is not a socket. So it comes from a pipe or FIFO
+/// whose reader is gone (sockets here set SO_NOSIGPIPE). Production
+/// processes ignore it, so the test process does too, but says so on
+/// standard error, with every write end whose reader is gone right then, to
+/// name the writer. `scripts/deep.sh` fails a step whose log has the line.
 public let sigpipeTrap: Void = {
     signal(SIGPIPE) { _ in
-        let line = "AXTEST SIGPIPE: a write into a pipe whose reader is gone\n"
-        _ = line.withCString { write(2, $0, strlen($0)) }
+        // The handler runs on any thread, beside the writer, which may close
+        // its descriptor at once: the list is a best effort.
+        say("AXTEST SIGPIPE: a write into a pipe whose reader is gone; pipe write ends (* = reader gone):")
+        // Async-signal-safe only: fstat, fcntl, poll, write; no allocation.
+        for fd: Int32 in 0 ..< 4096 {
+            var st = stat()
+            guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFIFO,
+                  fcntl(fd, F_GETFL) & O_ACCMODE == O_WRONLY else { continue }
+            var p = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            let gone = poll(&p, 1, 0) > 0 && p.revents & Int16(POLLHUP | POLLERR) != 0
+            say(" ")
+            sayNumber(Int(fd))
+            if gone { say("*") }
+        }
+        say("\n")
     }
 }()
+
+private func say(_ s: StaticString) {
+    _ = write(2, s.utf8Start, s.utf8CodeUnitCount)
+}
+
+private func sayNumber(_ n: Int) {
+    var digits: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0, 0, 0, 0, 0)
+    withUnsafeMutableBytes(of: &digits) { b in
+        var i = b.count
+        var v = n
+        repeat {
+            i -= 1
+            b[i] = UInt8(48 + v % 10)
+            v /= 10
+        } while v > 0 && i > 0
+        _ = write(2, b.baseAddress! + i, b.count - i)
+    }
+}
