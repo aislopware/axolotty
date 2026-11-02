@@ -441,8 +441,6 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         for v in views.values { v.gridFrozen = frozen }
     }
 
-    var focusedView: TerminalView? { views[focused] }
-
     func terminalDidBecomeFocused(_ view: TerminalView) {
         focused = view.pane
         view.takeSize()

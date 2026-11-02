@@ -67,13 +67,11 @@ enum Axo {
     // MARK: Space and radius (semantic names over the primitive scales)
 
     enum Space {
-        static let hair = Prim.Space.s1
         static let xs = Prim.Space.s2
         static let sm = Prim.Space.s3
         static let md = Prim.Space.s4
         static let lg = Prim.Space.s6
         static let xl = Prim.Space.s7
-        static let xxl = Prim.Space.s9
     }
 
     enum Radius {
@@ -104,14 +102,12 @@ enum Axo {
         static let body = NSFont.systemFont(ofSize: Prim.Size.t4, weight: .regular)
         static let bodyStrong = NSFont.systemFont(ofSize: Prim.Size.t4, weight: .medium)
         static let title = NSFont.systemFont(ofSize: Prim.Size.t4, weight: .semibold)
-        static let heading = NSFont.systemFont(ofSize: Prim.Size.t5, weight: .semibold)
         static let field = NSFont.systemFont(ofSize: Prim.Size.t6, weight: .regular)
         static let keycap = NSFont.systemFont(ofSize: Prim.Size.t2, weight: .medium)
         /// List section headers (palette): 11 semibold.
         static let section = NSFont.systemFont(ofSize: Prim.Size.t2, weight: .semibold)
         /// Menu-style shortcut text (`⌘1`, `⇧⌘N`): tabular digits so columns align.
         static let shortcut = NSFont.monospacedDigitSystemFont(ofSize: Prim.Size.t3, weight: .regular)
-        static let numeric = NSFont.monospacedDigitSystemFont(ofSize: Prim.Size.t4, weight: .medium)
         static let terminalSize: CGFloat = 13
         static let terminalRange: ClosedRange<CGFloat> = 9 ... 24
 
@@ -165,16 +161,10 @@ enum Axo {
         static let iconGlyph: CGFloat = 14
         static let chipHeight: CGFloat = 22
         static let keycapHeight: CGFloat = 18
-        static let badgeHeight: CGFloat = 16
 
         // Sidebar
-        static let rowWorkspace: CGFloat = 28
-        static let rowSession: CGFloat = 30
-        static let rowIndent: CGFloat = 12
         static let statusSlot: CGFloat = 16
         static let dot: CGFloat = 7
-        static let plateRadius = Radius.sm
-        static let plateInset = Space.md
         static let footerHeight: CGFloat = 36
 
         // Panes
@@ -288,7 +278,6 @@ enum Axo {
         static let tickOut = Beat(duration: 0.10, curve: standardCurve)
         /// Pointer-opened popovers, toasts, the palette: a short rise.
         static let swift = Beat(duration: 0.20, curve: easeOut)
-        static let swiftOut = Beat(duration: 0.14, curve: easeIn)
         /// Layout: panes, folds.
         static let glide = Beat(duration: 0.26, curve: easeOut)
 
@@ -349,14 +338,4 @@ extension NSView {
 
     /// The design tokens for this view's appearance.
     var tokens: DesignTokens { DesignTokens.current(dark: effectiveAppearance.isDark) }
-}
-
-extension NSColor {
-    /// RGBA8 with R in the lowest byte (the renderer's colour format), in sRGB.
-    var packedRGBA: UInt32 {
-        let c = usingColorSpace(.sRGB) ?? self
-        let r = UInt32((c.redComponent * 255).rounded()), g = UInt32((c.greenComponent * 255).rounded())
-        let b = UInt32((c.blueComponent * 255).rounded()), a = UInt32((c.alphaComponent * 255).rounded())
-        return r | g << 8 | b << 16 | a << 24
-    }
 }

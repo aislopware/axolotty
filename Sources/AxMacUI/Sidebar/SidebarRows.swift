@@ -249,8 +249,6 @@ final class FadingLabel: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    var naturalWidth: CGFloat { label.intrinsicContentSize.width }
-
     override func layout() {
         super.layout()
         let s = label.intrinsicContentSize

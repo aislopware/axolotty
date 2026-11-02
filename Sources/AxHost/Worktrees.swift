@@ -36,11 +36,6 @@ public enum Worktrees {
         guard r.status == 0 else { throw Failure(message: firstLine(r.err) ?? "git worktree remove failed") }
     }
 
-    /// Whether `path` is a linked worktree Axolotty made (`…/.worktrees/x`).
-    public static func isManaged(_ path: String) -> Bool {
-        URL(filePath: path).deletingLastPathComponent().lastPathComponent == ".worktrees"
-    }
-
     // MARK: Pieces
 
     /// The main worktree's root (where `.git` is a folder), from any worktree.

@@ -612,8 +612,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     // MARK: Actions
 
-    @objc private func newSessionClicked() { onNewSession?() }
-
 
     func rename(_ host: HostSession, _ sid: SessionID) {
         guard let window = view.window, let st = host.state else { return }

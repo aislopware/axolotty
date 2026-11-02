@@ -73,7 +73,6 @@ public final class TerminalFrame {
     public var rows: Int { Int(info.rows) }
     public var background: UInt32 { info.background }
     public var foreground: UInt32 { info.foreground }
-    public var hasBlink: Bool { info.has_blink }
     public var cursor: CursorInfo {
         let shape: CursorStyle.Shape? = switch info.cursor_style {
         case 0: .bar

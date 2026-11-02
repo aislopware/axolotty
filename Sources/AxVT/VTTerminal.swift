@@ -252,8 +252,6 @@ public final class VTTerminal {
         self.rows = rows
     }
 
-    public func fullReset() { ghostty_terminal_reset(handle) }
-
     /// Re-applies limits (a terminal restored from a snapshot starts with defaults).
     public func setLimits(scrollbackBytes: Int, continuationBytes: Int) {
         var limit = scrollbackBytes
@@ -280,19 +278,6 @@ public final class VTTerminal {
         var s = GHOSTTY_TERMINAL_SCREEN_PRIMARY
         _ = ghostty_terminal_get(handle, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &s)
         return s == GHOSTTY_TERMINAL_SCREEN_ALTERNATE ? .alternate : .primary
-    }
-
-    public var scrollbackRows: Int {
-        var n = 0
-        _ = ghostty_terminal_get(handle, GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS, &n)
-        return n
-    }
-
-    /// True when the parser sits between escape sequences (safe cut point).
-    public var isAtGround: Bool {
-        var g = true
-        _ = ghostty_terminal_get(handle, GHOSTTY_TERMINAL_DATA_VT_GROUND, &g)
-        return g
     }
 
     /// The cursor sits at a shell prompt or its input line (needs OSC 133 marks).

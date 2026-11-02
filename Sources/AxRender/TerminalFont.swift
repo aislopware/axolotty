@@ -82,8 +82,4 @@ public struct TerminalFont: @unchecked Sendable {
         TerminalFont(regular: CTFontCreateCopyWithAttributes(regular, points, nil, nil),
                      bold: CTFontCreateCopyWithAttributes(bold, points, nil, nil), scale: scale)
     }
-
-    public func rescaled(_ newScale: CGFloat) -> TerminalFont {
-        TerminalFont(regular: regular, bold: bold, scale: newScale)
-    }
 }

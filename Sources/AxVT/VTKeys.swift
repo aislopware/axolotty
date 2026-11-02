@@ -8,13 +8,6 @@ public enum VTKeys {
         UInt16(macTable[keyCode]?.rawValue ?? GHOSTTY_KEY_UNIDENTIFIED.rawValue)
     }
 
-    /// USB HID usage (`UIKey.keyCode`, page 7) → GhosttyKey raw value.
-    public static func hid(_ usage: Int) -> UInt16 {
-        UInt16(hidTable[usage]?.rawValue ?? GHOSTTY_KEY_UNIDENTIFIED.rawValue)
-    }
-
-    public static let unidentified = UInt16(GHOSTTY_KEY_UNIDENTIFIED.rawValue)
-
     private static let macTable: [UInt16: GhosttyKey] = [
         0x00: GHOSTTY_KEY_A, 0x01: GHOSTTY_KEY_S, 0x02: GHOSTTY_KEY_D, 0x03: GHOSTTY_KEY_F, 0x04: GHOSTTY_KEY_H,
         0x05: GHOSTTY_KEY_G, 0x06: GHOSTTY_KEY_Z, 0x07: GHOSTTY_KEY_X, 0x08: GHOSTTY_KEY_C, 0x09: GHOSTTY_KEY_V,
@@ -50,39 +43,4 @@ public enum VTKeys {
         0x7B: GHOSTTY_KEY_ARROW_LEFT, 0x7C: GHOSTTY_KEY_ARROW_RIGHT, 0x7D: GHOSTTY_KEY_ARROW_DOWN,
         0x7E: GHOSTTY_KEY_ARROW_UP,
     ]
-
-    private static let hidTable: [Int: GhosttyKey] = {
-        var t: [Int: GhosttyKey] = [:]
-        let letters: [GhosttyKey] = [
-            GHOSTTY_KEY_A, GHOSTTY_KEY_B, GHOSTTY_KEY_C, GHOSTTY_KEY_D, GHOSTTY_KEY_E, GHOSTTY_KEY_F, GHOSTTY_KEY_G,
-            GHOSTTY_KEY_H, GHOSTTY_KEY_I, GHOSTTY_KEY_J, GHOSTTY_KEY_K, GHOSTTY_KEY_L, GHOSTTY_KEY_M, GHOSTTY_KEY_N,
-            GHOSTTY_KEY_O, GHOSTTY_KEY_P, GHOSTTY_KEY_Q, GHOSTTY_KEY_R, GHOSTTY_KEY_S, GHOSTTY_KEY_T, GHOSTTY_KEY_U,
-            GHOSTTY_KEY_V, GHOSTTY_KEY_W, GHOSTTY_KEY_X, GHOSTTY_KEY_Y, GHOSTTY_KEY_Z,
-        ]
-        for (i, k) in letters.enumerated() { t[0x04 + i] = k }
-        let digits: [GhosttyKey] = [
-            GHOSTTY_KEY_DIGIT_1, GHOSTTY_KEY_DIGIT_2, GHOSTTY_KEY_DIGIT_3, GHOSTTY_KEY_DIGIT_4, GHOSTTY_KEY_DIGIT_5,
-            GHOSTTY_KEY_DIGIT_6, GHOSTTY_KEY_DIGIT_7, GHOSTTY_KEY_DIGIT_8, GHOSTTY_KEY_DIGIT_9, GHOSTTY_KEY_DIGIT_0,
-        ]
-        for (i, k) in digits.enumerated() { t[0x1E + i] = k }
-        let rest: [(Int, GhosttyKey)] = [
-            (0x28, GHOSTTY_KEY_ENTER), (0x29, GHOSTTY_KEY_ESCAPE), (0x2A, GHOSTTY_KEY_BACKSPACE),
-            (0x2B, GHOSTTY_KEY_TAB), (0x2C, GHOSTTY_KEY_SPACE), (0x2D, GHOSTTY_KEY_MINUS), (0x2E, GHOSTTY_KEY_EQUAL),
-            (0x2F, GHOSTTY_KEY_BRACKET_LEFT), (0x30, GHOSTTY_KEY_BRACKET_RIGHT), (0x31, GHOSTTY_KEY_BACKSLASH),
-            (0x33, GHOSTTY_KEY_SEMICOLON), (0x34, GHOSTTY_KEY_QUOTE), (0x35, GHOSTTY_KEY_BACKQUOTE),
-            (0x36, GHOSTTY_KEY_COMMA), (0x37, GHOSTTY_KEY_PERIOD), (0x38, GHOSTTY_KEY_SLASH),
-            (0x39, GHOSTTY_KEY_CAPS_LOCK), (0x3A, GHOSTTY_KEY_F1), (0x3B, GHOSTTY_KEY_F2), (0x3C, GHOSTTY_KEY_F3),
-            (0x3D, GHOSTTY_KEY_F4), (0x3E, GHOSTTY_KEY_F5), (0x3F, GHOSTTY_KEY_F6), (0x40, GHOSTTY_KEY_F7),
-            (0x41, GHOSTTY_KEY_F8), (0x42, GHOSTTY_KEY_F9), (0x43, GHOSTTY_KEY_F10), (0x44, GHOSTTY_KEY_F11),
-            (0x45, GHOSTTY_KEY_F12), (0x49, GHOSTTY_KEY_INSERT), (0x4A, GHOSTTY_KEY_HOME),
-            (0x4B, GHOSTTY_KEY_PAGE_UP), (0x4C, GHOSTTY_KEY_DELETE), (0x4D, GHOSTTY_KEY_END),
-            (0x4E, GHOSTTY_KEY_PAGE_DOWN), (0x4F, GHOSTTY_KEY_ARROW_RIGHT), (0x50, GHOSTTY_KEY_ARROW_LEFT),
-            (0x51, GHOSTTY_KEY_ARROW_DOWN), (0x52, GHOSTTY_KEY_ARROW_UP), (0x64, GHOSTTY_KEY_INTL_BACKSLASH),
-            (0xE0, GHOSTTY_KEY_CONTROL_LEFT), (0xE1, GHOSTTY_KEY_SHIFT_LEFT), (0xE2, GHOSTTY_KEY_ALT_LEFT),
-            (0xE3, GHOSTTY_KEY_META_LEFT), (0xE4, GHOSTTY_KEY_CONTROL_RIGHT), (0xE5, GHOSTTY_KEY_SHIFT_RIGHT),
-            (0xE6, GHOSTTY_KEY_ALT_RIGHT), (0xE7, GHOSTTY_KEY_META_RIGHT),
-        ]
-        for (u, k) in rest { t[u] = k }
-        return t
-    }()
 }

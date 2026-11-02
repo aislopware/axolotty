@@ -866,11 +866,6 @@ public actor Server {
 
     // MARK: Test and tooling hooks
 
-    /// Forces a checkpoint of every pane (tests, graceful shutdown).
-    public func checkpointAll() {
-        for p in panes.values { p.checkpointNow() }
-    }
-
     public var paneCount: Int { panes.count }
 }
 #endif
