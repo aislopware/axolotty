@@ -125,3 +125,30 @@ It sits behind the same link interface as the Unix socket, so nothing above it c
 - user-interactive QoS on the keystroke path.
 
 **Predictive echo** follows Slopty's rules above.
+
+## Stage A, measured (2026-11-02)
+
+The route was Mac Studio → MacBook over the tailnet, with ICMP at 8.6 ms (`tailscale status` later showed the MacBook via relay "dc-old"). Each figure is key to echo through `cat -u` in raw mode, release build, 300 keys 25 ms apart (`Tests/AxHostTests/EchoBench.swift`).
+
+| Link | p50 | p90 | p99 |
+|---|---|---|---|
+| Unix socket, idle | 0.68 | 1.49 | 4.15 ms |
+| TCP, idle | 9.2 | 10.7 | 19.9 ms |
+| ssh bridge, idle | 9.5 | 11.0 | 18.4 ms |
+| TCP + another pane flooding, one FIFO | 77.6 | 114.7 | 135.1 ms |
+| … with a lane per pane | 29.3 | 46.3 | 65.0 ms |
+| … with lanes and bulk pacing | **10.1** | **15.6** | **25.5 ms** |
+| ssh bridge + flood | 66.0 | 83.0 | 98.9 ms |
+
+What this shows:
+- **Idle TCP costs about 0.6 ms over ICMP.** Encryption, the framing and TCP itself are not where the time goes.
+- **The tail under load came from head-of-line blocking, at two levels.**
+  - The connection had a single FIFO. Lanes fixed it, scheduling control first and then the least-queued lane; a lane per pane does the work of QUIC's stream per pane.
+  - The path's buffers. Delay-based pacing of bulk lanes fixed them: the cap shrinks when the RTT rises over its floor, after LEDBAT. The flood's throughput was the same with pacing and without it (6.0–6.4 MB/s). Without pacing, 16 of 200 keys took over 2 s.
+- **ssh can't be fixed from our side.** Its own buffers sit between the lanes and the wire.
+
+The verdict on Stage B: QUIC with null crypto is not needed for what was measured. What it would still buy:
+- recovery from a lone loss without waiting for TCP's RTO or TLP. Slopty's echo datagram copies target exactly that, and it is the likely source of the remaining p99;
+- a connection that survives an address change.
+
+Revisit Stage B if p99 on a lossy Wi-Fi path matters after predictive echo lands.
