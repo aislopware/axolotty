@@ -374,6 +374,26 @@ public final class VTTerminal {
         return v
     }
 
+    /// The character in a cell of the active screen (the cursor's
+    /// coordinates), " " for a blank cell, nil off the screen. Wide or
+    /// multi-scalar cells answer with their first scalar.
+    public func character(atActiveX x: Int, y: Int) -> Character? {
+        guard x >= 0, y >= 0, x < Int(cols), y < Int(rows) else { return nil }
+        var ref = GhosttyGridRef()
+        ref.size = MemoryLayout<GhosttyGridRef>.size
+        var p = GhosttyPoint()
+        p.tag = GHOSTTY_POINT_TAG_ACTIVE
+        p.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
+        guard ghostty_terminal_grid_ref(handle, p, &ref) == GHOSTTY_SUCCESS else { return nil }
+        var cps: (UInt32, UInt32, UInt32, UInt32) = (0, 0, 0, 0)
+        var n = 0
+        let r = withUnsafeMutableBytes(of: &cps) { b in
+            ghostty_grid_ref_graphemes(&ref, b.baseAddress!.assumingMemoryBound(to: UInt32.self), 4, &n)
+        }
+        guard r == GHOSTTY_SUCCESS, n > 0, let u = Unicode.Scalar(cps.0) else { return " " }
+        return Character(u)
+    }
+
     private func stringData(_ key: GhosttyTerminalData) -> String {
         var s = GhosttyString()
         guard ghostty_terminal_get(handle, key, &s) == GHOSTTY_SUCCESS else { return "" }

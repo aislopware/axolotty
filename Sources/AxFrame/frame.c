@@ -170,6 +170,10 @@ struct ax_frame {
   GhosttyRenderStateRowCells cells;
   ax_highlight *hl;
   size_t hl_len;
+  ax_overlay_cell *ov;
+  size_t ov_len;
+  bool ov_marked;
+  int32_t ov_cx, ov_cy;
 };
 
 ax_frame *ax_frame_new(void) {
@@ -178,6 +182,7 @@ ax_frame *ax_frame_new(void) {
   f->flat_glyphs.elem = sizeof(ax_glyph_instance);
   f->flat_rects.elem = sizeof(ax_rect_instance);
   f->force = true;
+  f->ov_cx = f->ov_cy = -1;
   if (ghostty_render_state_row_iterator_new(NULL, &f->it) != GHOSTTY_SUCCESS ||
       ghostty_render_state_row_cells_new(NULL, &f->cells) != GHOSTTY_SUCCESS) {
     ax_frame_free(f);
@@ -205,6 +210,7 @@ void ax_frame_free(ax_frame *f) {
   if (f->cells) ghostty_render_state_row_cells_free(f->cells);
   if (f->it) ghostty_render_state_row_iterator_free(f->it);
   free(f->hl);
+  free(f->ov);
   free(f);
 }
 
@@ -222,6 +228,27 @@ bool ax_frame_set_highlights(ax_frame *f, const ax_highlight *spans, size_t n) {
   f->hl = copy;
   f->hl_len = n;
   f->force = true;
+  return true;
+}
+
+bool ax_frame_set_overlay(ax_frame *f, const ax_overlay_cell *cells, size_t n, bool marked,
+                          int32_t cursor_x, int32_t cursor_y) {
+  if (n == f->ov_len && marked == f->ov_marked && cursor_x == f->ov_cx && cursor_y == f->ov_cy &&
+      (n == 0 || memcmp(cells, f->ov, n * sizeof(ax_overlay_cell)) == 0))
+    return true;
+  ax_overlay_cell *copy = NULL;
+  if (n) {
+    copy = malloc(n * sizeof(ax_overlay_cell));
+    if (!copy) return false;
+    memcpy(copy, cells, n * sizeof(ax_overlay_cell));
+  }
+  free(f->ov);
+  f->ov = copy;
+  f->ov_len = n;
+  f->ov_marked = marked;
+  f->ov_cx = cursor_x;
+  f->ov_cy = cursor_y;
+  f->force = true;  // guesses sit on one or two rows; a full rebuild per key is cheap
   return true;
 }
 
@@ -292,6 +319,48 @@ static void push_rect(row_data *rd, float x, float y, float w, float h, uint32_t
   ax_rect_instance *r = vec_push(&rd->rects);
   if (!r) return;
   *r = (ax_rect_instance){.x = x, .y = y, .w = w, .h = h, .color = color, .kind = kind};
+}
+
+// The guesses on row `y`, in the colour of the character right before them
+// (what the shell's highlighting gave the word so far), else the default:
+// after a blank, the word is new, and the prompt's colours are not its own.
+static void overlay_row(ax_frame *f, uint16_t y, ax_glyph_cache *cache, const ax_frame_style *st,
+                        const GhosttyRenderStateColors *colors) {
+  row_data *rd = &f->row[y];
+  for (size_t i = 0; i < f->ov_len; i++) {
+    const ax_overlay_cell *o = &f->ov[i];
+    if (o->row != y || o->col >= f->cols || o->cp == ' ') continue;
+    uint32_t fg = rgb(colors->foreground);
+    for (size_t k = rd->glyphs.len; k-- > 0;) {
+      const ax_glyph_instance *gi = (const ax_glyph_instance *)rd->glyphs.ptr + k;
+      if (gi->col < o->col) {
+        if (gi->col + 1 == o->col) fg = gi->color;
+        break;
+      }
+    }
+    const ax_glyph *g = ax_glyph_cache_get(cache, &o->cp, 1, 0);
+    if (!g) continue;
+    ax_glyph_instance *gi = vec_push(&rd->glyphs);
+    if (!gi) return;
+    *gi = (ax_glyph_instance){
+        .col = o->col,
+        .row = y,
+        .bearing_x = g->bearing_x,
+        .bearing_y = g->bearing_y,
+        .atlas_x = g->atlas_x,
+        .atlas_y = g->atlas_y,
+        .width = g->width,
+        .height = g->height,
+        .color = fg,
+        .atlas = g->atlas,
+        .flags = f->ov_marked ? AX_GLYPH_FAINT : 0,
+    };
+    if (f->ov_marked) {
+      float t = st->underline_thickness > 0 ? st->underline_thickness : 1;
+      push_rect(rd, o->col * st->cell_width, y * st->cell_height + st->underline_y, st->cell_width, t, fg,
+                AX_RECT_DOTTED);
+    }
+  }
 }
 
 static void build_row(ax_frame *f, uint16_t y, ax_glyph_cache *cache, const ax_frame_style *st,
@@ -470,6 +539,7 @@ static void build_row(ax_frame *f, uint16_t y, ax_glyph_cache *cache, const ax_f
       if (style.overline) push_rect(rd, px, py, span, st->underline_thickness, fg, AX_RECT_SOLID);
     }
   }
+  if (f->ov_len) overlay_row(f, y, cache, st, colors);
   bool clean = false;
   ghostty_render_state_row_set(f->it, GHOSTTY_RENDER_STATE_ROW_OPTION_DIRTY, &clean);
 }
@@ -521,9 +591,9 @@ int ax_frame_build(ax_frame *f, GhosttyRenderState state, ax_glyph_cache *cache,
       .rows = rows,
       .any_dirty = any,
       .cursor_visible = cur.visible && cur.viewport_has_value,
-      .cursor_x = cur.viewport_x,
-      .cursor_y = cur.viewport_y,
-      .cursor_wide = cur.wide_tail,
+      .cursor_x = f->ov_cx >= 0 && f->ov_cx < cols ? (uint16_t)f->ov_cx : cur.viewport_x,
+      .cursor_y = f->ov_cy >= 0 && f->ov_cy < rows ? (uint16_t)f->ov_cy : cur.viewport_y,
+      .cursor_wide = f->ov_cx >= 0 ? false : cur.wide_tail,
       .cursor_blinking = cur.blinking,
       .cursor_style = (uint8_t)cur.visual_style,
       .cursor_color = colors.cursor_has_value ? rgb(colors.cursor) : 0,

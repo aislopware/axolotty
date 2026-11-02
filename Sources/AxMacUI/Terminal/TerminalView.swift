@@ -60,6 +60,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private var renderer: TerminalRenderer?
     private var link: CADisplayLink?
     private var lastGeneration: UInt64 = .max
+    /// Local echo for a far host: guesses drawn until the host's own echo lands.
+    private var predictor = EchoPredictor()
+    private var predictionTimer: DispatchWorkItem?
     private var needsRender = true
     private var idleFrames = 0
     private let wake = WakeFlag()
@@ -358,6 +361,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         let changed = generation != lastGeneration || needsRender
         var cursorInfo = frameState.cursor
         if changed {
+            if generation != lastGeneration { checkPrediction() }
             updateFrame(frameState)
             renderer.prepare(frameState, selectionBackground: colors.selection)
             cursorInfo = frameState.cursor
@@ -528,8 +532,70 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if action != .release {
             snapToBottom()
             NSCursor.setHiddenUntilMouseMoves(true)
+            // Plain text is guessed at; anything else (Return, arrows, ⌃ and
+            // ⌥ chords) is the host's to answer before the next guess.
+            let plain = !optionAlt && !event.modifierFlags.contains(.control) && !text.isEmpty
+                && !text.unicodeScalars.contains { $0.properties.generalCategory == .control }
+            if plain { predict(text) } else { holdPrediction() }
         }
         connection.send(.key(pane, input))
+    }
+
+    // MARK: Local echo
+
+    private static func clock() -> Duration { .seconds(CACurrentMediaTime()) }
+
+    /// What the predictor reads off the mirror. Call inside `withTerminal`.
+    private func echoScreen(_ t: VTTerminal) -> EchoPredictor.Screen {
+        let c = t.cursor
+        return EchoPredictor.Screen(cursorX: Int(c.x), cursorY: Int(c.y), cols: Int(t.cols), cursorVisible: c.visible,
+                                    primary: t.activeScreen == .primary, atPrompt: t.cursorAtPrompt,
+                                    // A scrolled-back view has no cursor line to draw guesses on.
+                                    mouseTracking: t.mouseTracking, secret: readsSecret || t.isScrolledBack) { x, y in
+            t.character(atActiveX: x, y: y)
+        }
+    }
+
+    private func predict(_ text: String) {
+        predictor.rtt = connection.rtt
+        // This Mac, or a near one: the echo beats any guess; touch nothing.
+        guard (predictor.rtt ?? .zero) >= EchoPredictor.minimumRTT || !predictor.guesses.isEmpty else { return }
+        let now = Self.clock()
+        let changed = mirror.withTerminal { t in predictor.typed(text, on: echoScreen(t), at: now) } ?? false
+        if changed { showPrediction(now) }
+    }
+
+    /// Text that isn't a plain key (a paste, dictation, Return) went out.
+    private func holdPrediction() {
+        if predictor.interrupted(at: Self.clock()) { showPrediction(Self.clock()) }
+    }
+
+    /// The mirror changed: confirm or take back the guesses. Before a frame is built.
+    private func checkPrediction() {
+        let now = Self.clock()
+        let changed = mirror.withTerminal { t in predictor.observed(echoScreen(t), at: now) } ?? false
+        if changed { showPrediction(now, render: false) }
+    }
+
+    private func showPrediction(_ now: Duration, render: Bool = true) {
+        guard let frameState else { return }
+        let o = predictor.overlay(at: now)
+        frameState.setOverlay(o.cells.map { (row: $0.y, col: $0.x, character: $0.character) }, marked: o.marked,
+                              cursor: o.cursor)
+        if render { setNeedsRender() }
+        // An echo that never comes is a miss; a guess that waits past 250 ms
+        // turns marked. Look again then, output or not.
+        predictionTimer?.cancel()
+        guard let deadline = predictor.nextDeadline, let first = o.cells.first else { return }
+        let wake = min(deadline, o.marked ? deadline : first.at + EchoPredictor.markedAge)
+        let w = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let t = Self.clock()
+            predictor.tick(at: t)
+            showPrediction(t)
+        }
+        predictionTimer = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, (wake - now) / .seconds(1)) + 0.001, execute: w)
     }
 
     /// Typing returns a scrolled-back view to the live screen.
@@ -555,6 +621,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             accumulator?.append(text)
         } else if !text.isEmpty {
             // Outside keyDown (e.g. the emoji picker or dictation): send as typed text.
+            holdPrediction()
             connection.send(.text(pane, text))
         }
     }
@@ -1041,6 +1108,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             return
         }
         snapToBottom()
+        holdPrediction()
         connection.send(.paste(pane, text))
     }
 

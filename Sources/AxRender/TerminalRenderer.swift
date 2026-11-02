@@ -113,6 +113,19 @@ public final class TerminalFrame {
         _ = c.withUnsafeBufferPointer { ax_frame_set_highlights(frame, $0.baseAddress, $0.count) }
     }
 
+    /// Draws guessed characters (a far host's predicted echo) over their
+    /// cells, viewport coordinates, and puts the cursor after them.
+    /// `marked`: faint and underlined, shown to be guesses.
+    public func setOverlay(_ cells: [(row: Int, col: Int, character: Character)], marked: Bool, cursor: (x: Int, y: Int)?) {
+        let c = cells.prefix(512).compactMap { cell -> ax_overlay_cell? in
+            guard let v = cell.character.unicodeScalars.first?.value else { return nil }
+            return ax_overlay_cell(row: UInt16(clamping: cell.row), col: UInt16(clamping: cell.col), cp: v)
+        }
+        _ = c.withUnsafeBufferPointer {
+            ax_frame_set_overlay(frame, $0.baseAddress, $0.count, marked, Int32(cursor?.x ?? -1), Int32(cursor?.y ?? -1))
+        }
+    }
+
     fileprivate func build(_ store: GlyphStore, style: inout ax_frame_style) -> Bool {
         if builtEpoch != store.epoch {
             ax_frame_invalidate(frame)

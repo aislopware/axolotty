@@ -140,6 +140,20 @@ typedef struct {
 /// Returns false when out of memory (the old highlights are kept).
 bool ax_frame_set_highlights(ax_frame *frame, const ax_highlight *spans, size_t n);
 
+/// A character drawn over the terminal's own cell: a local guess at a far
+/// host's echo (`EchoPredictor`). Viewport cells; the cell is blank under it.
+typedef struct {
+  uint16_t row, col;
+  uint32_t cp;
+} ax_overlay_cell;
+
+/// Replaces the overlay (copied). `marked`: faint and underlined, said to be
+/// a guess. `cursor_x`/`cursor_y` move the cursor to the end of the guesses
+/// (-1: leave it where the terminal has it). Rebuilds the rows it touches.
+/// Returns false when out of memory (the old overlay is kept).
+bool ax_frame_set_overlay(ax_frame *frame, const ax_overlay_cell *cells, size_t n, bool marked,
+                          int32_t cursor_x, int32_t cursor_y);
+
 /// Flattened views of the frame for upload. Pointers stay valid until the next
 /// build. Row order; `bg` has cols*rows entries (0 = default background).
 const uint32_t *ax_frame_bg(const ax_frame *frame, size_t *count);
