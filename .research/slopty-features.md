@@ -73,7 +73,7 @@ Value means value for an agentic terminal: **H** high, **M** medium, **L** low.
 | Mouse selection: word, line, rectangle (⌥-drag), word across soft wrap | SHIPPED: `crates/slopty-terminal/src/view.rs:283,1356` | **has**: `AxMacUI/Terminal/TerminalView.swift:641-690` (⌥ rectangle at :669), `AxVT/VTSelection.swift` | M | Whether a word follows a soft wrap in Axolotty is unverified. |
 | Copy on select | SHIPPED: `[terminal] copy_on_select` | **has**: Settings › Selection (`Preferences.copyOnSelect`, applied on mouse-up in `TerminalView.swift`) | L | |
 | Command blocks (OSC 133): prompt jumps ⌘↑/⌘↓, copy last output ⇧⌘C, block menu (copy command/output, rerun, select), exit status | SHIPPED: `crates/slopty-engine/src/osc133.rs`, `crates/slopty-terminal/src/view.rs:4475` | **partial**: zsh emits OSC 133 (`AxHost/ShellEnvironment.swift:69-125`) and the VT parses it (`AxVT/VTTerminal.swift:47-50`). Only status uses it (`StatusBook.programEnded`, `AxModel/AgentStatus.swift:88`). No block UI | H | The data is already there; the work is UI. |
-| Command duration; "long command finished unwatched" badge and notice | SHIPPED: `crates/slopty-terminal/src/view.rs:390`, `crates/slopty-ui/src/workspace/attention.rs` | **partial**: an agent's run gets a receipt ("✓ Worked 4m 12s", `AxMacUI/Chrome/BandView.swift:16,100`). Plain commands get nothing | M | |
+| Command duration; "long command finished unwatched" badge and notice | SHIPPED: `crates/slopty-terminal/src/view.rs:390`, `crates/slopty-ui/src/workspace/attention.rs` | **partial**: an agent's run gets a receipt ("✓ Worked 4m 12s", `AxMacUI/Chrome/BandView.swift:16,100`). Plain commands get nothing: a done/error receipt for long commands was built, then **dropped** (2026-11-02) | M | |
 | Shell integration for zsh, bash and fish; terminfo install; an ssh wrapper that carries terminfo | SHIPPED: `crates/slopty-pty/src/shell_integration.rs`, `terminfo.rs`, `ssh.rs`; CLI `slopty ssh` (`apps/slopty-cli/src/lib.rs:95-105`) | **partial**: zsh only (`AxHost/ShellEnvironment.swift:69`). No bash, fish, terminfo or ssh wrapper | M | |
 | Progress OSC 9;4 | SHIPPED: tab ring, Dock tile bar, bar along the pane's top (`crates/slopty-terminal/src/progress.rs`, `crates/slopty-platform/src/dock.rs`) | **has**: a 2 pt accent line (`AxMacUI/Terminal/ProgressLine.swift`, `AxModel/HostState.swift:13-16`) | M | Slopty also shows progress on the Dock tile (S). |
 | Program notifications (OSC 9 / 777 / 99) | SHIPPED: `crates/slopty-engine/src/ghostty.rs:4896` | **has**: `AxVT/VTTerminal.swift:11`, `AxMacUI/App/AttentionCenter.swift:51` | M | |
@@ -126,9 +126,9 @@ Value means value for an agentic terminal: **H** high, **M** medium, **L** low.
 | One mark vocabulary everywhere (row, title, picker, inbox, Dock badge); "seen" synced across devices | SHIPPED: `crates/slopty-shell/src/shell/marks.rs:1-90`, `crates/slopty-worker/src/thread/marks.rs` | **has**: `AxMacUI/Sidebar/StatusGlyphView.swift`, `ClientMessage.seen` (`AxProtocol/Messages.swift:160`), design-system rules | H | At parity in concept. |
 | GUI Allow / Deny / Always / accept edits | **REMOVED** `99d0ffe6c`; ruled harmful (`docs/decisions/layout.md:132-137`) | **not built, by choice**: the TUI does approvals; Axolotty shows the ask and takes you to it | contested | See §0 and §2 item 3. |
 | `[agents] autonomy` = auto / full / ask, mapped to Claude's permission modes at start | SHIPPED: `crates/slopty-settings/src/lib.rs:373-390` | **has**: Settings › Claude starts in / model / effort, passed as flags at start (`AxMacUI/Sidebar/AgentPresets.swift`) | M | Also needs flags at start. Pairs with presets. |
-| MCP tools for agents: `machines`, `agent_start/tell/read/wait/stop`, `agents`, `branch_bring`, `show_visual`, `show_page`, `ui_state/terminal/open/region/chat/split` | SHIPPED: `crates/slopty-tools/src/tools.rs:222-286`, `crates/slopty-tools/src/ui.rs`; `slopty mcp` on stdio (`apps/slopty-cli/src/mcp.rs`) | **has**: `axolotty mcp`: list_panes, new_session (with worktree), split_pane, send_input, read_screen, list_commands, wait_for (one or several panes), report_status, notify (`axolotty/MCP.swift`) | H | Wrapping the existing CLI verbs as an MCP server is small. |
-| `agent_tell` typing safety: bracketed paste, Enter ≥200 ms later once the paste is read, refused while the agent needs the person | SHIPPED: `crates/slopty-worker/src/session.rs:426`, `docs/decisions/agents.md:94-121` | **has**: `send --paste` and MCP `send_input`: bracketed paste, Enter ≥200 ms later, refused while the agent waits for its person unless forced (`axolotty/Ops.swift`) | H | Ink TUIs read an Enter in the same read as part of the paste. |
-| Agent-to-agent tree (parent/child across machines, `agent_wait` any/all) | SHIPPED: `crates/slopty-tools/src/tools.rs:30-140` | **partial**: `axolotty wait --pane A,B [--all]` and MCP `wait_for` `panes`/`all` (`axolotty/Ops.swift`); no parent/child tree | M | |
+| MCP tools for agents: `machines`, `agent_start/tell/read/wait/stop`, `agents`, `branch_bring`, `show_visual`, `show_page`, `ui_state/terminal/open/region/chat/split` | SHIPPED: `crates/slopty-tools/src/tools.rs:222-286`, `crates/slopty-tools/src/ui.rs`; `slopty mcp` on stdio (`apps/slopty-cli/src/mcp.rs`) | **has**: `axolotty mcp`: list_panes, new_session (with worktree), send_input, read_pane, wait_for (one or the first of several panes), close_pane (`axolotty/MCP.swift`). split_pane, list_commands, report_status and notify were built, then dropped | H | Wrapping the existing CLI verbs as an MCP server is small. |
+| `agent_tell` typing safety: bracketed paste, Enter ≥200 ms later once the paste is read, refused while the agent needs the person | SHIPPED: `crates/slopty-worker/src/session.rs:426`, `docs/decisions/agents.md:94-121` | **has**: `send` and MCP `send_input`: bracketed paste, Enter ≥200 ms later, refused while the agent waits for its person unless forced (`axolotty/Ops.swift`) | H | Ink TUIs read an Enter in the same read as part of the paste. |
+| Agent-to-agent tree (parent/child across machines, `agent_wait` any/all) | SHIPPED: `crates/slopty-tools/src/tools.rs:30-140` | **partial**: `axolotty wait --pane A,B` and MCP `wait_for` `panes`, any of them (`axolotty/Ops.swift`); `--all` was dropped; no parent/child tree | M | |
 | Start an agent in a new git worktree (or a fresh clone) | SHIPPED: `agent_start` worktree/repo (`crates/slopty-tools/src/tools.rs:58-75`); setup scripts; merged worktrees swept | **has**: ⌥⌘T, `new --worktree`, MCP `new_session.worktree` (`AxHost/Worktrees.swift`) | H | The standard way to run parallel agents. |
 | Start presets: model, mode (plan), effort | SHIPPED: `crates/slopty-worker/src/thread/start.rs:227-262` | **partial**: "+" menu and empty-state tiles start a bare agent (`AxMacUI/Sidebar/AgentPresets.swift`, `AxMacUI/Window/EmptyStateView.swift:12-20`) | M | |
 | Auto-trust the folder before starting, so the trust dialog cannot block | SHIPPED: `crates/slopty-agent/src/trust.rs` | **not built, by choice**: it writes Claude Code's own config, which Axolotty never does | L | It writes Claude's own config. Avoid, per the owner's rule about `~/.claude`. |
@@ -179,7 +179,7 @@ Value means value for an agentic terminal: **H** high, **M** medium, **L** low.
 
 | Feature | Slopty status | Axolotty status | Value | Notes |
 |---|---|---|---|---|
-| Ports listening in each terminal's process tree (libproc on macOS, `/proc` on Linux), scanned on demand | SHIPPED: `crates/slopty-worker/src/ports.rs:1-40`; `slopty ports` (`apps/slopty-cli/src/verbs.rs:257`); shown in the hover card | **has**: `PaneInfo.ports`, `axolotty ports`, the hover card and one-click open | H | Agents start dev servers. Show "localhost:5173" and open it. |
+| Ports listening in each terminal's process tree (libproc on macOS, `/proc` on Linux), scanned on demand | SHIPPED: `crates/slopty-worker/src/ports.rs:1-40`; `slopty ports` (`apps/slopty-cli/src/verbs.rs:257`); shown in the hover card | **has**: `PaneInfo.ports`, the hover card and one-click open (`axolotty ports` was dropped) | H | Agents start dev servers. Show "localhost:5173" and open it. |
 | Forward a worker's ports to the same loopback port here, plus a SOCKS proxy | SHIPPED: `crates/slopty-client/src/tunnel.rs:1-30` | n/a (local) | M once remote | |
 | Browser pane | SHIPPED: `crates/slopty-shell/src/app_menus.rs:300` | missing | L | Opening the system browser is enough. |
 | Clipboard sync with workers (lazy, every type, secrets concealed) | SHIPPED: `crates/slopty-worker/src/clip.rs` | n/a (local) | M once remote | |
@@ -198,7 +198,7 @@ Value means value for an agentic terminal: **H** high, **M** medium, **L** low.
 | Version-mismatch notice | SHIPPED: `crates/slopty-client/src/update.rs:1-30` | **partial**: `protocolVersion` in the hello (`AxProtocol/Messages.swift:103,177`); the UI behaviour is unverified | M | |
 | Reconnect with backoff; drop a silent host after 15 s | SHIPPED (CHANGELOG) | **has**: reconnect (`AxClient/HostConnection.swift`), "Reconnecting" empty state (`AxMacUI/Window/EmptyStateView.swift:4-7`) | M | |
 | Wake-on-LAN, `slopty wake` | SHIPPED: `crates/slopty-proto/src/lan.rs`, `apps/slopty-cli/src/verbs.rs:44-49` | n/a | L | |
-| `slopty attach` (a raw terminal; `^]` detaches) | SHIPPED: `apps/slopty-cli/src/lib.rs:143-158`, `attach.rs` | **has**: `axolotty attach` (`axolotty/Attach.swift`) | M | Lets you use an Axolotty pane from ssh or another terminal. |
+| `slopty attach` (a raw terminal; `^]` detaches) | SHIPPED: `apps/slopty-cli/src/lib.rs:143-158`, `attach.rs` | **dropped** (2026-11-02): `axolotty attach` was built, then removed as unused | M | Lets you use an Axolotty pane from ssh or another terminal. |
 | `slopty ssh` (carries terminfo) | SHIPPED: `apps/slopty-cli/src/lib.rs:95-105` | missing | M | |
 | SSH agent forwarding with per-use approval | PLANNED: `.research/ideas-2026-09-30.md:566` | n/a | L | |
 
@@ -219,14 +219,14 @@ Value means value for an agentic terminal: **H** high, **M** medium, **L** low.
 | `open` / `close` / `resize` | `new` (:135), `split` (:154), `close` (:220) | — |
 | `send` (text, paste, named keys `[mods+]key`) | `send` (:168), text only | **M**: add `--paste` and `--keys ctrl+c,enter` |
 | `screen` / `output` (absolute line ranges with a cursor) | `capture --scrollback --format` (:177) | M: line ranges let an agent read incrementally |
-| `commands` (OSC 133 commands with exit codes) | missing | **H**: an agent can check "did the test command pass?" |
+| `commands` (OSC 133 commands with exit codes) | dropped (built, then removed) | **H**: an agent can check "did the test command pass?" |
 | `wait` (on terminal events) | `wait --for done\|idle\|blocked\|error\|exit` (:226) | add `--for command` (next command end, with its code) |
-| `events` (a feed with a cursor; `--needs` filter) | missing | M |
+| `events` (a feed with a cursor; `--needs` filter) | dropped (built, then removed) | M |
 | `agent start\|tell\|wait\|stop\|status\|read`, `agents` | partial via `new -- claude` and `status` | H (§2 items 7-9) |
 | `ports` | missing | H |
 | `cat` / `put` / `ls` / `mv` / `trash` / `search` / `push` / `pull` | n/a (local) | L |
 | `windows` / `capture` | missing | M |
-| `attach` | missing | M |
+| `attach` | dropped (built, then removed) | M |
 | `mcp` | missing | H |
 | `ui state\|terminal\|open\|diff\|show\|hide\|split` (an agent drives the window) | missing | M: "open this file beside me", "show the diff" |
 | `hook` (hidden relay) | `status` (:188) is the manual equivalent | H |
@@ -317,7 +317,7 @@ The inspector and window streaming are excluded.
    - `wait --for command`.
    - `output --from <line>`: incremental reads.
    - `events --follow`: a status-change feed.
-   - `attach` (`^]` detaches).
+   - `attach` (`^]` detaches). Built, then dropped.
 
 ### Group C: worktrees and resume (start agents well)
 
