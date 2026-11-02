@@ -105,6 +105,13 @@ enum LinkOpener {
     }
 
     /// Whether a far host's paths can open here at all.
+    /// The editor a folder opens in ("Cursor", "Visual Studio Code"); with
+    /// `remote`, only one that opens a far folder over SSH.
+    static func editorName(remote: Bool) -> String? {
+        let app = remote ? installedEditor(remote: true)?.app : editorApp
+        return app.map { FileManager.default.displayName(atPath: $0.path(percentEncoded: false)).replacingOccurrences(of: ".app", with: "") }
+    }
+
     static func opensFar(_ far: FarHost) -> Bool { far.ssh != nil && installedEditor(remote: true) != nil }
 
     /// Opens a path found on a far host in the editor, over SSH.

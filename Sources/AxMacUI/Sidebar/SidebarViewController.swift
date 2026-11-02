@@ -684,15 +684,22 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             menu.addItem(item)
         }
         if case .host = n.kind {
-            if host.phase != .connected { add("Reconnect Now") { host.retry() } }
-            // A far Mac without Axolotty (or with an older one) gets it over ssh.
-            if let target = host.setUpTarget, host.settingUp == nil, host.phase != .connected || host.isBehind {
-                add(host.isBehind || host.phase == .connected ? "Update Axolotty There" : "Set Up Axolotty over SSH") { [weak self] in
-                    self?.model.setUp(target)
+            // The same one thing as the veil and the sheet: set up or update
+            // when that is what keeps it down, reconnect, or nothing for a
+            // Mac that is only asleep (setting one up would fail).
+            if let r = host.linkRemedy {
+                if let target = r.setUp {
+                    add(host.isBehind ? "Update Axolotty There" : "Set Up Axolotty over SSH") { [weak self] in
+                        self?.model.setUp(target)
+                    }
+                } else {
+                    add(r.title) { host.retry() }
                 }
+            } else if host.phase == .connected, host.isBehind, host.settingUp == nil, let target = host.setUpTarget {
+                add("Update Axolotty There") { [weak self] in self?.model.setUp(target) }
             }
             if !host.isLocal {
-                if host.phase != .connected { menu.addItem(.separator()) }
+                if !menu.items.isEmpty { menu.addItem(.separator()) }
                 add("Disconnect") { [weak self] in self?.model.forget(host) }
             }
             return
@@ -709,10 +716,22 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             menu.addItem(.separator())
             add("Close Session") { [weak self] in self?.onCloseSession?(host, sid) }
         case let .workspace(_, wid):
-            if let root = st.workspace(wid)?.root, !root.isEmpty, host.isLocal {
-                add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: root)]) }
+            if let root = st.workspace(wid)?.root, !root.isEmpty {
+                if let far = host.far {
+                    // The far folder in the editor over SSH, as ⌘-click opens a path there.
+                    if LinkOpener.opensFar(far), let editor = LinkOpener.editorName(remote: true) {
+                        add("Open in \(editor)") {
+                            if !LinkOpener.openFar(HostPath(path: root, isFolder: true), on: far) { NSSound.beep() }
+                        }
+                    }
+                } else {
+                    if let editor = LinkOpener.editorName(remote: false) {
+                        add("Open in \(editor)") { LinkOpener.openFolder(root) }
+                    }
+                    add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: root)]) }
+                }
             }
-            menu.addItem(.separator())
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
             add("Close Workspace") { [weak self] in self?.confirmCloseWorkspace(host, wid) }
         }
     }
