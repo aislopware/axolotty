@@ -178,6 +178,9 @@ public enum ClientMessage: Codable, Sendable {
     /// (feature "git"): a far pane's band and hover card show them as a
     /// near one's do.
     case git(UUID, path: String)
+    /// Which of a far pane's printed paths exist on the host, resolved
+    /// against the pane's directory (feature "paths"): ⌘-click opens them.
+    case paths(UUID, cwd: String, candidates: [String])
 }
 
 public enum HostEvent: Codable, Hashable, Sendable {
@@ -225,6 +228,8 @@ public enum HostMessage: Codable, Sendable {
     case pong(UInt64)
     /// The answer to `ClientMessage.git`.
     case gitTree(UUID, GitReport)
+    /// The answer to `ClientMessage.paths`, one per candidate.
+    case pathsFound(UUID, [HostPath?])
     case error(String)
     /// The client speaks another wire generation; the host closes the link.
     /// One side needs updating (`generation` is the host's).

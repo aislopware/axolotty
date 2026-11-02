@@ -367,7 +367,7 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
             v.setDimmed(dim, alpha: alpha, animated: animated)
             v.setFocusRing(contrast && multi && id == focused)
             v.showsStrip = multi
-            v.linkContext = (host.pane(id)?.pwd ?? "", host.isLocal)
+            v.linkContext = LinkContext(cwd: host.pane(id)?.pwd ?? "", far: host.far)
             v.readsSecret = host.pane(id)?.readsSecret == true
             v.endedCode = host.pane(id)?.exitStatus
             v.onRestart = { [weak self] in self?.restart(id) }

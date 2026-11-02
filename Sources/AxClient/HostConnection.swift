@@ -82,6 +82,7 @@ public final class HostConnection: @unchecked Sendable {
         var captures: [UUID: CheckedContinuation<String?, Never>] = [:]
         var pongs: [UInt64: CheckedContinuation<Void, Never>] = [:]
         var gits: [UUID: CheckedContinuation<GitReport?, Never>] = [:]
+        var finds: [UUID: CheckedContinuation<[HostPath?]?, Never>] = [:]
         /// What the host said it can do in its welcome.
         var hostFeatures: Set<String> = []
         /// A kick's ping, until its pong comes.
@@ -251,6 +252,7 @@ public final class HostConnection: @unchecked Sendable {
             taken.captures = s.captures
             taken.pongs = s.pongs
             taken.gits = s.gits
+            taken.finds = s.finds
             taken.wantConnected = s.wantConnected
             taken.refusal = s.refusal
             #if os(macOS)
@@ -265,6 +267,7 @@ public final class HostConnection: @unchecked Sendable {
             s.captures = [:]
             s.pongs = [:]
             s.gits = [:]
+            s.finds = [:]
             s.kickPing = nil
             return true
         }
@@ -273,6 +276,7 @@ public final class HostConnection: @unchecked Sendable {
         taken.captures.values.forEach { $0.resume(returning: nil) }
         taken.pongs.values.forEach { $0.resume() }
         taken.gits.values.forEach { $0.resume(returning: nil) }
+        taken.finds.values.forEach { $0.resume(returning: nil) }
         let banner = conn.bannerText
         Task { [weak self] in
             var failure = taken.refusal
@@ -480,6 +484,8 @@ public final class HostConnection: @unchecked Sendable {
             state.withLock { $0.captures.removeValue(forKey: token) }?.resume(returning: text)
         case let .gitTree(token, report):
             state.withLock { $0.gits.removeValue(forKey: token) }?.resume(returning: report)
+        case let .pathsFound(token, found):
+            state.withLock { $0.finds.removeValue(forKey: token) }?.resume(returning: found)
         case let .pong(n):
             let t = now
             let (waiter, rtt) = state.withLock { s in
@@ -569,6 +575,24 @@ public final class HostConnection: @unchecked Sendable {
                 return conn
             }
             if let conn { conn.send(ClientMessage.git(token, path: path)) } else { c.resume(returning: nil) }
+        }
+    }
+
+    /// Which of `candidates` exist on the host (resolved against `cwd`
+    /// there), one answer each; nil with no link, or from a host too old to say.
+    public func paths(_ candidates: [String], cwd: String) async -> [HostPath?]? {
+        let token = UUID()
+        return await withCheckedContinuation { c in
+            let conn = state.withLock { s -> FramedConnection? in
+                guard let conn = s.conn, s.welcome == nil, s.hostFeatures.contains("paths") else { return nil }
+                s.finds[token] = c
+                return conn
+            }
+            if let conn {
+                conn.send(ClientMessage.paths(token, cwd: cwd, candidates: Array(candidates.prefix(HostPath.maxBatch))))
+            } else {
+                c.resume(returning: nil)
+            }
         }
     }
 

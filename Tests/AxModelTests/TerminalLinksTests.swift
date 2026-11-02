@@ -22,6 +22,24 @@ import Testing
         #expect(targets("(/tmp/x.log)") == [.path("/tmp/x.log", line: nil, column: nil)])
     }
 
+    @Test func aFarPathOpensInTheEditorOverSSH() {
+        func url(_ path: String, folder: Bool = false, line: Int? = nil, column: Int? = nil, ssh: String = "studio") -> String? {
+            TerminalLinks.remoteEditorURL(scheme: "vscode", ssh: ssh, path: path, isFolder: folder,
+                                          line: line, column: column)?.absoluteString
+        }
+        #expect(url("/srv/app", folder: true) == "vscode://vscode-remote/ssh-remote+studio/srv/app",
+                "a folder has no line: VS Code opens it as a folder")
+        #expect(url("/srv/app/main.swift", line: 12, column: 5) == "vscode://vscode-remote/ssh-remote+studio/srv/app/main.swift:12:5")
+        #expect(url("/srv/Makefile") == "vscode://vscode-remote/ssh-remote+studio/srv/Makefile:1",
+                "a file always carries a line, or VS Code would take it for a folder")
+        #expect(url("/srv/a.swift", column: 3) == "vscode://vscode-remote/ssh-remote+studio/srv/a.swift:1",
+                "no column without a line")
+        #expect(url("/srv/my notes/a b.md", line: 2) == "vscode://vscode-remote/ssh-remote+studio/srv/my%20notes/a%20b.md:2")
+        #expect(url("/srv", folder: true, ssh: "100.64.0.3") == "vscode://vscode-remote/ssh-remote+100.64.0.3/srv")
+        #expect(url("srv/a.swift") == nil, "only absolute paths")
+        #expect(url("/srv", ssh: "") == nil)
+    }
+
     @Test func notLinks() {
         #expect(targets("version 1.2.3 and 4/5 done") == [])
         #expect(targets("main.swift without a line") == [])

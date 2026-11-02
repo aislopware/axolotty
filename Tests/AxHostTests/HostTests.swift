@@ -66,6 +66,28 @@ struct HostTests {
         await fx.tearDown()
     }
 
+    @Test func theHostSaysWhichPrintedPathsItHas() async throws {
+        let fx = try await HostFixture()
+        let c = try await fx.client()
+        let root = fx.paths.root.appending(path: "tree").path(percentEncoded: false)
+        try FileManager.default.createDirectory(atPath: root + "/src", withIntermediateDirectories: true)
+        try "x\n".write(toFile: root + "/src/main.swift", atomically: true, encoding: .utf8)
+
+        let found = try #require(await c.paths(["src/main.swift", "./src", "../tree/src/main.swift",
+                                                root + "/src/", "src/gone.swift", "~/"], cwd: root))
+        #expect(found.count == 6, "one answer per candidate")
+        #expect(found[0] == HostPath(path: root + "/src/main.swift", isFolder: false))
+        #expect(found[1] == HostPath(path: root + "/src", isFolder: true))
+        #expect(found[2] == found[0], "standardized")
+        #expect(found[3] == found[1])
+        #expect(found[4] == nil, "what isn't there doesn't underline")
+        #expect(found[5]?.isFolder == true, "~ is the host's home")
+
+        let homeless = HostPath.resolve(["~/src/main.swift", "src"], cwd: "", home: root)
+        #expect(homeless == [found[0], nil], "~ against the given home; relative needs a directory")
+        await fx.tearDown()
+    }
+
     @Test func sessionStreamsIntoAMirror() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()

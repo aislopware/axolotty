@@ -59,6 +59,14 @@ final class HostSession: Identifiable {
 
     var name: String { state?.name ?? label ?? (isLocal ? "This Mac" : endpoint.description) }
 
+    /// A far host, for its panes' links: nil for this Mac. ssh reaches a
+    /// tailnet host by the name it was dialled as.
+    var far: FarHost? {
+        guard !isLocal else { return nil }
+        let ssh: String? = if case let .tcp(dialled, _) = endpoint { dialled } else { nil }
+        return FarHost(id: id, ssh: ssh, connection: connection)
+    }
+
     /// Connects (after `prepare`, e.g. launching the local server) and keeps
     /// reconnecting with backoff until stopped.
     func start(prepare: (@MainActor () async -> Void)? = nil) {

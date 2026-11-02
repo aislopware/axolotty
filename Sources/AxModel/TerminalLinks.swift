@@ -39,6 +39,25 @@ public enum TerminalLinks {
         return out.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }
 
+    /// The URL that opens `path` on host `ssh` in an editor of the VS Code
+    /// family (`scheme`: vscode, cursor, windsurf), over its Remote-SSH:
+    /// `vscode://vscode-remote/ssh-remote+HOST/path`. VS Code opens a path
+    /// ending in `:line[:column]` as a file and anything else as a folder,
+    /// so a file always carries a line.
+    public static func remoteEditorURL(scheme: String, ssh: String, path: String, isFolder: Bool,
+                                       line: Int? = nil, column: Int? = nil) -> URL? {
+        guard path.hasPrefix("/"), !ssh.isEmpty else { return nil }
+        var spec = path
+        if !isFolder {
+            spec += ":\(line ?? 1)"
+            if let column, line != nil { spec += ":\(column)" }
+        }
+        guard let host = ssh.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed),
+              let encoded = spec.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        else { return nil }
+        return URL(string: "\(scheme)://vscode-remote/ssh-remote+\(host)\(encoded)")
+    }
+
     /// The link covering character `offset`, if any.
     public static func link(in text: String, at offset: Int) -> Link? {
         find(in: text).first { $0.range.contains(offset) }

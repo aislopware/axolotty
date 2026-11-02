@@ -737,8 +737,24 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.command), let link = link(at: event) {
-            LinkOpener.open(link.target, cwd: linkContext.cwd, local: linkContext.local)
+            if let far = linkContext.far, let found = link.found, case let .path(_, line, column) = link.target {
+                LinkOpener.openFar(found, line: line, column: column, on: far)
+            } else {
+                LinkOpener.open(link.target, cwd: linkContext.cwd, local: linkContext.far == nil)
+            }
             setHoveredLink(nil)
+            return
+        }
+        // ⌘-clicked a far path before its host answered: open it when it does.
+        if event.modifierFlags.contains(.command), let far = linkContext.far, LinkOpener.opensFar(far),
+           case let .path(p, line, column)? = linkCandidate(atWindowPoint: event.locationInWindow),
+           FarPaths.lookup(p, cwd: linkContext.cwd, on: far) == nil {
+            let cwd = linkContext.cwd
+            FarPaths.ask([p], cwd: cwd, on: far) {
+                if case let .some(.some(there)) = FarPaths.lookup(p, cwd: cwd, on: far) {
+                    LinkOpener.openFar(there, line: line, column: column, on: far)
+                }
+            }
             return
         }
         let wasFocused = delegate?.terminalIsFocusedPane(self) ?? true
@@ -933,12 +949,14 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     // MARK: Links
 
-    /// Where relative paths resolve, and whether they are on this Mac.
-    var linkContext: (cwd: String, local: Bool) = ("", true)
+    /// Where relative paths resolve, and on which Mac.
+    var linkContext = LinkContext()
 
     private struct HoveredLink: Equatable {
         var runs: [VTSearch.Run]
         var target: TerminalLinks.Target
+        /// A far pane's path, as its host found it.
+        var found: HostPath?
     }
 
     private var hoveredLink: HoveredLink?
@@ -948,7 +966,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// existing path in the text (its logical line, across soft wraps).
     private func link(at event: NSEvent) -> HoveredLink? { link(atWindowPoint: event.locationInWindow) }
 
-    private func link(atWindowPoint wp: NSPoint) -> HoveredLink? {
+    /// The link text under a point, before checking it opens.
+    private func linkCandidate(atWindowPoint wp: NSPoint) -> TerminalLinks.Target? {
+        guard let (line, at) = lineAndCell(atWindowPoint: wp) else { return nil }
+        return TerminalLinks.link(in: line.text, at: at)?.target
+    }
+
+    private func lineAndCell(atWindowPoint wp: NSPoint) -> (VTLine, Int)? {
         let p = convert(wp, from: nil)
         guard bounds.contains(p), cellSize.w > 0 else { return nil }
         let scale = Double(metalLayer?.contentsScale ?? 2)
@@ -958,6 +982,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         guard let line = mirror.withTerminal({ $0.line(atViewportRow: row) }) ?? nil,
               let at = line.cells.firstIndex(where: { $0.row == row && $0.col == col })
         else { return nil }
+        return (line, at)
+    }
+
+    private func link(atWindowPoint wp: NSPoint) -> HoveredLink? {
+        guard let (line, at) = lineAndCell(atWindowPoint: wp) else { return nil }
         let ctx = linkContext
         // OSC 8 first: the program said exactly what this text points to.
         if let uri = line.uris[at], let url = URL(string: uri) {
@@ -966,10 +995,42 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             while hi + 1 < line.uris.count, line.uris[hi + 1] == uri { hi += 1 }
             return HoveredLink(runs: Self.runs(line, lo ..< hi + 1), target: .url(url))
         }
-        guard let found = TerminalLinks.link(in: line.text, at: at),
-              LinkOpener.canOpen(found.target, cwd: ctx.cwd, local: ctx.local)
-        else { return nil }
+        guard let found = TerminalLinks.link(in: line.text, at: at) else { return nil }
+        // A far pane's path underlines once its host says it is there.
+        if let far = ctx.far, case let .path(p, _, _) = found.target {
+            guard LinkOpener.opensFar(far) else { return nil }
+            switch FarPaths.lookup(p, cwd: ctx.cwd, on: far) {
+            case let .some(.some(there)):
+                return HoveredLink(runs: Self.runs(line, found.range), target: found.target, found: there)
+            case .some(.none):
+                return nil
+            case .none:
+                askFarPaths(also: p)
+                return nil
+            }
+        }
+        guard LinkOpener.canOpen(found.target, cwd: ctx.cwd, local: ctx.far == nil) else { return nil }
         return HoveredLink(runs: Self.runs(line, found.range), target: found.target)
+    }
+
+    /// Asks a far pane's host, in one go, about every path on the screen, and
+    /// shows the link under the pointer when the answer comes.
+    private func askFarPaths(also extra: String? = nil) {
+        let ctx = linkContext
+        guard let far = ctx.far, LinkOpener.opensFar(far) else { return }
+        var candidates = mirror.withTerminal { t -> [String] in
+            var texts = Set<String>(), out: [String] = []
+            for row in 0 ..< Int(t.rows) {
+                guard let line = t.line(atViewportRow: row), texts.insert(line.text).inserted else { continue }
+                for l in TerminalLinks.find(in: line.text) { if case let .path(p, _, _) = l.target { out.append(p) } }
+            }
+            return out
+        } ?? []
+        if let extra { candidates.insert(extra, at: 0) }
+        FarPaths.ask(candidates, cwd: ctx.cwd, on: far) { [weak self] in
+            guard let self, NSEvent.modifierFlags.contains(.command) else { return }
+            updateLinkHoverForModifiers(NSEvent.modifierFlags)
+        }
     }
 
     private static func runs(_ line: VTLine, _ range: Range<Int>) -> [VTSearch.Run] {
@@ -993,6 +1054,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// ⌘ pressed or released over the view: show or drop the link under the pointer.
     private func updateLinkHoverForModifiers(_ flags: NSEvent.ModifierFlags) {
         guard flags.contains(.command), mouseMode == .none, let window else { return setHoveredLink(nil) }
+        if hoveredLink == nil, linkContext.far != nil { askFarPaths() }
         setHoveredLink(link(atWindowPoint: window.mouseLocationOutsideOfEventStream))
     }
 

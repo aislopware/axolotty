@@ -489,6 +489,11 @@ public actor Server {
             // Git may take a while (2 s at most): off the server's own work.
             let conn = link.conn
             Task.detached(priority: .utility) { conn.send(HostMessage.gitTree(token, GitReport.read(path))) }
+        case let .paths(token, cwd, candidates):
+            let conn = link.conn
+            Task.detached(priority: .utility) {
+                conn.send(HostMessage.pathsFound(token, HostPath.resolve(candidates, cwd: cwd)))
+            }
         }
     }
 

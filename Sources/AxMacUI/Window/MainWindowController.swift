@@ -580,15 +580,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     // MARK: Changes
 
-    private var currentCwd: String? {
-        guard let (host, sid) = selection, host.isLocal, let st = host.state, let s = st.sessions[sid] else { return nil }
-        return st.panes[content.current?.focused ?? s.focus]?.pwd
+    /// The focused pane's host and directory.
+    private var focusedDir: (host: HostSession, dir: String)? {
+        guard let (host, sid) = selection, let st = host.state, let s = st.sessions[sid],
+              let dir = st.panes[content.current?.focused ?? s.focus]?.pwd, !dir.isEmpty
+        else { return nil }
+        return (host, dir)
     }
 
-    /// ⌥⌘O: the focused pane's project (its repository, else its folder) in the editor.
+    /// The focused pane's directory when it is on this Mac.
+    private var currentCwd: String? { focusedDir.flatMap { $0.host.isLocal ? $0.dir : nil } }
+
+    /// ⌥⌘O: the focused pane's project (its repository, else its folder) in
+    /// the editor; a far pane's opens on its host, over SSH.
     @objc func openInEditor(_ sender: Any?) {
-        guard let cwd = currentCwd, !cwd.isEmpty else { NSSound.beep(); return }
-        LinkOpener.openFolder(LinkOpener.projectRoot(cwd))
+        guard let (host, dir) = focusedDir else { NSSound.beep(); return }
+        guard let far = host.far else { return LinkOpener.openFolder(LinkOpener.projectRoot(dir)) }
+        Task { @MainActor in
+            let root = await GitFacts.lookup(host, dir).changes?.root ?? dir
+            if !LinkOpener.openFar(HostPath(path: root, isFolder: true), on: far) { NSSound.beep() }
+        }
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
@@ -600,7 +611,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         case #selector(removeWorktreeSession(_:)):
             return selection.flatMap { $0.host.session($0.session)?.worktree } != nil
         case #selector(openInEditor(_:)):
-            return !(currentCwd ?? "").isEmpty
+            guard let (host, _) = focusedDir else { return false }
+            return host.far.map(LinkOpener.opensFar) ?? true
         case #selector(toggleSessionSidebar(_:)):
             item.title = shell.collapsed ? "Show Sidebar" : "Hide Sidebar"
             return true
