@@ -37,6 +37,9 @@ final class HostSession: Identifiable {
     /// Reports failed intents (the app shows a toast).
     var onError: ((String) -> Void)?
     private var loop: Task<Void, Never>?
+    /// Brings the server up (the local host); run again whenever the link drops.
+    private var prepare: (@MainActor () async -> Void)?
+    private var reviving = false
 
     init(endpoint: HostEndpoint, client: ClientID, clientName: String, isLocal: Bool) {
         self.endpoint = endpoint
@@ -54,6 +57,7 @@ final class HostSession: Identifiable {
     /// Connects (after `prepare`, e.g. launching the local server) and keeps
     /// reconnecting with backoff until stopped.
     func start(prepare: (@MainActor () async -> Void)? = nil) {
+        self.prepare = prepare
         loop = Task { [weak self] in
             guard let self else { return }
             let events = connection.events
@@ -115,11 +119,28 @@ final class HostSession: Identifiable {
         case let .disconnected(reason):
             if case .failed = phase {} else { phase = .offline(reason) }
             changes.emit(.disconnected(reason))
+            revive()
         case let .failed(f):
             phase = .failed(f)
         case let .latency(d):
             rtt = d
             changes.emit(.latency)
+        }
+    }
+
+    /// This Mac's server went away (stopped, crashed past launchd's retries,
+    /// or a dev build's that nothing keeps alive): start it again rather than
+    /// redial an empty socket forever. A server mid-restart answers first, and
+    /// a twin started beside one loses the lock and exits.
+    private func revive() {
+        guard isLocal, !reviving, let prepare else { return }
+        reviving = true
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            await prepare()
+            guard let self else { return }
+            reviving = false
+            connection.kick()
         }
     }
 
