@@ -133,6 +133,16 @@ final class SidebarOutlineView: NSOutlineView {
     private func plateRect(_ row: Int) -> CGRect {
         let r = rect(ofRow: row)
         let i = SidebarMetric.listInset
+        // A project's or a machine's row carries the space above it; the
+        // plate covers only what it shows, at its foot.
+        let shown: CGFloat? = switch (item(atRow: row) as? SidebarNode)?.kind {
+        case .workspace?: SidebarMetric.headerRow
+        case .host?: SidebarMetric.hostRow
+        default: nil
+        }
+        if let shown, shown < r.height {
+            return CGRect(x: i, y: r.maxY - shown + 1, width: bounds.width - i * 2, height: shown - 2)
+        }
         return CGRect(x: i, y: r.minY + 1, width: bounds.width - i * 2, height: r.height - 2)
     }
 
@@ -168,9 +178,31 @@ final class SidebarOutlineView: NSOutlineView {
         placeHover()
     }
 
+    // MARK: Context menus
+
+    /// The row a context menu is open on: it wears the hover plate (any
+    /// kind of row), not AppKit's square blue ring, which belongs to no
+    /// other shape in this list.
+    private var menuRow = -1
+
+    @objc(drawContextMenuHighlightForRow:) func drawContextMenuHighlight(forRow row: Int) {}
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        menuRow = clickedRow
+        placeHover()
+    }
+
+    override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
+        super.didCloseMenu(menu, with: event)
+        menuRow = -1
+        placeHover()
+    }
+
     private func placeHover() {
-        let row = hoverRow
-        let show = row >= 0 && row < numberOfRows && row != selectedRow && (item(atRow: row) as? SidebarNode)?.isSession == true
+        let row = menuRow >= 0 ? menuRow : hoverRow
+        let show = row >= 0 && row < numberOfRows && row != selectedRow
+            && (menuRow >= 0 || (item(atRow: row) as? SidebarNode)?.isSession == true)
         recolor()
         CATransaction.begin()
         if show {
