@@ -29,13 +29,16 @@ final class AppModel {
     private(set) var theme: TerminalTheme = .night
 
     /// Recently closed sessions (for ⌘⇧T): where they ran, what they were
-    /// called, and whether Claude Code was running in them.
+    /// called, and the Claude Code conversation in them, if any (the host
+    /// says which one just after the close).
     struct ClosedSession {
         var host: UUID
+        var session: SessionID
         var workspace: WorkspaceID
         var cwd: String
         var name: String?
         var claude = false
+        var conversation: String?
     }
 
     var closed: [ClosedSession] = []
@@ -72,6 +75,10 @@ final class AppModel {
         tokens.append(host.changes.observe { [weak self, weak host] change in
             guard let self, let host else { return }
             if case .connected = change { host.connection.setAppearance(Appearance(theme: theme)) }
+            if case let .event(.claudeConversation(sid, id)) = change, UUID(uuidString: id) != nil,
+               let i = closed.lastIndex(where: { $0.host == host.id && $0.session == sid }) {
+                closed[i].conversation = id
+            }
             anyChange.emit((host, change))
         })
         host.start(prepare: prepare)

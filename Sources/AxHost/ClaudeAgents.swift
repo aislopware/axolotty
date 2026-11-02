@@ -15,6 +15,10 @@
 // tmux pane in the session the pane's tmux client shows. Records go in
 // under `StatusBook.agentsPrefix` ids, so they never pass for subagents,
 // and are dropped the moment a Claude Code in the pane speaks for itself.
+//
+// The same list is read once when a person closes a session that has
+// Claude Code in front: its `sessionId` (live processes only) is what
+// reopening the session resumes (`Server.rememberClaude`).
 import AxModel
 import AxSys
 import CoreServices
@@ -29,6 +33,8 @@ nonisolated enum ClaudeAgents {
         var status: String
         var waitingFor: String?
         var name: String?
+        /// The conversation's UUID, usable with `claude --resume`.
+        var sessionId: String? = nil
     }
 
     /// A watched pane's tmux client (its foreground) and the client's -L/-S flags.
@@ -41,7 +47,8 @@ nonisolated enum ClaudeAgents {
         guard let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
         return list.compactMap { e in
             guard let pid = (e["pid"] as? NSNumber)?.int32Value, let status = e["status"] as? String else { return nil }
-            return Entry(pid: pid, status: status, waitingFor: e["waitingFor"] as? String, name: e["name"] as? String)
+            return Entry(pid: pid, status: status, waitingFor: e["waitingFor"] as? String, name: e["name"] as? String,
+                         sessionId: e["sessionId"] as? String)
         }
     }
 
@@ -145,8 +152,8 @@ nonisolated enum ClaudeAgents {
     }
 
     /// Live sessions, or nil when Claude Code can't be asked.
-    static func list() -> [Entry]? {
-        guard let out = run(claude, ["agents", "--json"], timeout: 8) else { return nil }
+    static func list(timeout: Double = 8) -> [Entry]? {
+        guard let out = run(claude, ["agents", "--json"], timeout: timeout) else { return nil }
         return parse(Data(out.utf8))
     }
 

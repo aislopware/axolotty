@@ -11,12 +11,12 @@ import Testing
         let json = """
         [{"cwd":"/a","kind":"background","id":"x1","state":"done","startedAt":1},
          {"cwd":"/b","kind":"interactive","pid":4242,"status":"waiting","waitingFor":"permission prompt","name":"fix login"},
-         {"cwd":"/c","kind":"interactive","pid":77,"status":"busy"}]
+         {"cwd":"/c","kind":"interactive","pid":77,"status":"busy","sessionId":"6f1c2a34-8b9d-4e5f-a012-3456789abcde"}]
         """
         let e = ClaudeAgents.parse(Data(json.utf8))
         #expect(e == [
             .init(pid: 4242, status: "waiting", waitingFor: "permission prompt", name: "fix login"),
-            .init(pid: 77, status: "busy", waitingFor: nil, name: nil),
+            .init(pid: 77, status: "busy", waitingFor: nil, name: nil, sessionId: "6f1c2a34-8b9d-4e5f-a012-3456789abcde"),
         ])
         #expect(ClaudeAgents.parse(Data("not json".utf8)).isEmpty)
     }

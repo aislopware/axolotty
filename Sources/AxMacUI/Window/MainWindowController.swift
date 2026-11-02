@@ -389,7 +389,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Every way of closing a session comes here, so ⇧⌘T can bring it back.
     func close(_ host: HostSession, _ sid: SessionID) {
         guard let s = host.session(sid) else { return }
-        model.closed.append(AppModel.ClosedSession(host: host.id, workspace: s.workspace,
+        model.closed.append(AppModel.ClosedSession(host: host.id, session: sid, workspace: s.workspace,
                                                    cwd: host.pane(s.focus)?.pwd ?? "", name: s.name,
                                                    claude: host.state?.panes(of: sid).contains { $0.agent == .claude } ?? false))
         host.perform(.closeSession(sid))
@@ -398,9 +398,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     @objc func reopenClosedSession(_ sender: Any?) {
         guard let c = model.closed.popLast(), let host = model.host(c.host) else { return }
         let ws = host.state?.workspace(c.workspace)?.id ?? host.state?.workspaces.first?.id
-        // Claude Code picks its conversation back up (`--continue`: the latest
-        // one in that folder); anything else comes back as a shell there.
-        let launch = c.claude ? launchLine(.claude, host, args: "--continue") : nil
+        // Claude Code resumes the conversation it had (`--resume <uuid>`, the
+        // id the host read as the session closed). Without one it opens
+        // Claude's own picker (`--resume`), not `--continue`: the latest
+        // conversation in the folder may be another session's. A conversation
+        // never written to can't be resumed (exit 1, where quitting Claude
+        // exits 0), so a fresh Claude follows `||`. Anything else comes back
+        // as a shell there.
+        var launch: String?
+        if c.claude, let fresh = launchLine(.claude, host),
+           let back = launchLine(.claude, host, args: "--resume" + (c.conversation.map { " " + $0 } ?? "")) {
+            launch = back + " || " + fresh
+        }
         Task { await createSession(host, in: ws, cwd: c.cwd.isEmpty ? nil : c.cwd, name: c.name, launch: launch) }
     }
 

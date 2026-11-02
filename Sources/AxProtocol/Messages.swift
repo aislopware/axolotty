@@ -174,6 +174,9 @@ public enum HostEvent: Codable, Hashable, Sendable {
     /// The pane entered a state the person should hear about (blocked/done/error).
     case attention(PaneID, Activity, message: String)
     case clipboard(PaneID, String)
+    /// A session closed while Claude Code ran in it: that conversation's
+    /// UUID, so reopening the session resumes it (`claude --resume`).
+    case claudeConversation(SessionID, id: String)
 }
 
 public struct HostHello: Codable, Hashable, Sendable {

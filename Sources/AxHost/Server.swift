@@ -471,7 +471,7 @@ public actor Server {
             s.workspace = wid
             commit(deltas + [.workspace(dest), .session(s)])
         case let .closeSession(id):
-            await closeSession(id)
+            await closeSession(id, remember: true)
         case let .removeWorktree(id, force):
             guard let path = state.sessions[id]?.worktree else { return .notAllowed }
             if !force {
@@ -515,7 +515,7 @@ public actor Server {
             s2.zoomed = nil
             commit([.pane(info), .session(s2)])
         case let .closePane(id):
-            await closePane(id)
+            await closePane(id, remember: true)
         case let .restartPane(old, new):
             if state.panes[new] != nil { return nil }  // retried intent
             guard let o = state.panes[old], let s = state.sessions[o.session], s.tree.contains(old) else { return .targetGone }
@@ -586,8 +586,12 @@ public actor Server {
     }
 
     /// Ends a pane's program and removes it from its session.
-    private func closePane(_ id: PaneID) async {
-        await discardPane(id)
+    /// `remember`: a person closed it, so a Claude Code conversation in a
+    /// session that goes with it is looked up for reopening (see `rememberClaude`).
+    private func closePane(_ id: PaneID, remember: Bool = false) async {
+        let last = state.panes[id].flatMap { state.sessions[$0.session] }.map { $0.tree.count == 1 } ?? false
+        let claude = remember && last ? claudeRoots([id]) : [:]
+        if claude.isEmpty { await discardPane(id) }
         guard let info = state.panes[id] else { return }
         var deltas: [HostState.Delta] = [.paneRemoved(id)]
         if var s = state.sessions[info.session] {
@@ -605,17 +609,47 @@ public actor Server {
             }
         }
         commit(deltas)
+        if !claude.isEmpty {
+            await rememberClaude(info.session, claude)
+            await discardPane(id)
+        }
     }
 
-    private func closeSession(_ id: SessionID) async {
+    private func closeSession(_ id: SessionID, remember: Bool = false) async {
         guard let s = state.sessions[id] else { return }
-        for p in s.tree.panes { await discardPane(p) }
+        let claude = remember ? claudeRoots(s.tree.panes, focus: s.focus) : [:]
+        if claude.isEmpty { for p in s.tree.panes { await discardPane(p) } }
         var deltas: [HostState.Delta] = s.tree.panes.map { .paneRemoved($0) } + [.sessionRemoved(id)]
         if var w = state.workspace(s.workspace) {
             w.sessions.removeAll { $0 == id }
             deltas.insert(.workspace(w), at: 0)
         }
         commit(deltas)
+        if !claude.isEmpty {
+            await rememberClaude(id, claude)
+            for p in s.tree.panes { await discardPane(p) }
+        }
+    }
+
+    /// The shell of each pane where Claude Code is the foreground program
+    /// (the focused pane alone when it is one of them).
+    private func claudeRoots(_ ids: [PaneID], focus: PaneID? = nil) -> [PaneID: Set<Int32>] {
+        guard ClaudeAgents.claude != nil else { return [:] }
+        let found = ids.filter { state.panes[$0]?.agent == .claude && panes[$0] != nil }
+        let pick = focus.flatMap { found.contains($0) ? [$0] : nil } ?? found
+        return Dictionary(uniqueKeysWithValues: pick.compactMap { id in panes[id].map { (id, Set([$0.pid])) } })
+    }
+
+    /// Asks Claude Code which conversation each pane's process holds, while it
+    /// still runs: `claude agents --json` is its documented outside view, and
+    /// lists `sessionId` only for live processes. The session has already left
+    /// the state, so the row goes at once; only the processes wait (≤ 3 s).
+    private func rememberClaude(_ session: SessionID, _ roots: [PaneID: Set<Int32>]) async {
+        let byPane = await Task.detached(priority: .userInitiated) {
+            ClaudeAgents.list(timeout: 3).map { ClaudeAgents.assign($0, roots: roots) } ?? [:]
+        }.value
+        let id = byPane.values.flatMap { $0 }.compactMap(\.sessionId).first { UUID(uuidString: $0) != nil }
+        if let id { broadcastEvent(.claudeConversation(session, id: id)) }
     }
 
     /// Stops serving a pane and tells the holder to hang it up.

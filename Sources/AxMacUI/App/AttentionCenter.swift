@@ -102,6 +102,8 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
             guard host.isLocal else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+        case .claudeConversation:
+            break  // AppModel keeps it with the closed session
         }
     }
 
