@@ -164,6 +164,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             break
         case .latency:
             return
+        case .setup:
+            content.linkChanged(host)
+            return
         }
         refreshChrome()
     }

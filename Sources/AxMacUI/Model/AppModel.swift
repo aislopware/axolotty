@@ -121,6 +121,50 @@ final class AppModel {
         return h
     }
 
+    /// Puts Axolotty on a far Mac over ssh (this build's server, holder and
+    /// CLI, kept running by a LaunchAgent there), then connects. Run on a host
+    /// that has it, it updates it in place; its shells keep running.
+    func setUp(_ s: SavedHost) {
+        let h = connect(to: s)
+        guard h.settingUp == nil else { return }
+        guard let from = Bundle.main.executableURL?.resolvingSymlinksInPath().deletingLastPathComponent(),
+              HostSetup.binaries.allSatisfy({
+                  FileManager.default.isExecutableFile(atPath: from.appending(path: $0).path(percentEncoded: false))
+              })
+        else {
+            errors.emit("This build of Axolotty has no server to copy.")
+            return
+        }
+        h.settingUp = .checking
+        Task { @MainActor [weak self] in
+            do {
+                try await HostSetup(ssh: s.host, from: from).install { step in
+                    Task { @MainActor in if h.settingUp != nil { h.settingUp = step } }
+                }
+                // The server takes a moment to listen on the tailnet.
+                for _ in 0 ..< 40 {
+                    if await TailnetDirectory.probe(s.host, port: s.port, timeout: 1) != nil { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                h.settingUp = nil
+                h.retry()
+            } catch let f as HostSetup.Failure {
+                h.settingUp = nil
+                switch f {
+                case .signIn:
+                    self?.notices.emit(("\(s.name) wants you to sign in", "Run ssh \(s.host) in a session once, then set it up again. A key or Tailscale SSH lets Axolotty in without asking."))
+                case let .unsupported(why):
+                    self?.notices.emit(("Axolotty can't run on \(s.name)", why))
+                case let .failed(why):
+                    self?.errors.emit("Couldn't set up \(s.name): \(why)")
+                }
+            } catch {
+                h.settingUp = nil
+                self?.errors.emit("Couldn't set up \(s.name): \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// Disconnects and forgets a remote host. Its sessions keep running there.
     func forget(_ h: HostSession) {
         guard !h.isLocal else { return }

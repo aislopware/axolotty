@@ -114,7 +114,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         tokens.append(model.anyChange.observe { [weak self] host, change in
             switch change {
             case .connected, .deltas, .disconnected: self?.reload()
-            case .latency: self?.refreshHost(host)
+            case .latency, .setup: self?.refreshHost(host)
             case .event: break
             }
         })
@@ -616,6 +616,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     /// The section's right side: round trip when healthy, else the state.
     static func hostStatus(_ h: HostSession) -> (meta: String, retrying: Bool, waiting: Bool) {
+        if let step = h.settingUp, h.phase != .connected {
+            let doing = switch step {
+            case .checking: "Setting up: checking the Mac"
+            case .copying: "Setting up: copying Axolotty"
+            case .starting: "Setting up: starting the server"
+            }
+            return (doing, true, false)
+        }
         switch h.phase {
         case .connected:
             guard !h.isLocal, let rtt = h.rtt else { return ("", false, false) }
@@ -666,6 +674,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
         if case .host = n.kind {
             if host.phase != .connected { add("Reconnect Now") { host.retry() } }
+            // A far Mac without Axolotty (or with an older one) gets it over ssh.
+            if let target = host.setUpTarget, host.settingUp == nil, host.phase != .connected || host.isBehind {
+                add(host.isBehind || host.phase == .connected ? "Update Axolotty There" : "Set Up Axolotty over SSH") { [weak self] in
+                    self?.model.setUp(target)
+                }
+            }
             if !host.isLocal {
                 if host.phase != .connected { menu.addItem(.separator()) }
                 add("Disconnect") { [weak self] in self?.model.forget(host) }

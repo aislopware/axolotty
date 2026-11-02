@@ -6,6 +6,10 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
 
 ## What it does
 
+- **Your other Macs, as if they were this one.** Connect to Host (⇧⌘K) lists your Macs on the tailnet; Tailscale carries the link. A Mac without Axolotty is set up over ssh from here (Set Up Axolotty over SSH, which also updates an older one), with nothing to install by hand. On a far Mac:
+  - keys show at once, before their echo: typing, ⌫, and ← → to fix a typo;
+  - ⌘-click opens a path on that Mac in VS Code, Cursor or Windsurf over Remote-SSH;
+  - the band shows its branch and changes, and its notices say which Mac.
 - **Agent status from the agent itself.** Claude Code reports over OSC 7501, and any other program can too. Rows, the band, the Dock badge, toasts and notifications all follow it. A notification goes away as soon as you've seen its pane.
 - **Find who needs you.** Go to Session (⌘J) lists sessions as needs-you, then finished, then working. Next waiting agent is ⇧⌘U.
 - **Worktree sessions.** ⌥⌘T, or "New Worktree…" on a project's "+", starts an agent on its own branch in `<repo>/.worktrees/<branch>`. "Remove Worktree…" deletes the folder and keeps the branch.

@@ -48,6 +48,8 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         case worktree(String)
         /// A machine to connect to: what to call it and the name to dial.
         case host(name: String, dial: String)
+        /// A Mac with nothing answering: set Axolotty up there over ssh.
+        case setUp(name: String, dial: String)
         /// Says something; does nothing.
         case note
     }
@@ -280,7 +282,8 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
                     e.detail = "\(path) · \(Self.ms(took))"
                     ready.append(e)
                 } else {
-                    e.detail = "Axolotty isn't running there"
+                    e.item = .setUp(name: p.name, dial: p.dialName)
+                    e.detail = "Not set up · ↩ sets it up over SSH"
                     other.append(e)
                 }
             } else {
@@ -511,6 +514,10 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             owner.show(h, sid)
         case let .host(name, dial):
             owner.arrive(at: model.connect(to: AppModel.SavedHost(name: name, host: dial)))
+        case let .setUp(name, dial):
+            let s = AppModel.SavedHost(name: name, host: dial)
+            model.setUp(s)
+            if let h = model.host(at: s.endpoint) { owner.arrive(at: h) }
         case .note:
             break
         case let .worktree(branch):

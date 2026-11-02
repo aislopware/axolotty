@@ -33,7 +33,7 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
             case .deltas, .connected, .disconnected:
                 self?.updateBadge()
                 self?.withdrawSettled()
-            case .latency: break
+            case .latency, .setup: break
             }
         })
         tokens.append(model.notices.observe { [weak self] title, body in

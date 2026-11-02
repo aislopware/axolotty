@@ -596,6 +596,9 @@ public final class HostConnection: @unchecked Sendable {
         }
     }
 
+    /// What the connected host can do beyond the wire generation (`Wire.features`).
+    public var hostFeatures: Set<String> { state.withLock { $0.hostFeatures } }
+
     /// Round trip: everything sent before it has been handled by the host.
     public func ping() async {
         let n = UInt64.random(in: 1 ... .max)

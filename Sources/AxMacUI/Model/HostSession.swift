@@ -12,6 +12,8 @@ enum HostChange {
     case disconnected(String?)
     /// A new round-trip reading (remote hosts).
     case latency
+    /// Setting Axolotty up there began, moved on a step, or ended.
+    case setup
 }
 
 /// The app's link to one server: its document replica, connection phase and
@@ -37,6 +39,10 @@ final class HostSession: Identifiable {
     /// direct (or isn't a tailnet one). A relayed path is why a far Mac
     /// feels slow; Tailscale often finds a direct one a little later.
     private(set) var relay: String?
+    /// The step of setting Axolotty up there over ssh (`AppModel.setUp`), nil when not.
+    var settingUp: HostSetup.Step? {
+        didSet { if settingUp != oldValue { changes.emit(.setup) } }
+    }
     private var pathWatch: Task<Void, Never>?
     let changes = Signal<HostChange>()
     /// Reports failed intents (the app shows a toast).
@@ -58,6 +64,21 @@ final class HostSession: Identifiable {
     var label: String?
 
     var name: String { state?.name ?? label ?? (isLocal ? "This Mac" : endpoint.description) }
+
+    /// A far Mac this one can set up or update over ssh: dialled on the
+    /// tailnet, and not newer than this build (an update must not go back).
+    var setUpTarget: AppModel.SavedHost? {
+        guard !isLocal, case let .tcp(dialled, port) = endpoint else { return nil }
+        if case let .failed(.incompatible(generation)) = phase, generation > Wire.version { return nil }
+        return AppModel.SavedHost(name: name, host: dialled, port: port)
+    }
+
+    /// This build has something the far Mac's server lacks: an update helps.
+    var isBehind: Bool {
+        if case let .failed(.incompatible(generation)) = phase { return generation < Wire.version }
+        guard phase == .connected, !isLocal else { return false }
+        return !Set(Wire.features).isSubset(of: connection.hostFeatures)
+    }
 
     /// A far host, for its panes' links: nil for this Mac. ssh reaches a
     /// tailnet host by the name it was dialled as.
@@ -234,7 +255,8 @@ final class HostSession: Identifiable {
 
     /// What a veiled session says while the link is down, nil while it is up.
     var linkStatus: (text: String, retrying: Bool)? {
-        switch phase {
+        if settingUp != nil, phase != .connected { return ("Setting up Axolotty on \(name)", true) }
+        return switch phase {
         case .connected: nil
         case .connecting, .offline: ("Reconnecting to \(isLocal ? "This Mac" : name)", true)
         case .failed(.needsLogin(_)): ("\(name) needs you to sign in", false)
