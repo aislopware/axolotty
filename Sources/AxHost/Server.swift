@@ -140,11 +140,14 @@ public actor Server {
         // holds it for an instant: Foundation's Process carries every open
         // description, close-on-exec ones too, until its exec (71 of 20 000
         // tries refused beside a spawn loop), so a restart that met the old
-        // server's last `git` would take itself for a twin. Waited out.
+        // server's last `git` would take itself for a twin. Waited out, by
+        // the clock: on a Mac under load that instant can stretch past
+        // half a second (seen with a test suite spawning in parallel).
         var rc: Int32 = -1
-        for attempt in 0 ..< 50 {
+        let giveUp = ContinuousClock.now + .milliseconds(1500)
+        while true {
             repeat { rc = flock(fd, LOCK_EX | LOCK_NB) } while rc != 0 && errno == EINTR
-            if rc == 0 || errno != EWOULDBLOCK || attempt == 49 { break }
+            if rc == 0 || errno != EWOULDBLOCK || ContinuousClock.now >= giveUp { break }
             try? await Task.sleep(for: .milliseconds(10))
         }
         guard rc == 0 else {
