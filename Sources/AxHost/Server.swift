@@ -427,10 +427,6 @@ public actor Server {
             } else {
                 commit([.workspace(WorkspaceInfo(id: id, name: name, root: root))])
             }
-        case let .renameWorkspace(id, name):
-            guard var w = state.workspace(id) else { return .targetGone }
-            w.name = name
-            commit([.workspace(w)])
         case let .closeWorkspace(id):
             guard let w = state.workspace(id) else { return nil }
             for s in w.sessions { await closeSession(s) }
@@ -481,27 +477,9 @@ public actor Server {
                 deltas.append(.workspace(src))
             }
             dest.sessions.removeAll { $0 == id }
-            // Pinned sessions stay above the rest whatever the drop index.
-            let pins = dest.sessions.count { state.sessions[$0]?.isPinned == true }
-            let bounds = s.isPinned ? 0 ... pins : pins ... dest.sessions.count
-            dest.sessions.insert(id, at: min(max(index, bounds.lowerBound), bounds.upperBound))
+            dest.sessions.insert(id, at: min(max(index, 0), dest.sessions.count))
             s.workspace = wid
             commit(deltas + [.workspace(dest), .session(s)])
-        case let .setPinned(id, on):
-            guard var s = state.sessions[id], var w = state.workspace(s.workspace) else { return .targetGone }
-            guard s.isPinned != on else { return nil }
-            s.pinned = on ? true : nil
-            // Last of the pinned, either way: a new pin goes under the older
-            // ones, an unpinned session heads the rest.
-            w.sessions.removeAll { $0 == id }
-            let pins = w.sessions.count { state.sessions[$0]?.isPinned == true }
-            w.sessions.insert(id, at: pins)
-            commit([.session(s), .workspace(w)])
-        case let .setUnread(id, on):
-            guard var s = state.sessions[id] else { return .targetGone }
-            guard s.isUnread != on else { return nil }
-            s.unread = on ? true : nil
-            commit([.session(s)])
         case let .closeSession(id):
             await closeSession(id)
         case let .removeWorktree(id, force):
@@ -584,10 +562,6 @@ public actor Server {
             guard var s = state.sessions[sid] else { return .targetGone }
             guard Set(tree.panes) == Set(s.tree.panes), tree.panes.count == s.tree.panes.count else { return .invalid }
             s.tree = tree
-            commit([.session(s)])
-        case let .equalize(sid):
-            guard var s = state.sessions[sid] else { return .targetGone }
-            s.tree = s.tree.equalized()
             commit([.session(s)])
         }
         return nil

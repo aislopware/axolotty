@@ -256,7 +256,6 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     private func agentSections() -> [(String, [Entry])] {
         struct Hit { var entry: Entry; var since: Double }
         var groups: [Activity: [Hit]] = [:]
-        let multi = model.hosts.count > 1
         let now = Date().timeIntervalSince1970
         for h in model.hosts {
             guard let st = h.state else { continue }
@@ -265,7 +264,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
                     let panes = st.panes(of: sid)
                     let a = st.activity(of: sid)
                     let since = panes.filter { $0.activity == a }.map(\.activitySince).max() ?? 0
-                    var detail = (multi ? h.name + " · " : "") + w.name
+                    var detail = w.name
                     if since > 0, a != .idle { detail += " · " + SidebarViewController.elapsed(now - since) }
                     let number = owner?.sidebar.sessionNumber(host: h.id, sid).map { "⌘\($0)" } ?? ""
                     let e = sessionEntry(h, st, sid, detail: detail, chord: number)
@@ -288,7 +287,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     private func symbol(for c: Command) -> String {
         let map: [String: String] = [
             "palette": "command", "new-session": "plus.rectangle",
-            "new-worktree": "arrow.triangle.branch", "pin-session": "pin", "mark-unread": "circlebadge.fill", "open-editor": "chevron.left.forwardslash.chevron.right",
+            "new-worktree": "arrow.triangle.branch", "open-editor": "chevron.left.forwardslash.chevron.right",
             "prev-prompt": "chevron.up.2", "next-prompt": "chevron.down.2",
             "new-window": "macwindow.badge.plus", "open-folder": "folder",
             "reopen": "arrow.uturn.backward", "close-pane": "xmark.rectangle", "close-session": "xmark.square",

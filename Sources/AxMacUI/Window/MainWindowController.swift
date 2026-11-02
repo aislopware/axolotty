@@ -126,8 +126,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Shows a session in this window and returns focus to its terminal.
     func show(_ host: HostSession, _ sid: SessionID, focus pane: PaneID? = nil) {
         guard let info = host.session(sid) else { return }
-        // Switching to a session reads it (as in Mail): an unread mark goes.
-        if info.isUnread, selection?.host !== host || selection?.session != sid { host.perform(.setUnread(sid, false)) }
         selection = (host, sid)
         sidebar.select(host: host.id, session: sid)
         content.show(host, info, animated: true)
@@ -371,14 +369,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     @objc func openFolder(_ sender: Any?) {
         guard let window, let host = currentHost else { return }
-        guard host.isLocal else {
-            TextPrompt.run(in: window, title: "Open Folder on \(host.name)", value: "", placeholder: "/path/to/project") {
-                [weak self] path in
-                guard !path.isEmpty else { return }
-                self?.openWorkspace(host, root: path)
-            }
-            return
-        }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -424,16 +414,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard let c = model.closed.popLast(), let host = model.host(c.host) else { return }
         let ws = host.state?.workspace(c.workspace)?.id ?? host.state?.workspaces.first?.id
         Task { await createSession(host, in: ws, cwd: c.cwd.isEmpty ? nil : c.cwd, name: c.name) }
-    }
-
-    @objc func togglePinned(_ sender: Any?) {
-        guard let (host, sid) = selection, let s = host.session(sid) else { return }
-        host.perform(.setPinned(sid, !s.isPinned))
-    }
-
-    @objc func toggleUnread(_ sender: Any?) {
-        guard let (host, sid) = selection, let s = host.session(sid) else { return }
-        host.perform(.setUnread(sid, !s.isUnread))
     }
 
     @objc func renameSession(_ sender: Any?) {
@@ -627,14 +607,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return selection != nil
         case #selector(reopenClosedSession(_:)):
             return !model.closed.isEmpty
-        case #selector(togglePinned(_:)):
-            let s = selection.flatMap { $0.host.session($0.session) }
-            item.title = s?.isPinned == true ? "Unpin Session" : "Pin Session"
-            return s != nil
-        case #selector(toggleUnread(_:)):
-            let s = selection.flatMap { $0.host.session($0.session) }
-            item.title = s?.isUnread == true ? "Mark as Read" : "Mark as Unread"
-            return s != nil
         case #selector(removeWorktreeSession(_:)):
             return selection.flatMap { $0.host.session($0.session)?.worktree } != nil
         case #selector(openInEditor(_:)):

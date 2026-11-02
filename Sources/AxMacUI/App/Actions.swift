@@ -26,8 +26,6 @@ import AppKit
     @objc optional func selectSessionByNumber(_ sender: Any?)
     @objc optional func selectPreviousSession(_ sender: Any?)
     @objc optional func selectNextSession(_ sender: Any?)
-    @objc optional func togglePinned(_ sender: Any?)
-    @objc optional func toggleUnread(_ sender: Any?)
     @objc optional func selectNextAttention(_ sender: Any?)
 
     // Pane
@@ -174,10 +172,6 @@ struct Command: Identifiable {
                     action: #selector((any AxActions).removeWorktreeSession(_:))),
             Command(id: "rename-session", title: "Rename Session…", menu: .session, key: "", modifiers: [],
                     action: #selector((any AxActions).renameSession(_:)), separatorBefore: true),
-            Command(id: "pin-session", title: "Pin Session", menu: .session, key: "", modifiers: [],
-                    action: #selector((any AxActions).togglePinned(_:))),
-            Command(id: "mark-unread", title: "Mark as Unread", menu: .session, key: "", modifiers: [],
-                    action: #selector((any AxActions).toggleUnread(_:))),
 
             Command(id: "split-right", title: "Split Right", menu: .pane, key: "d", modifiers: cmd,
                     action: #selector((any AxActions).splitRight(_:))),

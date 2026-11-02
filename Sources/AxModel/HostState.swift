@@ -92,15 +92,6 @@ public struct SessionInfo: Hashable, Codable, Sendable, Identifiable {
     /// The git worktree this session was started in (its folder), for
     /// "Remove Worktree…". nil for ordinary sessions.
     public var worktree: String?
-    /// Kept at the top of its project, above the unpinned (`workspace.sessions`
-    /// holds them first).
-    public var pinned: Bool?
-    /// Marked for a later look ("Mark as Unread"). The client clears it when
-    /// the person switches to the session; the window regaining focus does not.
-    public var unread: Bool?
-
-    public var isPinned: Bool { pinned == true }
-    public var isUnread: Bool { unread == true }
 
     public init(id: SessionID, workspace: WorkspaceID, root: PaneID, name: String? = nil) {
         self.id = id

@@ -81,15 +81,10 @@ public struct SpawnRecipe: Codable, Hashable, Sendable {
 /// retried intent is harmless and conflicts resolve last-writer-wins.
 public enum Intent: Codable, Hashable, Sendable {
     case createWorkspace(WorkspaceID, name: String, root: String)
-    case renameWorkspace(WorkspaceID, name: String)
     case closeWorkspace(WorkspaceID)
     case createSession(SessionID, workspace: WorkspaceID, pane: PaneID, recipe: SpawnRecipe, name: String?)
     case renameSession(SessionID, name: String?)
     case moveSession(SessionID, workspace: WorkspaceID, index: Int)
-    /// Pinned sessions stay first in their project, in the order pinned.
-    case setPinned(SessionID, Bool)
-    /// A mark for a later look; clients clear it on switching to the session.
-    case setUnread(SessionID, Bool)
     case closeSession(SessionID)
     /// Closes a worktree session and removes its folder (the branch stays).
     /// Without `force`, a worktree with changes is refused (`.dirty`).
@@ -102,7 +97,6 @@ public enum Intent: Codable, Hashable, Sendable {
     case focusPane(SessionID, PaneID)
     case setZoom(SessionID, PaneID?)
     case setTree(SessionID, SplitTree)
-    case equalize(SessionID)
 }
 
 public enum IntentError: String, Codable, Sendable, Error {

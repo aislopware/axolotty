@@ -197,15 +197,9 @@ A waiting program's ask is worded once (`StatusRecord.ask`) for the strip, the h
 
 **Subagents:** Claude Code reports each subagent as a record of its own beside the main one (id "": flat agent ids such as `ab89c272635bed8ac`, observed live), and a subagent's record goes when it finishes. `StatusBook.subagentsWorking` counts them. The band's timer reads "Working 4:12 · 2 subagents", and the hover card adds a person.2 fact. The row does not change: the spinner already says working.
 
-**Pin and Mark as Unread** (row menu, Session menu, palette): both are flags the host stores on the session (`pinned`, `unread`), so they survive restarts and show in every client.
-- Pin: pinned sessions head their project in the order they were pinned. A drag can't move an unpinned session above them. At rest the row's trailing slot holds a pin (11 pt, tertiary ink), centred where the close button appears on hover.
-- Mark as Unread: an accent dot on the icon (the same 6 pt badge and moat as the status dots, shown only while no status claims the badge), and the title in full ink. The client clears it when the person switches to the session, as Mail does. The window regaining focus doesn't count.
-
-
 **Reopen Closed Session** (⇧⌘T): the last closed session comes back in its project and folder, under its name, as a shell (`claude -c` continues its conversation). Every close records it: ⌥⌘W, the row's close button and its menu.
 
 **Worktree sessions** (⌥⌘T, "New Worktree…" at the foot of a project's "+", or `axolotty new --worktree BRANCH`): the palette in a third shape. Its field leads with the mark of what will start (the first installed agent; ⇥ / ⇧⇥ cycle through Shell and the agents) instead of the lens. Rows: the typed name as a new branch "from <HEAD>" (spaces become dashes, never highlighted), then existing worktrees, then local branches checked out nowhere. The host runs git: `<repo>/.worktrees/<branch with / → ->`, listed in `.git/info/exclude` (never the person's .gitignore); an existing worktree is reused. The session is named for the branch and remembers its folder. "Remove Worktree…" (Session menu, row menu) asks once, then again in stronger words if the tree has changes; it closes the session and deletes the folder, never the branch.
-
 
 **Settings** (⌘,): three rows. Appearance is Match System / Always Dark / Always Light, between Axolotty Night and Day (the chrome derives from them, `DesignTokens.install`). Font lists SF Mono then every installed fixed-pitch family, each item set in its own face; a family without a bold face is emboldened by the renderer; ⌘+ ⌘− ⌘0 set and keep the size. Option key picks which Option is Alt. Everything else is one behaviour, not a setting: unfocused panes dim, a paste that could run commands asks first (bracketed paste is exempt), the cursor is a blinking bar unless the program asks for another (DECSCUSR), and Claude Code started from Axolotty gets its MCP tools.
 

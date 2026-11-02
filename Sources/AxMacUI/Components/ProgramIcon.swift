@@ -115,7 +115,6 @@ extension HostState {
 /// - working: an 8 pt magenta spinner (2 pt arc over a 28 % track, 0.9 s a
 ///   turn), or a determinate arc when the program reports progress
 /// - waiting: amber dot · failed: red dot · done-unseen: green dot
-/// - marked unread (and otherwise idle): an accent dot
 /// - idle: the glyph alone
 ///
 /// SF Symbols draw in the row's ink; vendor marks (Claude, Codex, Gemini) draw
@@ -132,8 +131,6 @@ final class ProgramIcon: NSView {
 
     var identity = ProgramIdentity.shell { didSet { if identity != oldValue { rebuildBrand(); restyle() } } }
     var activity: Activity = .idle { didSet { if activity != oldValue { restyle() } } }
-    /// "Mark as Unread": a dot in the accent while nothing else claims the badge.
-    var unread = false { didSet { if unread != oldValue { restyle() } } }
     /// Determinate progress (0…1) turns the spinner into an arc.
     var progress: Double? { didSet { if progress != oldValue { restyle() } } }
 
@@ -173,7 +170,7 @@ final class ProgramIcon: NSView {
         restyle()
     }
 
-    private var badged: Bool { activity != .idle || unread }
+    private var badged: Bool { activity != .idle }
     private var spinning: Bool { activity == .working }
 
     /// Rebuilds the vendor mark's layers (path + fills) for the current size.
@@ -232,8 +229,7 @@ final class ProgramIcon: NSView {
             brand.opacity = lit ? 1 : 0.92
             badge.isHidden = !badged || spinning
             if badged, !spinning {
-                badge.backgroundColor = effectiveAppearance.resolve(
-                    activity == .idle ? Axo.Color.accent : StatusGlyphView.dotColor(activity))
+                badge.backgroundColor = effectiveAppearance.resolve(StatusGlyphView.dotColor(activity))
             }
             track.isHidden = !spinning
             arc.isHidden = !spinning

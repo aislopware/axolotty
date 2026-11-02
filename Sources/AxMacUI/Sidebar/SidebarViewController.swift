@@ -32,11 +32,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     private static let sessionType = NSPasteboard.PasteboardType("dev.axolotty.session")
 
-    private var attentionFirst: Bool {
-        get { UserDefaults.standard.bool(forKey: "sidebarAttentionFirst") }
-        set { UserDefaults.standard.set(newValue, forKey: "sidebarAttentionFirst") }
-    }
-
     private var collapsed: Set<String> {
         get { Set(UserDefaults.standard.stringArray(forKey: "collapsedWorkspaces") ?? []) }
         set { UserDefaults.standard.set(Array(newValue), forKey: "collapsedWorkspaces") }
@@ -159,27 +154,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private func specs() -> [Spec] {
-        let multi = model.hosts.count > 1
         var out: [Spec] = []
         for host in model.hosts {
-            var workspaces: [Spec] = []
-            if let st = host.state {
-                for w in st.workspaces {
-                    var sessions = w.sessions.filter { st.sessions[$0] != nil }
-                    if attentionFirst {
-                        sessions = sessions.enumerated().sorted { a, b in
-                            let x = st.activity(of: a.element), y = st.activity(of: b.element)
-                            return x != y ? x > y : a.offset < b.offset
-                        }.map(\.element)
-                    }
-                    workspaces.append(Spec(kind: .workspace(host.id, w.id),
-                                           children: sessions.map { Spec(kind: .session(host.id, $0), children: []) }))
-                }
-            }
-            if multi {
-                out.append(Spec(kind: .host(host.id), children: workspaces))
-            } else {
-                out += workspaces
+            guard let st = host.state else { continue }
+            for w in st.workspaces {
+                let sessions = w.sessions.filter { st.sessions[$0] != nil }
+                out.append(Spec(kind: .workspace(host.id, w.id),
+                                children: sessions.map { Spec(kind: .session(host.id, $0), children: []) }))
             }
         }
         return out
@@ -254,9 +235,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         let closed = collapsed
         for n in list {
             switch n.kind {
-            case .host:
-                if !outline.isItemExpanded(n) { outline.expandItem(n) }
-                restoreExpansion(n.children)
             case let .workspace(_, w):
                 let shouldExpand = !closed.contains(w.raw.uuidString)
                 if shouldExpand, !outline.isItemExpanded(n) { outline.expandItem(n) }
@@ -326,7 +304,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         let row = outline.clickedRow
         guard row >= 0, let n = outline.item(atRow: row) as? SidebarNode else { return }
         switch n.kind {
-        case .workspace, .host:
+        case .workspace:
             if outline.isItemExpanded(n) { outline.animator().collapseItem(n) } else { outline.animator().expandItem(n) }
         case let .session(h, sid):
             // Re-clicking the selected row still returns focus to its terminal.
@@ -387,12 +365,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         guard let n = item as? SidebarNode else { return nil }
         let cell: NSView
         switch n.kind {
-        case .host:
-            cell = outlineView.makeView(withIdentifier: .init("host"), owner: nil) ?? {
-                let c = HostCell()
-                c.identifier = .init("host")
-                return c
-            }()
         case .workspace:
             cell = outlineView.makeView(withIdentifier: .init("workspace"), owner: nil) ?? {
                 let c = WorkspaceCell()
@@ -414,14 +386,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         guard let host = model.host(n.hostID) else { return }
         let h = host
         switch n.kind {
-        case .host:
-            guard let c = cell as? HostCell else { return }
-            c.title.stringValue = host.name
-            c.state.stringValue = switch host.phase {
-            case .connected: ""
-            case .connecting: "connecting…"
-            case .offline: "offline"
-            }
         case let .workspace(_, wid):
             guard let c = cell as? WorkspaceCell, let st = host.state, let w = st.workspace(wid) else { return }
             c.set(name: w.name, key: w.root.isEmpty ? w.name : w.root)
@@ -452,8 +416,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             c.icon.progress = (panes.compactMap(\.progress).first(where: { $0 >= 0 })
                 ?? panes.compactMap { $0.status.headline?.progress }.first).map { Double($0) / 100 }
             c.activity = activity
-            c.unread = st.sessions[sid]?.isUnread ?? false
-            c.pinned = st.sessions[sid]?.isPinned ?? false
             c.selected = selected?.session == sid && selected?.host == n.hostID
             let number = sessionNumber(host: n.hostID, sid)
             c.shortcut.stringValue = number.map { "⌘\($0)" } ?? ""
@@ -461,8 +423,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             c.onClose = { [weak self, weak host] in if let host { self?.onCloseSession?(host, sid) } }
             var label = title
             if let phrase = StatusGlyphView.phrase(activity) { label += ", \(phrase)" }
-            if c.unread { label += ", unread" }
-            if c.pinned { label += ", pinned" }
             c.setAccessibilityLabel(label)
             // Detail lives in the hover card, not on the row.
             if let pane = st.sessions[sid].flatMap({ st.panes[$0.focus] }) {
@@ -634,74 +594,19 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
         switch n.kind {
         case let .session(_, sid):
-            let pwd = st.sessions[sid].flatMap { st.panes[$0.focus]?.pwd } ?? ""
-            let info = st.sessions[sid]
-            add(info?.isPinned == true ? "Unpin" : "Pin") { host.perform(.setPinned(sid, !(info?.isPinned ?? false))) }
-            add(info?.isUnread == true ? "Mark as Read" : "Mark as Unread") {
-                host.perform(.setUnread(sid, !(info?.isUnread ?? false)))
-            }
-            menu.addItem(.separator())
             add("Rename…") { [weak self] in self?.rename(host, sid) }
-            add("Duplicate") {
-                if let s = st.sessions[sid] {
-                    host.perform(.createSession(SessionID(), workspace: s.workspace, pane: PaneID(),
-                                                recipe: SpawnRecipe(cwd: pwd.isEmpty ? nil : pwd), name: nil))
-                }
-            }
-            if st.workspaces.count > 1 {
-                let move = NSMenuItem(title: "Move to Workspace", action: nil, keyEquivalent: "")
-                let sub = NSMenu()
-                for w in st.workspaces where w.id != st.sessions[sid]?.workspace {
-                    let item = NSMenuItem(title: w.name, action: #selector(runMenuClosure(_:)), keyEquivalent: "")
-                    item.target = self
-                    item.representedObject = MenuClosure {
-                        host.perform(.moveSession(sid, workspace: w.id, index: w.sessions.count))
-                    }
-                    sub.addItem(item)
-                }
-                move.submenu = sub
-                menu.addItem(move)
-            }
-            menu.addItem(.separator())
-            if !pwd.isEmpty, host.isLocal {
-                add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: pwd)]) }
-            }
-            if !pwd.isEmpty {
-                add("Copy Path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(pwd, forType: .string)
-                }
-            }
-            menu.addItem(.separator())
             if st.sessions[sid]?.worktree != nil {
                 add("Remove Worktree…") { [weak self] in self?.onRemoveWorktree?(host, sid) }
             }
+            menu.addItem(.separator())
             add("Close Session") { [weak self] in self?.onCloseSession?(host, sid) }
         case let .workspace(_, wid):
-            add("New Session") {
-                host.perform(.createSession(SessionID(), workspace: wid, pane: PaneID(), recipe: SpawnRecipe(), name: nil))
-            }
-            if !host.isLocal || Self.inRepository(st.workspace(wid)?.root ?? "") {
-                add("New Session in Worktree…") { [weak self] in self?.onNewWorktree?(host, wid) }
-            }
-            add("Rename…") { [weak self] in self?.renameWorkspace(host, wid) }
             if let root = st.workspace(wid)?.root, !root.isEmpty, host.isLocal {
                 add("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: root)]) }
             }
             menu.addItem(.separator())
             add("Close Workspace") { [weak self] in self?.confirmCloseWorkspace(host, wid) }
-        case .host:
-            break
         }
-        menu.addItem(.separator())
-        let sort = NSMenuItem(title: "Sort by Attention", action: #selector(runMenuClosure(_:)), keyEquivalent: "")
-        sort.target = self
-        sort.state = attentionFirst ? .on : .off
-        sort.representedObject = MenuClosure { [weak self] in
-            self?.attentionFirst.toggle()
-            self?.reload()
-        }
-        menu.addItem(sort)
     }
 
     @objc private func runMenuClosure(_ sender: NSMenuItem) {
@@ -719,15 +624,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                        placeholder: "Session name") { name in
             let trimmed = name.trimmingCharacters(in: .whitespaces)
             host.perform(.renameSession(sid, name: trimmed.isEmpty ? nil : trimmed))
-        }
-    }
-
-    private func renameWorkspace(_ host: HostSession, _ wid: WorkspaceID) {
-        guard let window = view.window, let w = host.state?.workspace(wid) else { return }
-        TextPrompt.run(in: window, title: "Rename Workspace", value: w.name, placeholder: "Workspace name") { name in
-            let trimmed = name.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { return }
-            host.perform(.renameWorkspace(wid, name: trimmed))
         }
     }
 

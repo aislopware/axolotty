@@ -405,30 +405,18 @@ struct HostTests {
         await fx.tearDown()
     }
 
-    @Test func pinnedSessionsLeadTheirProjectAndUnreadIsAMark() async throws {
+    @Test func movingASessionPlacesItAtTheDropIndex() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()
-        let (w, a, pa) = try await makeSession(c)
+        let (w, a, _) = try await makeSession(c)
         let b = SessionID(), cc = SessionID()
         try await c.perform(.createSession(b, workspace: w, pane: PaneID(), recipe: SpawnRecipe(), name: nil))
         try await c.perform(.createSession(cc, workspace: w, pane: PaneID(), recipe: SpawnRecipe(), name: nil))
         #expect(c.replica?.workspace(w)?.sessions == [a, b, cc])
-        try await c.perform(.setPinned(cc, true))
-        try await c.perform(.setPinned(b, true))
-        #expect(c.replica?.workspace(w)?.sessions == [cc, b, a])  // in the order pinned
-        try await c.perform(.moveSession(a, workspace: w, index: 0))  // can't jump the pins
-        #expect(c.replica?.workspace(w)?.sessions == [cc, b, a])
-        try await c.perform(.setPinned(cc, false))
-        #expect(c.replica?.workspace(w)?.sessions == [b, cc, a])
-        #expect(c.replica?.sessions[cc]?.isPinned == false)
-
-        try await c.perform(.setUnread(a, true))
-        #expect(c.replica?.sessions[a]?.isUnread == true)
-        c.send(.seen(pa))  // seeing a pane is not reading the mark; switching to it is (the client's call)
-        await c.ping()
-        #expect(c.replica?.sessions[a]?.isUnread == true)
-        try await c.perform(.setUnread(a, false))
-        #expect(c.replica?.sessions[a]?.isUnread == false)
+        try await c.perform(.moveSession(cc, workspace: w, index: 0))
+        #expect(c.replica?.workspace(w)?.sessions == [cc, a, b])
+        try await c.perform(.moveSession(cc, workspace: w, index: 99))  // clamped
+        #expect(c.replica?.workspace(w)?.sessions == [a, b, cc])
         await fx.tearDown()
     }
 

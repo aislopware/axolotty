@@ -14,8 +14,7 @@ import AxModel
 //
 // A session row is its program icon and title. State sits on the icon as a
 // badge (mini spinner while working, a dot when it wants a look), so the
-// agent's identity never disappears. Hover adds close; holding ⌘ shows ⌘n;
-// a pinned row keeps a small pin there at rest.
+// agent's identity never disappears. Hover adds close; holding ⌘ shows ⌘n.
 
 enum SidebarMetric {
     static let listInset: CGFloat = 8
@@ -42,7 +41,6 @@ enum SidebarMetric {
 /// survive document updates.
 final class SidebarNode: NSObject {
     enum Kind: Hashable {
-        case host(UUID)
         case workspace(UUID, WorkspaceID)
         case session(UUID, SessionID)
     }
@@ -54,7 +52,7 @@ final class SidebarNode: NSObject {
 
     var hostID: UUID {
         switch kind {
-        case let .host(h), let .workspace(h, _), let .session(h, _): h
+        case let .workspace(h, _), let .session(h, _): h
         }
     }
 
@@ -339,41 +337,12 @@ final class WorkspaceCell: NSTableCellView {
     }
 }
 
-/// A host header (shown only with more than one host).
-final class HostCell: NSTableCellView {
-    let title = Label("", font: Axo.Font.captionStrong, color: Axo.Color.textTertiary)
-    let state = Label("", font: Axo.Font.caption, color: Axo.Color.textDisabled)
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        addSubview(title)
-        addSubview(state)
-        textField = title
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var isFlipped: Bool { true }
-
-    override func layout() {
-        super.layout()
-        let mid = bounds.height - SidebarMetric.headerRow / 2
-        let ts = title.intrinsicContentSize, ss = state.intrinsicContentSize
-        let x = SidebarMetric.textX
-        state.frame = NSRect(x: bounds.width - SidebarMetric.textX - ss.width, y: (mid - ss.height / 2).rounded(),
-                             width: ss.width, height: ss.height)
-        title.frame = NSRect(x: x, y: (mid - ts.height / 2).rounded(), width: max(0, min(ts.width, state.frame.minX - x - 8)),
-                             height: ts.height)
-    }
-}
-
 /// A session row: program icon (carrying the state) and title (secondary ink
 /// at rest; full ink when selected, hovered, or when its agent wants a look).
 /// A row whose agent needs you (waiting or failed) sits on a wash plate of
 /// that state's colour, the same geometry as the selection plate, so "who
 /// needs me" is answered by area, not by a 6 px dot.
-/// Trailing slot: hover → close; ⌘ held → `⌘n`; pinned → a pin at rest.
+/// Trailing slot: hover → close; ⌘ held → `⌘n`.
 final class SessionCell: NSTableCellView {
     private let wash = CALayer()
     let icon = ProgramIcon(frame: .zero)
@@ -381,7 +350,6 @@ final class SessionCell: NSTableCellView {
     var title: Label { titleView.label }
     let shortcut = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     let close = IconButton(symbol: "xmark", label: "Close Session", size: .small)
-    private let pin = NSImageView()
     var onClose: (() -> Void)?
     /// Shown in the hover card after 550 ms; replaced in place when it changes.
     var card: HoverCard? {
@@ -394,8 +362,6 @@ final class SessionCell: NSTableCellView {
     var onHover: (() -> Void)?
 
     var activity: Activity = .idle { didSet { restyle() } }
-    var unread = false { didSet { if unread != oldValue { restyle() } } }
-    var pinned = false { didSet { if pinned != oldValue { restyle() } } }
     var selected = false { didSet { restyle() } }
     var showShortcut = false { didSet { restyle() } }
     var hovering = false {
@@ -422,10 +388,7 @@ final class SessionCell: NSTableCellView {
         wash.cornerCurve = .continuous
         wash.actions = ["bounds": NSNull(), "position": NSNull(), "backgroundColor": NSNull(), "hidden": NSNull()]
         layer?.addSublayer(wash)
-        pin.image = NSImage(systemSymbolName: "pin.fill", accessibilityDescription: "Pinned")?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
-        pin.contentTintColor = Axo.Color.textTertiary
-        for v in [icon, titleView, shortcut, close, pin] as [NSView] { addSubview(v) }
+        for v in [icon, titleView, shortcut, close] as [NSView] { addSubview(v) }
         textField = title
         restyle()
     }
@@ -443,19 +406,17 @@ final class SessionCell: NSTableCellView {
     @objc private func closeClicked() { onClose?() }
 
     /// Live rows (an agent working, waiting, failed or finished-unseen) take full ink.
-    private var wantsLook: Bool { activity != .idle || unread }
+    private var wantsLook: Bool { activity != .idle }
 
     private func restyle() {
         let lit = selected || hovering
         title.font = Axo.Font.body
         title.textColor = lit || wantsLook ? Axo.Color.text : Axo.Color.textSecondary
         icon.activity = activity
-        icon.unread = unread
         icon.lit = lit
         let keyOn = showShortcut && !shortcut.stringValue.isEmpty
         shortcut.isHidden = !keyOn
         close.isHidden = keyOn || !hovering
-        pin.isHidden = !pinned || keyOn || hovering
         let needsYou = activity == .blocked || activity == .error
         wash.isHidden = !needsYou
         if needsYou { wash.backgroundColor = effectiveAppearance.resolve(Axo.Color.statusWash(activity)) }
@@ -475,12 +436,7 @@ final class SessionCell: NSTableCellView {
         close.frame = NSRect(x: right + 3 - c, y: (mid - c / 2).rounded(), width: c, height: c)
         let k = shortcut.intrinsicContentSize
         shortcut.frame = NSRect(x: right - k.width, y: (mid - k.height / 2).rounded(), width: k.width, height: k.height)
-        // Centred where close sits, so hovering swaps one for the other in place.
-        let p = pin.intrinsicContentSize
-        pin.frame = NSRect(x: (close.frame.midX - p.width / 2).rounded(), y: (mid - p.height / 2).rounded(),
-                           width: p.width, height: p.height)
         var titleRight = right + 3
-        if !pin.isHidden { titleRight = pin.frame.minX }
         if !close.isHidden { titleRight = close.frame.minX }
         if !shortcut.isHidden { titleRight = shortcut.frame.minX }
         let x = SidebarMetric.titleX
