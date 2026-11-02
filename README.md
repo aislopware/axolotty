@@ -12,7 +12,8 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
 - **Reopen a closed session** (⇧⌘T) in its folder; a Claude Code session resumes the very conversation it had. Subagents at work show beside the agent's timer.
 - **Shell integration** for zsh, bash and fish:
   - prompt jumps (⌘↑ ⌘↓);
-  - a pane's ended bar, where ↩ restarts the program in place.
+  - a pane's ended bar, where ↩ restarts the program in place;
+  - a command of 10 s or more that ends while you look elsewhere marks its row done or failed, like an agent.
 - **On screen:**
   - ⌘-click links and `file:line`;
   - Find (⌘F);
