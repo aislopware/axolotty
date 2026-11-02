@@ -78,6 +78,21 @@ struct HostTests {
         await fx.tearDown()
     }
 
+    /// A lock held for an instant (by a process another thread is spawning,
+    /// which carries every descriptor until its exec) is waited out, not
+    /// taken for a twin.
+    @Test func aLockHeldForAnInstantIsWaitedOut() async throws {
+        let fx = try await HostFixture()
+        await fx.host.stop()
+        let lock = fx.paths.run.appending(path: "d.lock").path(percentEncoded: false)
+        let other = open(lock, O_RDWR | O_CLOEXEC)
+        // Parallel tests spawn too, so taking it is waited for as well.
+        #expect(await until(.seconds(2)) { flock(other, LOCK_EX | LOCK_NB) == 0 })
+        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(100)) { close(other) }
+        try await fx.restart()
+        await fx.tearDown()
+    }
+
     /// The point of the three-process design: restart the server, keep the program.
     @Test func serverRestartKeepsProgramsAndScreen() async throws {
         let fx = try await HostFixture()

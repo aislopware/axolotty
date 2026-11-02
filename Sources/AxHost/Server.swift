@@ -131,8 +131,17 @@ public actor Server {
         // daemon would exit quietly believing it has a twin.
         let fd = open(paths.run.appending(path: "d.lock").path(percentEncoded: false), O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        var rc: Int32
-        repeat { rc = flock(fd, LOCK_EX | LOCK_NB) } while rc != 0 && errno == EINTR
+        // A twin holds the lock for good. A process another thread is spawning
+        // holds it for an instant: Foundation's Process carries every open
+        // description, close-on-exec ones too, until its exec (71 of 20 000
+        // tries refused beside a spawn loop), so a restart that met the old
+        // server's last `git` would take itself for a twin. Waited out.
+        var rc: Int32 = -1
+        for attempt in 0 ..< 50 {
+            repeat { rc = flock(fd, LOCK_EX | LOCK_NB) } while rc != 0 && errno == EINTR
+            if rc == 0 || errno != EWOULDBLOCK || attempt == 49 { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
         guard rc == 0 else {
             let e = errno
             Darwin.close(fd)
