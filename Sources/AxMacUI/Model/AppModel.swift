@@ -86,10 +86,18 @@ final class AppModel {
         set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: "remoteHosts") }
     }
 
-    /// Connects every host kept from the last launch, in the background.
+    /// Connects every host kept from the last launch, in the background,
+    /// and checks every remote link when the Mac wakes or changes network.
     func startRemotes() {
         for s in saved where host(at: s.endpoint) == nil { addRemote(s) }
+        if nudge == nil {
+            nudge = LinkNudge { [weak self] in
+                for h in self?.hosts ?? [] where !h.isLocal { h.nudge() }
+            }
+        }
     }
+
+    private var nudge: LinkNudge?
 
     func host(at endpoint: HostEndpoint) -> HostSession? { hosts.first { $0.endpoint == endpoint } }
 

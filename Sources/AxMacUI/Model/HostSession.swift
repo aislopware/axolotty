@@ -92,6 +92,13 @@ final class HostSession: Identifiable {
         connection.disconnect()
     }
 
+    /// The Mac woke or its network changed: check the link now. A host that
+    /// waits for the person (a login, an install) keeps waiting.
+    func nudge() {
+        if case .failed = phase { return }
+        connection.kick()
+    }
+
     /// Tries again now (after a login, an install, a network change).
     func retry() {
         if case .failed = phase {
