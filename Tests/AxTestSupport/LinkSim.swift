@@ -197,6 +197,8 @@ public struct EchoResult: Sendable, Equatable {
     public var probes: Int
     /// A digest of every echo time: two runs of one seed must agree.
     public var digest: UInt64
+    /// Pooled results: the seeds that lost a key, to replay with `AXSEED`.
+    public var lostIn: [UInt64] = []
 
     public init(echoes: [Duration], lostKeys: Int = 0, floodRate: Double = 0, resyncs: Int = 0, retransmits: Int = 0,
                 timeouts: Int = 0, probes: Int = 0, digest: UInt64 = 0) {
@@ -220,6 +222,7 @@ public struct EchoResult: Sendable, Equatable {
         func ms(_ d: Duration) -> String { String(format: "%.1f", Double(d.components.attoseconds) / 1e15 + Double(d.components.seconds) * 1000) }
         return "p50=\(ms(quantile(0.5))) p90=\(ms(quantile(0.9))) p99=\(ms(quantile(0.99))) max=\(ms(quantile(1))) ms"
             + " lost=\(lostKeys) flood=\(String(format: "%.2f", floodRate / 1e6)) MB/s resyncs=\(resyncs) retx=\(retransmits) rto=\(timeouts) tlp=\(probes)"
+            + (lostIn.isEmpty ? "" : " lost in seeds \(lostIn)")
     }
 }
 
@@ -427,9 +430,18 @@ extension EchoRun {
 
             case let .keySend(k):
                 keySent[k] = now
-                if let at = upShaper.admit(60, at: now) { events.push(.keyAtHost(k), at: at) }
-                // A lost key is resent by the client's tail-loss probe, two round trips on; it is late, not lost.
-                else if let at = upShaper.admit(60, at: now + (down.delay + up.delay) * 4) { events.push(.keyAtHost(k), at: at) }
+                // A lost key is resent: by the client's tail-loss probe two round
+                // trips on, then on its retransmission timer, doubling from 200 ms.
+                // It is late, never lost (one resend alone lost 2 keys in 200 seeds).
+                var send = now, wait = (down.delay + up.delay) * 4
+                while true {
+                    if let at = upShaper.admit(60, at: send) {
+                        events.push(.keyAtHost(k), at: at)
+                        break
+                    }
+                    send += wait
+                    wait = max(wait * 2, .milliseconds(200))
+                }
 
             case let .keyAtHost(k):
                 // The program's echo through the PTY.

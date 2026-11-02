@@ -18,20 +18,25 @@ struct LinkSimTests {
     /// each way with a little jitter, a home router's 100 ms of buffer.
     static let wifi = LinkModel(delay: .milliseconds(4), jitter: .milliseconds(1), rate: 6_250_000, queue: .milliseconds(100))
     /// Four seeds in the gate; `AXSIM_SEEDS=200` for the long run.
-    static let seeds: [UInt64] = Array(1 ... UInt64(ProcessInfo.processInfo.environment["AXSIM_SEEDS"].flatMap(Int.init) ?? 4))
+    static let seeds: [UInt64] = ProcessInfo.processInfo.environment["AXSEED"].flatMap(UInt64.init).map { [$0] }
+        ?? Array(1 ... UInt64(ProcessInfo.processInfo.environment["AXSIM_SEEDS"].flatMap(Int.init) ?? 4))
 
     /// Every seed's echoes pooled, so a bound holds across seeds, not on a lucky one.
     static func pooled(_ make: (UInt64) -> EchoRun) -> EchoResult {
         var echoes: [Duration] = []
         var lost = 0
         var rate = 0.0
+        var lostIn: [UInt64] = []
         for seed in seeds {
             let r = make(seed).run()
             echoes += r.echoes
             lost += r.lostKeys
+            if r.lostKeys > 0 { lostIn.append(seed) }
             rate += r.floodRate / Double(seeds.count)
         }
-        return EchoResult(echoes: echoes, lostKeys: lost, floodRate: rate)
+        var pooled = EchoResult(echoes: echoes, lostKeys: lost, floodRate: rate)
+        pooled.lostIn = lostIn
+        return pooled
     }
 
     static func run(_ link: LinkModel, _ policy: SendPolicy, flood: Bool = true, halves: Bool = false) -> EchoResult {
@@ -57,7 +62,7 @@ struct LinkSimTests {
     @Test func anEchoBesideAFloodStaysNearTheIdleRoundTrip() {
         let idle = Self.run(Self.wifi, .paced, flood: false)
         let paced = Self.run(Self.wifi, .paced)
-        #expect(paced.lostKeys == 0)
+        #expect(paced.lostKeys == 0, "\(paced.summary)")
         #expect(paced.quantile(0.5) <= idle.quantile(0.5) + .milliseconds(6), "\(paced.summary) vs idle \(idle.summary)")
         #expect(paced.quantile(0.99) <= idle.quantile(0.99) + .milliseconds(20), "\(paced.summary) vs idle \(idle.summary)")
         #expect(paced.floodRate >= 0.7 * Double(Self.wifi.rate), "\(paced.summary)")
@@ -90,7 +95,7 @@ struct LinkSimTests {
         var lossy = Self.wifi
         lossy.loss = 0.01
         let paced = Self.run(lossy, .paced)
-        #expect(paced.lostKeys == 0)
+        #expect(paced.lostKeys == 0, "\(paced.summary)")
         #expect(paced.quantile(0.5) <= .milliseconds(25), "\(paced.summary)")
         #expect(paced.quantile(0.99) <= .milliseconds(90), "\(paced.summary)")
     }
