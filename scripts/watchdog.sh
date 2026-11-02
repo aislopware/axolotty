@@ -37,13 +37,25 @@ bounded() {
     kill "$k" 2>/dev/null
 }
 
+# Every process under the run: its group, and every descendant, since a
+# runner can start its workers in a group of their own (swift-test once sat
+# three minutes beside a child the group never listed).
+descendants() {
+    local c
+    for c in $(pgrep -P "$1"); do
+        echo "$c"
+        descendants "$c"
+    done
+}
+under_run() { { pgrep -g "$pid"; echo "$pid"; descendants "$pid"; } | sort -un; }
+
 report() {
     {
         echo
         echo "WATCHDOG: $1 after $((SECONDS - start)) s; the processes under the run:"
         local all leaves=()
-        all=$(pgrep -g "$pid" | tr '\n' ',')
-        ps -o pid=,ppid=,stat=,etime=,command= -p "${all%,}" | cut -c1-200
+        all=$(under_run | tr '\n' ',')
+        ps -o pid=,ppid=,pgid=,stat=,etime=,command= -p "${all%,}" | cut -c1-200
         for p in ${all//,/ }; do
             # A leaf: nothing under the run has it as parent.
             [ -z "$(pgrep -P "$p")" ] && leaves+=("$p")
@@ -70,9 +82,11 @@ while kill -0 "$pid" 2>/dev/null; do
     [ $((SECONDS - start)) -ge "$total" ] && why="still running at its bound of $total s"
     if [ -n "$why" ]; then
         report "$why"
-        kill -TERM -- "-$pid" 2>/dev/null
+        doomed=()  # /bin/bash is 3.2: no mapfile
+        while read -r p; do doomed+=("$p"); done < <(under_run)
+        kill -TERM -- "-$pid" "${doomed[@]}" 2>/dev/null
         sleep 5
-        kill -KILL -- "-$pid" 2>/dev/null
+        kill -KILL -- "-$pid" "${doomed[@]}" 2>/dev/null
         wait "$pid" 2>/dev/null
         echo "WATCHDOG: ended ($why)" >>"$log"
         exit 124
