@@ -484,11 +484,32 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         focus(order[(i + step + order.count) % order.count])
     }
 
+    @objc func focusPaneLeft(_ sender: Any?) { move(.left) }
+    @objc func focusPaneRight(_ sender: Any?) { move(.right) }
+    @objc func focusPaneUp(_ sender: Any?) { move(.up) }
+    @objc func focusPaneDown(_ sender: Any?) { move(.down) }
+
+    private func move(_ d: SplitTree.Direction) {
+        guard zoomed == nil, let n = tree.neighbor(of: focused, d) else { return }
+        focus(n)
+    }
+
+    @objc func resizePaneLeft(_ sender: Any?) { nudge(.horizontal, -0.05) }
+    @objc func resizePaneRight(_ sender: Any?) { nudge(.horizontal, 0.05) }
+    @objc func resizePaneUp(_ sender: Any?) { nudge(.vertical, -0.05) }
+    @objc func resizePaneDown(_ sender: Any?) { nudge(.vertical, 0.05) }
+
+    private func nudge(_ axis: SplitTree.Axis, _ by: Double) {
+        let next = tree.resizing(focused, axis: axis, by: by)
+        guard next != tree, fits(next) else { return }
+        host.perform(.setTree(sessionID, next))
+    }
+
     @objc func toggleZoom(_ sender: Any?) {
         guard tree.count > 1 || zoomed != nil else { return }
         host.perform(.setZoom(sessionID, zoomed == nil ? focused : nil))
     }
-}
 
-/// The live ratio shown while dragging a divider.
+    @objc func equalizePanes(_ sender: Any?) { host.perform(.setTree(sessionID, tree.equalized())) }
+}
 
