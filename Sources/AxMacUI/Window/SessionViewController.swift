@@ -75,6 +75,9 @@ final class SessionViewController: NSViewController {
         recent.removeAll { $0 == key }
         recent.insert(key, at: 0)
         evict()
+        // From the sheet (a host that just answered, the launcher): the
+        // session comes up through it rather than cutting in.
+        if !empty.isHidden { crossfade(view, Axo.Motion.tick) }
         empty.isHidden = true
         guard container !== current else {
             container.sync(session, animated: true)
@@ -99,12 +102,27 @@ final class SessionViewController: NSViewController {
     var emptyView: EmptyStateView { empty }
 
     func showEmpty(_ state: EmptyState) {
+        if current != nil || empty.isHidden {
+            crossfade(view, Axo.Motion.tick)  // a session or nothing gives way to the sheet
+        } else if empty.state != state {
+            crossfade(empty, Axo.Motion.tickOut)  // the same sheet, new words: only they change
+        }
         current?.removeFromSuperview()
         current = nil
         empty.set(state)
         empty.isHidden = false
         // Keys 1–n launch from the empty sheet.
         if state == .noSessions { view.window?.makeFirstResponder(empty) }
+    }
+
+    /// A fade over everything `v` shows, for the change made right after.
+    private func crossfade(_ v: NSView, _ beat: Axo.Motion.Beat) {
+        guard v.window != nil, !Axo.Motion.reduced, let layer = v.layer else { return }
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = beat.duration
+        fade.timingFunction = beat.curve
+        layer.add(fade, forKey: "crossfade")
     }
 
     /// Applies document changes to every cached container.

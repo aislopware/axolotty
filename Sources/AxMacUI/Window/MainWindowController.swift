@@ -287,7 +287,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             content.band.chip.isHidden = true
             branchFor = nil
             content.band.diff.set(nil)
-            window?.title = "Axolotty"
+            // A window waiting on a far Mac is that Mac's (Mission Control, ⌘`).
+            window?.title = content.current == nil ? awayHost?.name ?? "Axolotty" : "Axolotty"
             return
         }
         content.band.isHidden = false

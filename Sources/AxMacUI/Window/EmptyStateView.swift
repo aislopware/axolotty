@@ -46,7 +46,7 @@ final class EmptyStateView: NSView {
     private var tiles: [LaunchTile] = []
     private let pill = ProjectPill()
     private let remedy = Button("", variant: .secondary, size: .regular)
-    private var state = EmptyState.noSessions
+    private(set) var state = EmptyState.noSessions
     private var agents: [AgentKind] = []
     private var projects: [Project] = []
     private var selected: Project?
