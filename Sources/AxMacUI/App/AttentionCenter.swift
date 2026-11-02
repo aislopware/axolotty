@@ -6,6 +6,7 @@ import UserNotifications
 /// Routes host events to the person (spec §1.4): a toast when the app is active
 /// but the pane is not on screen, a system notification when the app is in the
 /// background, and the Dock badge for waiting or failed panes at all times.
+/// A notice from a far Mac names it.
 /// A notice is withdrawn (banner and toast) once its pane no longer wants
 /// the person: they looked, or it moved on. One banner per pane: a newer
 /// state replaces the older. Waiting is Time Sensitive (breaks through a
@@ -94,7 +95,9 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
                 self.deliver(host, pane, title: title, body: message, activity: activity)
             }
         case let .notification(pane, title, body):
-            deliver(host, pane, title: title.isEmpty ? "Axolotty" : title, body: body, activity: .done)
+            // OSC 9 says only the words: the session is what they're about.
+            let session = host.pane(pane).flatMap { host.state?.sessionTitle($0.session) } ?? "Axolotty"
+            deliver(host, pane, title: title.isEmpty ? session : title, body: body, activity: .done)
         case let .bell(pane):
             if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
             _ = pane
@@ -108,6 +111,12 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// A far Mac's notice names it: "zsh needs input" alone can't say which
+    /// machine waits. This Mac's go unnamed, as everything here does.
+    private static func toastBody(_ host: HostSession, _ body: String) -> String {
+        host.isLocal ? body : [host.name, body].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     private func deliver(_ host: HostSession, _ pane: PaneID, title: String, body: String, activity: Activity) {
         if NSApp.isActive, let w = keyWindow() {
             // Nothing to say when the person is looking at that pane.
@@ -116,13 +125,13 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
             {
                 return
             }
-            w.toasts?.show(.init(title: title, body: body, activity: activity, host: host, pane: pane))
+            w.toasts?.show(.init(title: title, body: Self.toastBody(host, body), activity: activity, host: host, pane: pane))
             outstanding[pane] = host.id
             return
         }
         if activity == .blocked || activity == .error { NSApp.requestUserAttention(.informationalRequest) }
         guard canNotify else {
-            keyWindow()?.toasts?.show(.init(title: title, body: body, activity: activity, host: host, pane: pane))
+            keyWindow()?.toasts?.show(.init(title: title, body: Self.toastBody(host, body), activity: activity, host: host, pane: pane))
             return
         }
         outstanding[pane] = host.id
@@ -134,6 +143,7 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
         let send = {
             let c = UNMutableNotificationContent()
             c.title = title
+            if !host.isLocal { c.subtitle = host.name }  // the banner's own line for where
             c.body = body
             c.sound = activity == .blocked || activity == .error ? .default : nil
             c.interruptionLevel = activity == .blocked ? .timeSensitive : activity == .done ? .passive : .active
