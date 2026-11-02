@@ -14,7 +14,6 @@ public final class CommandChild: @unchecked Sendable {
     public let fd: Int32
     private let errFD: Int32
     private let errSource: any DispatchSourceRead
-    private let exitSource: any DispatchSourceProcess
     private let queue = DispatchQueue(label: "axolotty.command")
 
     private struct State {
@@ -78,25 +77,24 @@ public final class CommandChild: @unchecked Sendable {
         _ = fcntl(errFD, F_SETFL, fcntl(errFD, F_GETFL) | O_NONBLOCK)
         _ = fcntl(errFD, F_SETFD, FD_CLOEXEC)
         errSource = DispatchSource.makeReadSource(fileDescriptor: errFD, queue: queue)
-        exitSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
         errSource.setEventHandler { [weak self] in self?.drainStderr() }
         errSource.setCancelHandler { [errFD] in _ = Darwin.close(errFD) }
-        exitSource.setEventHandler { [weak self] in self?.reap() }
         errSource.resume()
-        exitSource.resume()
+        // One thread blocked in waitpid is the only reaper. A dispatch process
+        // source missed an exit that came before it was registered (an ssh that
+        // fails at once), and `finish` then waited for ever with a zombie.
+        let queue = queue
+        Thread.detachNewThread { [weak self] in
+            var st: Int32 = 0
+            while waitpid(pid, &st, 0) < 0, errno == EINTR {}
+            queue.async { self?.exited(st) }
+        }
     }
 
     deinit {
-        exitSource.cancel()
         errSource.cancel()
-        if state.withLock({ $0.status == nil }) {
-            kill(pid, SIGKILL)
-            let pid = pid
-            DispatchQueue.global().async {
-                var st: Int32 = 0
-                while waitpid(pid, &st, 0) < 0, errno == EINTR {}
-            }
-        }
+        // The reaper thread collects it.
+        if state.withLock({ $0.status == nil }) { kill(pid, SIGKILL) }
     }
 
     /// Runs on `queue` only, from the pipe's source and from `reap`.
@@ -119,11 +117,8 @@ public final class CommandChild: @unchecked Sendable {
         }
     }
 
-    private func reap() {
-        var st: Int32 = 0
-        var r: pid_t
-        repeat { r = waitpid(pid, &st, WNOHANG) } while r < 0 && errno == EINTR
-        guard r == pid else { return }
+    /// On `queue`, once the reaper has the exit status.
+    private func exited(_ st: Int32) {
         drainStderr()
         // WIFEXITED / WEXITSTATUS, spelled out (the macros don't import).
         let code: Int32 = (st & 0x7F) == 0 ? (st >> 8) & 0xFF : 128 + (st & 0x7F)
@@ -132,7 +127,6 @@ public final class CommandChild: @unchecked Sendable {
             defer { s.waiters = [] }
             return s.waiters
         }
-        exitSource.cancel()
         waiters.forEach { $0.resume(returning: code) }
     }
 

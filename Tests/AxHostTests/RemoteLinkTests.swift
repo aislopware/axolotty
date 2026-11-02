@@ -71,10 +71,22 @@ struct RemoteLinkTests {
         defer { stop.store(true, ordering: .relaxed) }
         for i in 0 ..< 400 {
             let child = try CommandChild.spawn(["/bin/sh", "-c", "echo said\(i) >&2"])
-            _ = await child.finish()
+            _ = await child.finish(grace: 10)
             let tail = child.stderrTail
             #expect(tail == "said\(i)", "run \(i): \(tail.prefix(40).debugDescription)")
             if tail != "said\(i)" { break }
+            close(child.fd)
+        }
+    }
+
+    /// A command that is gone before anything watches it is still seen to
+    /// end: a dispatch process source registered after the exit never fired,
+    /// and the link waited for ever beside a zombie (found by a repeat run
+    /// that hung for 12 minutes; the suite's time limit fails it now).
+    @Test func aCommandThatExitsAtOnceIsSeenToEnd() async throws {
+        for i in 0 ..< 300 {
+            let child = try CommandChild.spawn(["/usr/bin/true"])
+            #expect(await child.finish(grace: 10) == 0, "run \(i)")
             close(child.fd)
         }
     }
