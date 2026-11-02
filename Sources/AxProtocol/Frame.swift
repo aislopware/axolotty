@@ -43,11 +43,14 @@ public enum Wire {
     public static let bridgePreamble = Data("\u{0}AXOLOTTY-BRIDGE\u{0}\(version)\n".utf8)
     /// Largest frame either side accepts.
     public static let maxFrame = 1 << 20
-    /// Data frames are cut to this size so control traffic interleaves fairly.
-    public static let maxData = 32 << 10
+    /// Data frames are cut to this size, so a lane switches often: on a
+    /// lossy TCP link an echo waits behind at most the rest of one frame
+    /// and `notSentLowat` (LinkSimTests: 32 KiB frames held echo at p50 29 /
+    /// p99 71 ms under 1 % loss, 8 KiB at 16 / 46 ms, for the same rate).
+    public static let maxData = 8 << 10
     /// TCP_NOTSENT_LOWAT on TCP links: little unsent data in the kernel, so
     /// the lanes, not one FIFO socket buffer, decide what goes next.
-    public static let notSentLowat = 16 << 10
+    public static let notSentLowat = 4 << 10
 
     public static func encode(_ frame: Frame) -> Data {
         var out = Data()
