@@ -1,19 +1,31 @@
 import AppKit
 import AxModel
 
-/// Settings (⌘,): a single native form; every change applies live.
+/// Settings (⌘,): a single native form; every change applies live. It
+/// wears the app's appearance, not the system's: an "Always Dark" app
+/// doesn't open a white window.
 final class SettingsWindowController: NSWindowController {
     private let model: AppModel
+    private var themeToken: SignalToken?
 
     init(model: AppModel) {
         self.model = model
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Settings"
+        window.titlebarAppearsTransparent = true  // one ground, title bar and form
         window.isReleasedWhenClosed = false
         super.init(window: window)
         build()
         window.center()
+        applyTheme()
+        themeToken = model.themeChanged.observe { [weak self] in self?.applyTheme() }
+    }
+
+    private func applyTheme() {
+        let t = model.theme
+        window?.appearance = NSAppearance(named: t.isDark ? .darkAqua : .aqua)
+        window?.backgroundColor = Axo.Color.rgb(t.background)  // the main window's ground
     }
 
     @available(*, unavailable)
@@ -90,6 +102,8 @@ final class SettingsWindowController: NSWindowController {
         grid.columnSpacing = 10
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
+        // One column of controls, one width: the longest choice sets it.
+        for p in [theme, family] { p.widthAnchor.constraint(equalTo: option.widthAnchor).isActive = true }
         grid.translatesAutoresizingMaskIntoConstraints = false
         let content = NSView()
         content.addSubview(grid)
