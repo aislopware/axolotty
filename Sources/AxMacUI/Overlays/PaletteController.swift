@@ -22,16 +22,14 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     private(set) var isVisible = false
 
     /// New Session in Worktree: the project, what its repository offers, and
-    /// what the session starts (nil: a shell; ⇥ cycles).
+    /// what the session starts (Claude Code when installed, else a shell).
     private struct WorktreeTarget {
         var host: HostSession
         var workspace: WorkspaceID
         /// Where git runs and the new session's starting point.
         var dir: String?
         var source: WorktreeSource?
-        var agents: [AgentKind?]
-        var agent: Int
-        var chosen: AgentKind? { agents[agent] }
+        var chosen: AgentKind?
     }
     private var worktree: WorktreeTarget?
 
@@ -80,10 +78,8 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     /// branch or an existing worktree; ↩ starts the shown agent there.
     func showWorktree(_ host: HostSession, _ wid: WorkspaceID, from dir: String? = nil) {
         let root = dir ?? host.state?.workspace(wid)?.root ?? ""
-        var agents: [AgentKind?] = [nil]
-        agents += AgentPresets.available(local: host.isLocal).map { Optional($0) }
-        let target = WorktreeTarget(host: host, workspace: wid, dir: root.isEmpty ? nil : root, source: nil, agents: agents,
-                                    agent: agents.count > 1 ? 1 : 0)
+        let target = WorktreeTarget(host: host, workspace: wid, dir: root.isEmpty ? nil : root, source: nil,
+                                    chosen: AgentPresets.available(local: host.isLocal).first)
         guard host.isLocal, !root.isEmpty else {
             worktree = target
             mode = .worktree
@@ -226,16 +222,6 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         return out
     }
 
-    private func cycleAgent(_ d: Int) {
-        guard var t = worktree, t.agents.count > 1 else { return }
-        t.agent = (t.agent + d + t.agents.count) % t.agents.count
-        worktree = t
-        surface.lead(t.chosen.map(ProgramIdentity.of) ?? .shell)
-        let keep = table.selectedRow
-        refilter()
-        if keep >= 0, keep < rows.count, case .entry = rows[keep] { table.selectRowIndexes([keep], byExtendingSelection: false) }
-    }
-
     /// A session row: the icon, and the title as the sidebar shows it (the
     /// vendor name dropped beside the vendor's mark), still found by its full title.
     private func sessionEntry(_ h: HostSession, _ st: HostState, _ sid: SessionID, detail: String, chord: String) -> Entry {
@@ -370,8 +356,6 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         case #selector(NSResponder.moveDown(_:)): move(1)
         case #selector(NSResponder.insertNewline(_:)): activate(table.selectedRow)
         case #selector(NSResponder.cancelOperation(_:)): dismiss()
-        case #selector(NSResponder.insertTab(_:)) where mode == .worktree: cycleAgent(1)
-        case #selector(NSResponder.insertBacktab(_:)) where mode == .worktree: cycleAgent(-1)
         default:
             // ⌃P / ⌃N as in Emacs and every picker.
             if sel == #selector(NSResponder.moveBackward(_:)) || sel == Selector(("previousLine:")) {

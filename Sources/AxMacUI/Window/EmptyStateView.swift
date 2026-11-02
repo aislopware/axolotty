@@ -70,8 +70,8 @@ final class EmptyStateView: NSView {
         if agents != self.agents {
             self.agents = agents
             tiles.forEach { $0.removeFromSuperview() }
-            // Same keys as the "+" menu: 1 Shell, 2–9 agents.
-        let all: [AgentKind?] = [nil] + agents.prefix(8).map { Optional($0) }
+            // Same keys as the "+" menu: 1 Shell, 2 Claude Code.
+            let all: [AgentKind?] = [nil] + agents.map { Optional($0) }
             tiles = all.enumerated().map { i, a in
                 let t = LaunchTile(identity: a.map(ProgramIdentity.of) ?? .shell, name: a?.shortName ?? "Shell", digit: i + 1)
                 t.onClick = { [weak self] in self?.launch(a) }

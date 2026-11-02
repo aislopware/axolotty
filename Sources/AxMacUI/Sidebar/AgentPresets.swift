@@ -2,30 +2,23 @@ import AppKit
 import AxModel
 import AxRender
 
-/// What the project's "+" offers: a shell, then each agent this host can run.
+/// What the project's "+" offers: a shell, and Claude Code when it is
+/// installed. Any other agent is typed in a shell; its mark still shows.
 ///
-/// On the local host an agent is offered only when its executable is on the
-/// person's PATH (the app's own PATH is launchd's, so the usual install
-/// directories are searched too). A remote host cannot be probed from here,
-/// so it offers the three agents with first-class marks.
+/// Claude Code counts as installed when `claude` is on the person's PATH
+/// (the app's own PATH is launchd's, so the usual install directories are
+/// searched too). A remote host cannot be probed from here, so it offers it.
 enum AgentPresets {
-    static let order: [AgentKind] = [.claude, .codex, .gemini, .opencode, .amp, .cursor, .copilot, .aider, .goose, .qwen,
-                                     .crush, .droid, .kimi, .kiro, .auggie, .pi]
-
     static func available(local: Bool) -> [AgentKind] {
-        guard local else { return [.claude, .codex, .gemini] }
-        let found = installed
-        return order.filter { found.contains($0) }
+        !local || claudeInstalled ? [.claude] : []
     }
 
     /// Probed once per launch: a menu must open instantly.
-    private static let installed: Set<AgentKind> = {
+    private static let claudeInstalled: Bool = {
         let home = NSHomeDirectory()
         var dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        dirs += ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.bun/bin", "\(home)/.npm-global/bin",
-                 "\(home)/.cargo/bin", "\(home)/go/bin", "\(home)/.volta/bin"]
-        let fm = FileManager.default
-        return Set(order.filter { a in dirs.contains { fm.isExecutableFile(atPath: "\($0)/\(a.executable)") } })
+        dirs += ["\(home)/.local/bin", "\(home)/.claude/local", "/opt/homebrew/bin", "/usr/local/bin"]
+        return dirs.contains { FileManager.default.isExecutableFile(atPath: "\($0)/\(AgentKind.claude.executable)") }
     }()
 
     /// The line typed into a new session's shell to start `agent`, with
@@ -41,8 +34,8 @@ enum AgentPresets {
     }
 
     /// The "+" menu as Axolotty's own opaque menu (`PopMenu`): Shell, a
-    /// rule, then each agent. Keys match the empty state's tiles: 1 is Shell,
-    /// 2–9 the agents in order. `pick(nil)` is a plain shell.
+    /// rule, then Claude Code. Keys match the empty state's tiles: 1 is Shell,
+    /// 2 Claude Code. `pick(nil)` is a plain shell.
     static func items(local: Bool, pick: @escaping (AgentKind?) -> Void) -> [PopMenu.Item?] {
         var out: [PopMenu.Item?] = [PopMenu.Item(title: "Shell", image: ProgramIdentity.shell.image(), key: "1") { pick(nil) }]
         let agents = available(local: local)
