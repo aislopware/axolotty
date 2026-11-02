@@ -46,6 +46,8 @@ enum Axo {
         static let accent = token("accent") { $0.accent }
         static let accentInk = token("accentInk") { $0.accentInk }
         static let accentWash = token("accentWash") { $0.accentWash }
+        static let brand = token("brand") { $0.brand }
+        static let raised = token("raised") { Ink(rgb: $0.raised) }
         static let solid = token("solid") { $0.solid }
         static let solidInk = token("solidInk") { $0.solidInk }
         static let scrim = token("scrim") { $0.scrim }

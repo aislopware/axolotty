@@ -74,13 +74,17 @@ nonisolated struct DesignTokens: Sendable {
     // Planes. The window is a frame; terminals are screens set in it.
     // - ground: the terminal's own background, the fill of every pane sheet.
     // - frame: the band, the sidebar and the gutters between sheets, one tone.
-    //   It sits lighter than the ground in dark (a near-black ground cannot get
-    //   darker: mixing toward black gave 1.03:1), so each terminal reads as a
-    //   deep screen in a bezel: 1.14:1 plus the sheet's radius and gutter.
-    // - elevated: floats (palette, toasts, menus), one notch above the frame.
+    //   In dark it is the ground's own hue five lightness points down (the
+    //   Dracula ramp: frame 10, ground 15, raised 20, floats 25), so each
+    //   terminal is the lit screen in a darker bezel. A ground too dark to go
+    //   lower takes a lighter frame instead. In light the sheet is white and
+    //   the frame a cool grey under it.
+    // - elevated: floats (palette, toasts, menus), one notch above the ground.
     let ground: RGB
     let frame: RGB
     let elevated: RGB
+    /// Inputs and resting cards on the frame: the ramp's raised step.
+    let raised: RGB
     /// The sidebar is the frame (kept as its own name for its call sites).
     var sidebar: RGB { frame }
 
@@ -105,6 +109,8 @@ nonisolated struct DesignTokens: Sendable {
     let accent: Ink
     let accentInk: Ink
     let accentWash: Ink
+    /// The axolotl's pink: the mark only.
+    let brand: Ink
 
     // The neutral solid (primary action): inverted ink.
     let solid: Ink
@@ -122,54 +128,68 @@ nonisolated struct DesignTokens: Sendable {
     init(theme t: TerminalTheme) {
         theme = t
         dark = t.isDark
-        let bg = t.background, fg = t.foreground
+        let bg = t.background, fg = t.foreground, sel = t.selectionBackground
         let black = RGB(0, 0, 0), white = RGB(255, 255, 255)
+        let hue = bg.hsl
+        // A neutral ground (no hue to keep) tints its text tiers toward the
+        // foreground instead.
+        let tinted = hue.s > 0.04, isDark = t.isDark
+        let tier = { (l: Double, s: Double) -> Ink in
+            tinted ? Ink(rgb: RGB(h: hue.h, s: s, l: l)) : Ink(rgb: fg, alpha: isDark ? l : 1 - l)
+        }
         ground = bg
         if dark {
-            frame = bg.mix(fg, 0.06)
-            elevated = bg.mix(fg, 0.10)
-            hover = Ink(rgb: fg, alpha: Prim.Ink.a2 + 0.005)
-            selected = Ink(rgb: fg, alpha: Prim.Ink.a4 + 0.005)
-            pressed = Ink(rgb: fg, alpha: Prim.Ink.a6 + 0.01)
-            selectedHover = Ink(rgb: fg, alpha: Prim.Ink.a5 + 0.01)
-            border = Ink(rgb: fg, alpha: Prim.Ink.a5)
-            borderSubtle = Ink(rgb: fg, alpha: Prim.Ink.a3)
-            borderStrong = Ink(rgb: fg, alpha: Prim.Ink.a7)
+            let deep = hue.l >= 0.11
+            frame = deep ? bg.lightness(hue.l - 0.05) : bg.mix(fg, 0.06)
+            raised = bg.lightness(hue.l + 0.05)
+            elevated = bg.lightness(hue.l + 0.10)
+            // Plates are the selection tone itself, so they keep the ramp's hue.
+            hover = Ink(rgb: sel, alpha: 0.42)
+            selected = Ink(rgb: sel, alpha: 0.78)
+            selectedHover = Ink(rgb: sel, alpha: 0.92)
+            pressed = Ink(rgb: sel.lightness(sel.hsl.l + 0.04))
+            border = Ink(rgb: sel, alpha: 0.70)
+            borderSubtle = Ink(rgb: sel, alpha: 0.45)
+            borderStrong = Ink(rgb: sel.lightness(sel.hsl.l + 0.10))
             text = Ink(rgb: fg)
-            textSecondary = Ink(rgb: fg, alpha: 0.72)
-            textTertiary = Ink(rgb: fg, alpha: 0.50)
-            textDisabled = Ink(rgb: fg, alpha: 0.32)
-            scrim = Ink(rgb: black, alpha: 0.38)
-            ring = Ink(rgb: fg, alpha: 0.11)
+            // 7.2 / 5.3 / 4.0 on the frame, 6.3 / 4.7 / 3.5 on the ground.
+            textSecondary = tier(0.70, 0.25)
+            textTertiary = tier(0.62, 0.25)
+            textDisabled = tier(0.55, 0.25)
+            scrim = Ink(rgb: black, alpha: 0.42)
+            ring = Ink(rgb: sel, alpha: 0.85)
             outerRing = Ink(rgb: black, alpha: 0.55)
-            rim = Ink(rgb: white, alpha: 0.06)
+            rim = Ink(rgb: white, alpha: 0.05)
             restShadow = Shadow(y: 1, blur: 2, alpha: 0.30)
-            floatShadows = [Shadow(y: 1, blur: 2, alpha: 0.32), Shadow(y: 10, blur: 28, alpha: 0.36)]
+            floatShadows = [Shadow(y: 1, blur: 2, alpha: 0.32), Shadow(y: 12, blur: 32, alpha: 0.42)]
         } else {
-            frame = bg.mix(fg, 0.05)
+            frame = bg.luminance > 0.97 ? RGB(h: hue.h, s: 0.06, l: 0.962) : bg.mix(fg, 0.05)
+            raised = white
             elevated = white
-            hover = Ink(rgb: fg, alpha: Prim.Ink.a1 + 0.01)
-            selected = Ink(rgb: fg, alpha: Prim.Ink.a3 + 0.005)
-            pressed = Ink(rgb: fg, alpha: Prim.Ink.a5)
-            selectedHover = Ink(rgb: fg, alpha: Prim.Ink.a4)
+            hover = Ink(rgb: sel, alpha: 0.45)
+            selected = Ink(rgb: sel, alpha: 0.80)
+            selectedHover = Ink(rgb: sel, alpha: 0.95)
+            pressed = Ink(rgb: sel.lightness(sel.hsl.l - 0.04))
             border = Ink(rgb: fg, alpha: Prim.Ink.a6 + 0.01)
             borderSubtle = Ink(rgb: fg, alpha: Prim.Ink.a4)
             borderStrong = Ink(rgb: fg, alpha: Prim.Ink.a8 - 0.04)
             text = Ink(rgb: fg)
-            textSecondary = Ink(rgb: fg, alpha: 0.70)
-            textTertiary = Ink(rgb: fg, alpha: 0.50)
-            textDisabled = Ink(rgb: fg, alpha: 0.34)
+            // 7.1 / 4.7 on the frame; disabled is for marks that say "off".
+            textSecondary = tier(0.38, 0.20)
+            textTertiary = tier(0.48, 0.14)
+            textDisabled = tier(0.64, 0.12)
             scrim = Ink(rgb: black, alpha: 0.14)
             ring = Ink(rgb: fg, alpha: 0.10)
             outerRing = Ink(rgb: black, alpha: 0)
             rim = Ink(rgb: white, alpha: 0)
             restShadow = Shadow(y: 1, blur: 2, alpha: 0.06)
-            floatShadows = [Shadow(y: 1, blur: 2, alpha: 0.07), Shadow(y: 10, blur: 28, alpha: 0.11)]
+            floatShadows = [Shadow(y: 1, blur: 2, alpha: 0.07), Shadow(y: 12, blur: 32, alpha: 0.12)]
         }
         let acc = Palette.accent(dark: dark)
         accent = Ink(rgb: acc)
         accentInk = Ink(rgb: acc.contrast(with: white) >= acc.contrast(with: bg) ? white : bg)
-        accentWash = Ink(rgb: acc, alpha: dark ? 0.16 : 0.12)
+        accentWash = Ink(rgb: acc, alpha: dark ? 0.18 : 0.12)
+        brand = Ink(rgb: Palette.brand(dark: dark))
         solid = Ink(rgb: fg)
         solidInk = Ink(rgb: bg)
     }

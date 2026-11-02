@@ -5,8 +5,9 @@ import AppKit
 /// yellow glow and blue sink). Picked by a stable hash of the project root, so
 /// a project keeps its colour across launches, machines and clients.
 ///
-/// The hues keep out of the arcs that already mean something: red (failed),
-/// amber (waiting) and the magenta accent. Chroma is held low so a tile reads
+/// The hues keep out of the arcs that already mean something: red (failed,
+/// 32°), yellow (waiting, 109°), green (done, 142°), cyan (working, 181°) and
+/// the purple accent (288°). Chroma is held low so a tile reads
 /// as identity, never as state.
 ///
 /// - ink (text in the hue): L 0.78 C 0.09 dark, L 0.52 C 0.10 light
@@ -14,8 +15,8 @@ import AppKit
 ///   values the six tiles sit 20+ RGB units apart, so two projects are told
 ///   apart at 1× (the old 22 % wash left them 8 apart, which is noise).
 nonisolated enum ProjectHue {
-    /// Hue angles (OKLCH degrees): olive, green, teal, cyan, blue, indigo.
-    static let hues: [Double] = [105, 150, 190, 220, 245, 280]
+    /// Hue angles (OKLCH degrees): amber, sky, azure, blue, orchid, rose.
+    static let hues: [Double] = [62, 212, 236, 258, 322, 352]
 
     static func index(for key: String) -> Int {
         // FNV-1a: stable across runs (Swift's Hasher is seeded per process).

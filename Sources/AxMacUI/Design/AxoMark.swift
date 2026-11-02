@@ -49,10 +49,10 @@ nonisolated enum AxoMarkGeometry {
     static let smileWidth: CGFloat = 0.035
 }
 
-/// The mark as a view, in one ink (the accent by default). The smile is cut
+/// The mark as a view, in one ink (the brand pink by default). The smile is cut
 /// in `cutout` (the surface it sits on).
 final class AxoMarkView: NSView {
-    var ink: NSColor = Axo.Color.accent { didSet { restyle() } }
+    var ink: NSColor = Axo.Color.brand { didSet { restyle() } }
     var cutout: NSColor = Axo.Color.ground { didSet { restyle() } }
 
     private let gills = CAShapeLayer()

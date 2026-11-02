@@ -11,7 +11,7 @@ import AxModel
 /// - Leading, the path: the project's 16 pt tile and name (13 semibold, full
 ///   ink), a compact chevron, the program icon (carrying its state badge) and
 ///   the session title (13, secondary ink), then the git branch (12, tertiary).
-/// - Trailing, the state: working shows a magenta spinner and the elapsed
+/// - Trailing, the state: working shows a cyan spinner and the elapsed
 ///   time; waiting or failed show the chip with the agent's own words. One
 ///   cue per state.
 ///

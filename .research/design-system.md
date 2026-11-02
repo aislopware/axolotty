@@ -9,7 +9,7 @@ This file describes what ships in `Sources/AxMacUI`, measured from the build, no
 ## 1. Principles
 
 1. **The window is a frame; terminals are screens set in it.** (Changed 2026-11-02 from "the terminal is the window": Axolotty's unit is the agent and the project, so the window holds terminals rather than dissolving into one. See `.research/wow/synthesis.md`.)
-   - One `frame` tone paints the band, the sidebar and the gutters: bg mixed toward fg at 0.06 dark, 0.05 light. The terminal ground is already near-black, so only a lighter frame can make figure and ground (1.14:1, against 1.03:1 before).
+   - One `frame` tone paints the band, the sidebar and the gutters. Dark: the ground's own hue five HSL lightness points down (the Dracula ramp: frame 10, ground 15, raised 20, floats 25), so each terminal is a lit screen in a darker bezel. Light: a cool grey (L 96) under white sheets.
    - Each pane is a sheet: radius 10 (continuous), set 6 pt from the window edges and 6 pt apart. Light sheets add a one-pixel `border` contact edge; dark sheets need none.
 2. **Gutters are the dividers.** No line at rest anywhere in the window: not under the band, not at the sidebar seam, not between panes. Hovering a gutter shows a 2 × 28 `borderStrong` grip; dragging tints it accent and runs it the full length. The palette's rule under its field is the only line left.
 3. **Say a thing once per question.**
@@ -19,7 +19,9 @@ This file describes what ships in `Sources/AxMacUI`, measured from the build, no
    - The folder lives in the prompt; the strip shows it only relative to the project.
 4. **Icons carry identity; colour carries meaning.** No cue does two jobs.
    - Programs get a glyph by kind. Agents get their real vendor mark. Projects get a solid hue tile.
-   - Magenta (the brand accent) means *working*, and the caret. Amber waits. Red failed. Green finished-unseen. Focus is told by ink and dimming, never by colour.
+   - Cyan means *working*. Yellow waits. Red failed. Green finished-unseen. Every state also has its own glyph, since yellow and green collide for protan and deutan eyes.
+   - Purple (Dracula's) is the accent: caret, cursor, links, a drag. Focus is told by ink and dimming, never by colour.
+   - Pink is the axolotl's: the mark and the app icon, never chrome.
 5. **No glass, no decoration.**
    - Surfaces are opaque.
    - Depth comes from a two-layer shadow, an outer contact ring and an inner rim, all built from one continuous-corner path.
@@ -40,12 +42,15 @@ There are three layers:
 | Token | Dark | Light |
 |---|---|---|
 | ground (terminal, sheets) | theme bg | theme bg |
-| frame (band, sidebar, gutters) | bg → fg 0.06 | bg → fg 0.05 |
-| elevated (floating surfaces) | bg → fg 0.10 | white |
-| hover / selected / pressed | fg 0.055 / 0.09 / 0.13 | fg 0.045 / 0.07 / 0.10 |
-| border / subtle / strong | fg 0.10 / 0.065 / 0.16 | fg 0.13 / 0.085 / 0.20 |
-| text tiers | 1, 0.72, 0.50, 0.32 | 1, 0.70, 0.50, 0.34 |
-| float shadows | (y1 b2 0.32) + (y10 b28 0.36) | (y1 b2 0.07) + (y10 b28 0.11) |
+| frame (band, sidebar, gutters) | ground hue, L − 5 (#17161D) | hue 248 S 6 L 96 (#F5F5F6) |
+| raised (inputs, resting cards) | L + 5 (#2E2B3B) | white |
+| elevated (floating surfaces) | L + 10 (#393649) | white |
+| hover / selected / pressed | selection tone 0.42 / 0.78 / L + 4 | selection tone 0.45 / 0.80 / L − 4 |
+| border / subtle / strong | selection 0.70 / 0.45 / L + 10 | fg 0.13 / 0.085 / 0.20 |
+| text tiers | #F8F8F2, then ground hue S 25 at L 70 / 62 / 55 | #1F1F1F, then L 38 / 48 / 64 |
+| float shadows | (y1 b2 0.32) + (y12 b32 0.42) | (y1 b2 0.07) + (y12 b32 0.12) |
+
+**Palettes** (`AxModel/Theme.swift`) are built the way Dracula Pro is (Dracula, MIT): accents at HSL S 100 L 75 on Dracula's hues, brights at L 80, grounds on a hue-248 S 15 ramp. Night: ground #22212C, ink #F8F8F2, cursor and accent #9580FF, selection #454158; ANSI 0 #454158 and 8 #7970A9 so black text and hints stay visible. Day (Alucard): white sheet, ink #1F1F1F, Alucard's accents from the public spec, accent #644AC9, ANSI 8 #635D97. Status: working #80FFEA / #036A96, waiting #FFFF80 / #846E15, done #8AFF80 / #14710A, failed #FF9580 / #CB3A2A. Text tiers pass AA where they sit (secondary 7.2:1, tertiary 5.3:1 on the dark frame). Nothing is copied from the Pro package.
 
 - Selection is a neutral plate, never the accent. When the window is not key, it steps down to `hover`.
 - The primary action is the solid foreground with inverted ink.
@@ -80,7 +85,7 @@ Shortcuts and counts use monospaced digits (`Axo.Font.shortcut`, `.meta`). The t
 - **Band:** 40 tall (empty `.unifiedCompact` toolbar), painted in `frame`. Every point of it is a terminal row, so it is never taller.
   - The traffic lights, then our own sidebar toggle and "+" (28 targets, 14 glyphs), centred on the band.
   - Context header (`Chrome/BandView.swift`): 16 pt project tile, project name 13 semibold full ink, `chevron.compact.right` in tertiary, program icon with its badge, session title 13 secondary, then `arrow.triangle.branch` and the branch in 12 tertiary (it gives way first when narrow). With the sidebar open it starts on the terminal's text column (14 inside the sheet); hidden, 20 pt after "+".
-  - Trailing state: working shows a magenta spinner and "Working m:ss" in tabular digits, ticking each second; waiting or failed show the chip with the agent's own question. Idle shows nothing.
+  - Trailing state: working shows a cyan spinner and "Working m:ss" in tabular digits, ticking each second; waiting or failed show the chip with the agent's own question. Idle shows nothing.
   - The band drags the window.
 - **Sheets:** stage inset 0 / 6 / 6 / 0 (top, right, bottom, left with the sidebar open; 6 on the left when it is hidden). The empty state is a sheet too.
 - **Pane strip** (`Panes/PaneStripView.swift`), only with two or more panes and none zoomed: 28 tall inside the top of the sheet, no rule; rows start 6 below it.
@@ -100,7 +105,7 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
 |---|---|
 | Plates | Inset 8; 28 tall with a 2 pt gap; radius 8. The selection plate springs between rows; hover plate appears instantly and fades out on tick. No disclosure triangles. |
 | Project header | 32 tall, 20 pt above every project but the first: projects are the objects of the list. 20 pt solid hue tile at x 16 with the initial knocked out in `frame` ink (12 bold, drawn by its ink bounds and cap height on whole pixels, not a centred line box; size and radius scale with the side). Name at x 44 in 13 semibold, always full ink. Hover shows the chevron and "+". When collapsed, a dot after the name if anything inside waits or failed. |
-| Project hue | One of 6 OKLCH hues: 105, 150, 190, 220, 245, 280 (olive to indigo). Red, amber and the magenta accent already mean something, so they are left out. Tiles are solid (dark L 0.72 C 0.12; light L 0.56 C 0.13), which puts the six 20+ RGB units apart; the old 22 % wash left them 8 apart, unreadable at 1×. Text in a hue uses L 0.78 C 0.09 dark, L 0.52 C 0.10 light. Chosen by an FNV-1a hash of the project root, so it is stable everywhere. |
+| Project hue | One of 6 OKLCH hues: 62, 212, 236, 258, 322, 352 (amber, sky, azure, blue, orchid, rose). Red, yellow, green, cyan and the purple accent already mean something, so they are left out. Tiles are solid (dark L 0.72 C 0.12; light L 0.56 C 0.13), which puts the six 20+ RGB units apart; the old 22 % wash left them 8 apart, unreadable at 1×. Text in a hue uses L 0.78 C 0.09 dark, L 0.52 C 0.10 light. Chosen by an FNV-1a hash of the project root, so it is stable everywhere. |
 | Project "+" | A menu: Shell, then each agent installed on the host (local: found on PATH or the usual install directories; remote: Claude, Codex, Gemini), each with its icon; 1–9 pick from the open menu. The pick opens a shell in the project and types the agent's command, so integration and history stay and the shell outlives the agent. |
 | Session row | Icon at x 44 (under the project name), title at x 67 in 13 regular. A row whose agent waits or failed sits on a wash plate of that colour (selection-plate geometry): "who needs me" is answered by area, not a 6 px dot. Title ink is 0.72 at rest; full ink when selected, hovered, or when an agent in it is live (working, waiting, failed, finished-unseen). No weight changes. |
 | Row title | What the icon already says is not said again (`AgentTitle.trimmed`, tested): an agent's own status glyphs ("✳", braille spinner frames) and a leading vendor name followed by a separator ("Codex · Fix login" → "Fix login"; "Claude docs" stays). The same rule applies wherever the icon sits beside the title: row, band, toast, palette. The full title stays in the hover card and VoiceOver, and the palette still matches it. |
@@ -131,7 +136,7 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
 
   | State | Badge |
   |---|---|
-  | working | 8 pt magenta spinner: a 2 pt arc over a 0.28 track of itself, 0.35 of the circle, 0.9 s a turn; or a determinate arc |
+  | working | 8 pt cyan spinner: a 2 pt arc over a 0.28 track of itself, 0.35 of the circle, 0.9 s a turn; or a determinate arc |
   | waiting | amber dot |
   | failed | red dot |
   | done (unseen) | green dot |
@@ -168,9 +173,9 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
 
 ## 6. Empty state and the mark
 
-- **The mark** (`Design/AxoMark.swift`): geometry, not artwork. A wide head with knocked-out eyes, three round-capped gill strokes a side, and from 28 pt up the axolotl's smile cut out of the head. Always one ink: the accent.
+- **The mark** (`Design/AxoMark.swift`): geometry, not artwork. A wide head with knocked-out eyes, three round-capped gill strokes a side, and from 28 pt up the axolotl's smile cut out of the head. Always one ink: the brand pink.
 - **Empty state** (`Window/EmptyStateView.swift`): a sheet like any pane; the band hides (the sheet says it all).
-  - Mark 48 in accent; 16 below, "Start a session" in 20 semibold.
+  - Mark 48 in brand pink; 16 below, "Start a session" in 20 semibold.
   - 20 below: one launch tile per installed preset (Shell first): 88×72, radius 12, a resting card that lifts to a float on hover; the program's mark at 24, its short name in 12 medium, its key in the top-right. Keys 1–n launch.
   - 16 below: where it starts, a borderless pop-up of project tile + name + `chevron.up.chevron.down`, defaulting to the last project used; its menu lists projects with their tiles, then Open Folder….
   - No copy paragraph, no shortcut hints.

@@ -4,7 +4,7 @@ import AxModel
 /// The app icon, drawn from the mark's geometry (no artwork to keep in
 /// step): Axolotty Night's ground as a continuous-corner plate on Apple's
 /// grid (824 of 1024, radius 185), lit a little from the top, and the mark in
-/// the accent, its smile cut in the plate's colour. Rendered into an
+/// the brand pink, its smile cut in the plate's colour. Rendered into an
 /// `.iconset` by `scripts/package-app.sh` through `--write-iconset DIR`.
 enum AppIcon {
     static func draw(in ctx: CGContext, side: CGFloat) {
@@ -21,13 +21,13 @@ enum AppIcon {
         ctx.saveGState()
         ctx.setShadow(offset: CGSize(width: 0, height: -10 * unit), blur: 28 * unit, color: CGColor(gray: 0, alpha: 0.32))
         ctx.addPath(path)
-        ctx.setFillColor(cg("#151214"))
+        ctx.setFillColor(cg("#17161D"))
         ctx.fillPath()
         ctx.restoreGState()
         ctx.saveGState()
         ctx.addPath(path)
         ctx.clip()
-        let ground = CGGradient(colorsSpace: space, colors: [cg("#2B2129"), cg("#151214")] as CFArray, locations: [0, 1])!
+        let ground = CGGradient(colorsSpace: space, colors: [cg("#2E2B3B"), cg("#17161D")] as CFArray, locations: [0, 1])!
         ctx.drawLinearGradient(ground, start: CGPoint(x: 0, y: plate.maxY), end: CGPoint(x: 0, y: plate.minY), options: [])
         ctx.restoreGState()
         ctx.saveGState()
@@ -46,7 +46,7 @@ enum AppIcon {
         // The geometry is y-down: flip into it.
         ctx.translateBy(x: ox, y: side - oy)
         ctx.scaleBy(x: 1, y: -1)
-        let ink = CGGradient(colorsSpace: space, colors: [cg("#F6B4EA"), cg("#DE7BCF"), cg("#C25DB4")] as CFArray,
+        let ink = CGGradient(colorsSpace: space, colors: [cg("#FFB3D9"), cg("#FF80BF"), cg("#E0609F")] as CFArray,
                              locations: [0, 0.55, 1])!
         // Gills (strokes turned into fills) and head painted with one
         // gradient, each part clipped on its own so overlaps stay solid.
@@ -66,7 +66,7 @@ enum AppIcon {
         ctx.translateBy(x: ox, y: side - oy)
         ctx.scaleBy(x: 1, y: -1)
         ctx.addPath(AxoMarkGeometry.smile(s))
-        ctx.setStrokeColor(cg("#1D171B"))
+        ctx.setStrokeColor(cg("#1F1E28"))
         ctx.setLineWidth(AxoMarkGeometry.smileWidth * s)
         ctx.setLineCap(.round)
         ctx.strokePath()

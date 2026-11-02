@@ -112,7 +112,7 @@ extension HostState {
 /// never changes: the agent stays recognisable while it works. Dots are 6 pt
 /// so a 14 pt vendor mark keeps three quarters of itself.
 ///
-/// - working: an 8 pt magenta spinner (2 pt arc over a 28 % track, 0.9 s a
+/// - working: an 8 pt cyan spinner (2 pt arc over a 28 % track, 0.9 s a
 ///   turn), or a determinate arc when the program reports progress
 /// - waiting: amber dot · failed: red dot · done-unseen: green dot
 /// - idle: the glyph alone

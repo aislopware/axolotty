@@ -6,7 +6,7 @@ import QuartzCore
 /// column of coloured icons:
 ///
 /// - idle: nothing
-/// - working: a 10 pt spinner in the brand magenta (a 22 % track plus a
+/// - working: a 10 pt spinner in the working cyan (a 22 % track plus a
 ///   quarter arc, one turn per 0.9 s). Magenta means *working*, and only
 ///   that (design-system §1.4). A determinate arc when progress is known.
 /// - waiting / failed / done: one 6 pt dot. Colour says which: amber needs

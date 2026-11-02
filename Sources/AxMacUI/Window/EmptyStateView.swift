@@ -10,7 +10,7 @@ enum EmptyState: Equatable {
 /// and the most on-brand screen in the app, because it says what the app is
 /// for: running agents.
 ///
-///                         [mark 48, accent]
+///                         [mark 48, brand]
 ///                         Start a session          20 semibold
 ///          [Shell 1] [Claude 2] [Codex 3] [Gemini 4]   88×72 tiles, 10 apart
 ///                       [T] tmp ⌃⌄               where it starts
