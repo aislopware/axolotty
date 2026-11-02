@@ -1,13 +1,12 @@
 import AxRender
 import Foundation
 
-/// Cursor motion (design spec §3.3): glide on short moves, an entrance pop on
-/// focus, and a blink that dims rather than hides and stops after ten cycles.
+/// Cursor motion (design spec §3.3): glide on short moves and a blink that dims rather than hides and stops after ten cycles.
 /// Pure: the view feeds it the terminal's cursor and a clock, it returns a style.
 struct CursorAnimator {
     struct Output {
         var style: CursorStyle
-        /// More frames are needed (glide, pop or blink in progress).
+        /// More frames are needed (glide or blink in progress).
         var animating: Bool
         /// Only the blink is animating (the view can drop to a low frame rate).
         var blinkOnly: Bool
@@ -18,7 +17,6 @@ struct CursorAnimator {
     var reduceMotion = false
 
     static let glideDuration = 0.08
-    static let entranceDuration = 0.22
     static let blinkDelay = 0.5
     static let blinkFade = 0.15
     static let blinkLowHold = 0.3
@@ -31,7 +29,6 @@ struct CursorAnimator {
     private var glideFrom: (x: Double, y: Double) = (0, 0)
     private var glideStart: Double?
     private var lastMove = -Double.infinity
-    private var entranceStart: Double?
     private var activity = 0.0
 
     /// Any keystroke or output restarts the blink cycle.
@@ -39,7 +36,6 @@ struct CursorAnimator {
 
     mutating func focusGained(_ now: Double) {
         activity = now
-        entranceStart = reduceMotion ? nil : now
     }
 
     mutating func frame(_ now: Double, cursor: CursorInfo, focused: Bool) -> Output {
@@ -77,18 +73,6 @@ struct CursorAnimator {
             return Output(style: style, animating: animating, blinkOnly: false)
         }
         style.shape = cursor.requested ?? preferred
-
-        // Entrance pop.
-        if let start = entranceStart {
-            let t = (now - start) / Self.entranceDuration
-            if t >= 1 {
-                entranceStart = nil
-            } else {
-                let u = 1 - t
-                style.scale = 1 + 0.14 * u * u * u
-                animating = true
-            }
-        }
 
         // Blink.
         var blinkOnly = false

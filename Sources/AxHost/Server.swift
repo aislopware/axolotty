@@ -800,21 +800,11 @@ public actor Server {
                 if live { broadcastEvent(.notification(id, title: title, body: body)) }
             case let .progress(p):
                 switch p {
-                case .remove:
-                    info.progress = nil
-                    info.progressTone = nil
-                case let .set(v):
-                    info.progress = v
-                    info.progressTone = .normal
-                case let .error(v):
-                    info.progress = v ?? info.progress ?? 100
-                    info.progressTone = .error
-                case let .paused(v):
-                    info.progress = v ?? info.progress ?? -1
-                    info.progressTone = .paused
-                case .indeterminate:
-                    info.progress = -1
-                    info.progressTone = .normal
+                case .remove: info.progress = nil
+                case let .set(v): info.progress = v
+                case let .error(v): info.progress = v ?? info.progress ?? 100
+                case let .paused(v): info.progress = v ?? info.progress ?? -1
+                case .indeterminate: info.progress = -1
                 }
             case let .programStatus(ps):
                 if ps.app == "claude-code", !claudeNative.contains(id) {

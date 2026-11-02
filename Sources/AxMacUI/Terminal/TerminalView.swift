@@ -98,7 +98,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     private let edgeLayer = CALayer()
     /// The pane's identity strip (shown in splits; laid out over the top of the sheet).
     let strip = PaneStripView()
-    private let progressLine = ProgressLine()
     var showsStrip = false {
         didSet {
             guard showsStrip != oldValue else { return }
@@ -152,8 +151,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         preeditLayer.contentsScale = 2
         strip.isHidden = true
         addSubview(strip)
-        progressLine.layer.zPosition = 10  // over the strip: the two read as one header
-        layer?.addSublayer(progressLine.layer)
 
         let flag = wake
         mirror.onChange { [weak self] in
@@ -265,10 +262,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         strip.frame = NSRect(x: 0, y: 0, width: bounds.width, height: PaneStripView.height)
         layoutFindCard()
         if readsSecret { layoutLock() }
-        layoutPill()
         layoutSizeBadge()
         layoutEndedBar()
-        progressLine.frame = NSRect(x: 0, y: 0, width: bounds.width, height: ProgressLine.height)
         // AppKit resets the backing layer's geometry when it attaches it, so
         // the sheet clip is (re)applied here rather than in makeBackingLayer.
         layer?.cornerRadius = Axo.Metric.sheetRadius
@@ -420,11 +415,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             dimLayer.add(a, forKey: "opacity")
         }
         dimLayer.opacity = target
-    }
-
-    /// OSC 9;4 as the program reported it (see `ProgressLine`).
-    func setProgress(_ value: Int?, tone: ProgressTone?) {
-        progressLine.set(value, tone: tone, appearance: effectiveAppearance)
     }
 
     /// Increase Contrast: the focused pane gets a 1 pt accent ring.
@@ -769,62 +759,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     override func mouseExited(with event: NSEvent) { setHoveredLink(nil) }
 
-    // MARK: New output below
-
-    private var pill: NewOutputPill?
-    /// Scrollback length when the person scrolled away from the bottom.
-    private var readingFrom: Int?
-
-    /// While scrolled back, counts the lines that arrived below (rows pushed
-    /// into scrollback since) and shows the pill; at the bottom, hides it.
-    private func updateNewOutput() {
-        guard let (back, rows) = mirror.withTerminal({ ($0.isScrolledBack, $0.scrollbackRows) }) else { return }
-        guard back else {
-            readingFrom = nil
-            if let pill { hidePill(pill) }
-            return
-        }
-        let base = readingFrom ?? rows
-        readingFrom = base
-        let fresh = rows - base
-        guard fresh > 0 else {
-            if fresh < 0 { readingFrom = rows }  // scrollback was pruned or cleared
-            return
-        }
-        let p = pill ?? makePill()
-        p.set(lines: fresh)
-        layoutPill()
-        if p.isHidden || p.alphaValue < 1 {
-            p.isHidden = false
-            Axo.Motion.run(Axo.Motion.Beat(duration: 0.16, curve: Axo.Motion.easeOut)) { p.animator().alphaValue = 1 }
-        }
-    }
-
-    private func makePill() -> NewOutputPill {
-        let p = NewOutputPill()
-        p.alphaValue = 0
-        p.onClick = { [weak self] in
-            self?.scrollToBottomOfBuffer(nil)
-            self?.window?.makeFirstResponder(self)
-        }
-        addSubview(p)
-        pill = p
-        return p
-    }
-
-    private func hidePill(_ p: NewOutputPill) {
-        guard !p.isHidden else { return }
-        Axo.Motion.run(Axo.Motion.tickOut, { p.animator().alphaValue = 0 }) { [weak p] in
-            if p?.alphaValue == 0 { p?.isHidden = true }
-        }
-    }
-
-    private func layoutPill() {
-        guard let p = pill else { return }
-        let w = p.preferredWidth, h = NewOutputPill.height
-        p.frame = NSRect(x: ((bounds.width - w) / 2).rounded(), y: bounds.height - 10 - h, width: w, height: h)
-    }
-
     // MARK: Size while resizing
 
     private var sizeBadge: SizeBadge?
@@ -1144,7 +1078,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     /// Copies the terminal into the frame and, while finding, paints the
     /// visible matches under the text and updates the card's count.
     private func updateFrame(_ frameState: TerminalFrame) {
-        updateNewOutput()
         guard let card = findCard, !findNeedle.isEmpty else {
             mirror.withTerminal { frameState.update(from: $0) }
             frameState.setHighlights([])

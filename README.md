@@ -23,7 +23,6 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
 - **On screen:**
   - ⌘-click links and `file:line`;
   - Find (⌘F);
-  - a "new lines" pill that never scrolls you away;
   - Secure Keyboard Entry while a program reads a password.
 - **What agents produced:**
   - the diff chip and Changes popover (⇧⌘C);

@@ -10,8 +10,6 @@ final class SessionViewController: NSViewController {
     let status = StatusBarView()
     private let stage = FlippedView()
     private let empty = EmptyStateView()
-    private let resizeReadout = Readout()
-    private var resizeHide: Timer?
 
     private struct Key: Hashable {
         var host: UUID
@@ -44,9 +42,7 @@ final class SessionViewController: NSViewController {
         root.addSubview(band)
         root.addSubview(status)
         root.addSubview(empty)
-        root.addSubview(resizeReadout)
         stage.wantsLayer = true
-        resizeReadout.isHidden = true
         empty.isHidden = true
         view = root
     }
@@ -69,10 +65,6 @@ final class SessionViewController: NSViewController {
         status.isHidden = !showsStatusBar
         current?.frame = stage.bounds
         empty.frame = stage.frame
-        let r = resizeReadout.fittingSize
-        resizeReadout.frame = NSRect(x: (stage.frame.midX - r.width / 2).rounded(), y: (stage.frame.midY - r.height / 2).rounded(),
-                                     width: r.width, height: r.height)
-        if view.inLiveResize { updateResizeReadout() }
     }
 
     func setGridsFrozen(_ frozen: Bool) { current?.setGridsFrozen(frozen) }
@@ -155,38 +147,6 @@ final class SessionViewController: NSViewController {
     func refreshAppearance() {
         for c in containers.values { c.refreshAppearance() }
         view.needsDisplay = true
-    }
-
-    // MARK: Live resize readout ("120 × 32" in the middle of the stage)
-
-    override func viewWillTransition(to newSize: NSSize) {
-        super.viewWillTransition(to: newSize)
-    }
-
-    func liveResizeStarted() {
-        resizeHide?.invalidate()
-        updateResizeReadout()
-        guard resizeReadout.isHidden else { return }
-        resizeReadout.isHidden = false
-        resizeReadout.alphaValue = 0
-        Axo.Motion.fade(in: true) { self.resizeReadout.animator().alphaValue = 1 }
-    }
-
-    func liveResizeEnded() {
-        resizeHide?.invalidate()
-        resizeHide = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                Axo.Motion.fade(in: false, { self.resizeReadout.animator().alphaValue = 0 }) {
-                    self.resizeReadout.isHidden = true
-                }
-            }
-        }
-    }
-
-    private func updateResizeReadout() {
-        guard let v = current?.focusedView else { return }
-        resizeReadout.text = "\(v.grid.cols) × \(v.grid.rows)"
     }
 }
 

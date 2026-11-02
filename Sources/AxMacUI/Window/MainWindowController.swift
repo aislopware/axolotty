@@ -329,8 +329,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     func windowDidResignKey(_ notification: Notification) { refreshChrome() }
-    func windowWillStartLiveResize(_ notification: Notification) { content.liveResizeStarted() }
-    func windowDidEndLiveResize(_ notification: Notification) { content.liveResizeEnded() }
 
     func windowWillClose(_ notification: Notification) {
         palette.dismiss()

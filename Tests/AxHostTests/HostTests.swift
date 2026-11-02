@@ -310,21 +310,19 @@ struct HostTests {
         await fx.tearDown()
     }
 
-    @Test func progressKeepsItsTone() async throws {
+    @Test func progressFollowsOSC94() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()
         let (_, _, p) = try await makeSession(c)
         c.send(.text(p, "printf '\\033]9;4;1;40\\007'\n"))
         #expect(await until { c.replica?.panes[p]?.progress == 40 })
-        #expect(c.replica?.panes[p]?.progressTone == .normal)
         c.send(.text(p, "printf '\\033]9;4;2\\007'\n"))
-        #expect(await until { c.replica?.panes[p]?.progressTone == .error })
+        try await Task.sleep(for: .milliseconds(300))
         #expect(c.replica?.panes[p]?.progress == 40)  // an error without a value keeps the bar where it stopped
         c.send(.text(p, "printf '\\033]9;4;3\\007'\n"))
         #expect(await until { c.replica?.panes[p]?.progress == -1 })
         c.send(.text(p, "printf '\\033]9;4;0\\007'\n"))
         #expect(await until { c.replica?.panes[p]?.progress == nil })
-        #expect(c.replica?.panes[p]?.progressTone == nil)
         await fx.tearDown()
     }
 

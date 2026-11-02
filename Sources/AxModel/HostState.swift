@@ -12,8 +12,6 @@ public struct PaneInfo: Hashable, Codable, Sendable, Identifiable {
     public var status: StatusBook
     /// Last OSC 9;4 progress percentage, if any; -1 while indeterminate.
     public var progress: Int?
-    /// How OSC 9;4 last reported (nil when no progress is shown).
-    public var progressTone: ProgressTone?
     /// The program is reading a hidden line (a password): clients turn on
     /// Secure Keyboard Entry while the pane has focus. nil means no.
     public var readsSecret: Bool?
@@ -79,11 +77,6 @@ public struct CommandRecord: Hashable, Codable, Sendable {
     }
 
     public var failed: Bool { (exitCode ?? 0) != 0 }
-}
-
-/// The OSC 9;4 state behind `PaneInfo.progress`.
-public enum ProgressTone: String, Codable, Sendable {
-    case normal, error, paused
 }
 
 /// A sidebar row: one split tree of panes.

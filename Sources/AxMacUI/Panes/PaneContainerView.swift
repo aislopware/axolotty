@@ -22,7 +22,6 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
     private var pendingFocus: PaneID?
     private var dividers: [DividerView] = []
     private var drag: (divider: SplitTree.Divider, start: SplitTree)?
-    private let readout = Readout()
     private var link: CADisplayLink?
     private var transition: Transition?
     var onFocusChange: ((PaneID) -> Void)?
@@ -47,8 +46,6 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         wantsLayer = true
         for id in tree.panes { _ = makeView(id) }
-        addSubview(readout)
-        readout.isHidden = true
         relayout(animated: false, added: [])
     }
 
@@ -89,7 +86,7 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
                              colors: TerminalColors(theme: model.theme))
         v.delegate = self
         views[id] = v
-        addSubview(v, positioned: .below, relativeTo: dividers.first ?? readout)
+        addSubview(v, positioned: .below, relativeTo: dividers.first)
         return v
     }
 
@@ -285,7 +282,7 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
             let d = DividerView(list[dividers.count])
             let index = dividers.count
             d.onDrag = { [weak self] phase, delta in self?.dividerDrag(index, phase, delta) }
-            addSubview(d, positioned: .below, relativeTo: readout)
+            addSubview(d)
             dividers.append(d)
         }
         let hit = Axo.Metric.dividerHit
@@ -307,7 +304,6 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         switch phase {
         case .began:
             drag = (d, tree)
-            showReadout(d)
         case .changed:
             guard let start = drag?.start, let anchor = drag?.divider else { return }
             let next = start.resizing(anchor.anchor, axis: anchor.axis, by: Double(delta) / max(anchor.span, 1))
@@ -315,15 +311,11 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
             tree = next
             apply(targetFrames())
             layoutDividers()
-            if let now = dividers.first(where: { $0.divider.anchor == anchor.anchor && $0.divider.axis == anchor.axis }) {
-                showReadout(now.divider)
-            }
         case .ended:
             let wasDragging = drag != nil
             drag = nil
-            Axo.Motion.fade(in: false, { self.readout.animator().alphaValue = 0 }) { self.readout.isHidden = true }
             if delta.isNaN {
-                host.perform(.equalize(sessionID))
+                host.perform(.setTree(sessionID, tree.equalized()))
             } else if wasDragging {
                 host.perform(.setTree(sessionID, tree))
             }
@@ -335,19 +327,6 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         let r = Rect(x: 0, y: 0, width: Double(bounds.width), height: Double(bounds.height))
         return t.frames(in: r, gap: Double(Self.gap)).values.allSatisfy {
             $0.width >= Axo.Metric.paneMin.width && $0.height >= Axo.Metric.paneMin.height
-        }
-    }
-
-    private func showReadout(_ d: SplitTree.Divider) {
-        let a = Int((d.ratio * 100).rounded())
-        readout.text = "\(a) : \(100 - a)"
-        let size = readout.fittingSize
-        let c = NSPoint(x: d.rect.x + d.rect.width / 2, y: d.rect.y + d.rect.height / 2)
-        readout.frame = NSRect(x: c.x - size.width / 2, y: c.y - size.height / 2, width: size.width, height: size.height)
-        if readout.isHidden {
-            readout.isHidden = false
-            readout.alphaValue = 0
-            Axo.Motion.fade(in: true) { self.readout.animator().alphaValue = 1 }
         }
     }
 
@@ -364,7 +343,6 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
             v.setDimmed(dim, alpha: alpha, animated: animated)
             v.setFocusRing(contrast && multi && id == focused)
             v.showsStrip = multi
-            v.setProgress(host.pane(id)?.progress, tone: host.pane(id)?.progressTone)
             v.linkContext = (host.pane(id)?.pwd ?? "", host.isLocal)
             v.readsSecret = host.pane(id)?.readsSecret == true
             v.endedCode = host.pane(id)?.exitStatus
