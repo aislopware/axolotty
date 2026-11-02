@@ -494,6 +494,12 @@ final class SessionCell: NSTableCellView {
         close.target = self
         close.action = #selector(closeClicked)
         close.tooltip = nil
+        // The close button shows on hover only; VoiceOver reaches it here.
+        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Close Session") { [weak self] in
+            guard let onClose = self?.onClose else { return false }
+            onClose()
+            return true
+        }])
         wantsLayer = true
         wash.cornerRadius = Axo.Radius.md
         wash.cornerCurve = .continuous
