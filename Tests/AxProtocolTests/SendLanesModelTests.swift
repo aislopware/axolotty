@@ -10,7 +10,7 @@ import Testing
 struct SendLanesModelTests {
     static var seeds: [UInt64] {
         if let s = ProcessInfo.processInfo.environment["AXSEED"].flatMap(UInt64.init) { return [s] }
-        return Array(1 ... 300)
+        return Array(1 ... UInt64(ProcessInfo.processInfo.environment["AXMODEL_RUNS"].flatMap(Int.init) ?? 300))
     }
 
     enum Op: CustomStringConvertible {
