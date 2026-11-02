@@ -45,6 +45,9 @@ public enum Wire {
     public static let maxFrame = 1 << 20
     /// Data frames are cut to this size so control traffic interleaves fairly.
     public static let maxData = 32 << 10
+    /// TCP_NOTSENT_LOWAT on TCP links: little unsent data in the kernel, so
+    /// the lanes, not one FIFO socket buffer, decide what goes next.
+    public static let notSentLowat = 16 << 10
 
     public static func encode(_ frame: Frame) -> Data {
         var out = Data()
