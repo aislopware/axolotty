@@ -27,6 +27,8 @@ struct FaultyLinkTests {
         let fx: HostFixture
         let relay: LinkRelay
         let c: HostConnection
+        let pane: PaneID
+        let mirror: MirrorTerminal
         let stream: Captured
 
         /// The numbers of the L-lines received so far, in arrival order.
@@ -40,6 +42,12 @@ struct FaultyLinkTests {
 
         func waitFor(_ n: Int, _ timeout: Duration = .seconds(20)) async -> Bool {
             await until(timeout) { seen.count >= n }
+        }
+
+        /// The differential check: the screen and scrollback the person sees
+        /// is the host's own terminal, character for character.
+        func mirrorsTheHost() async -> Bool {
+            await until(.seconds(5)) { await c.capture(pane, scrollback: true) == screen(mirror) }
         }
 
         func tearDown() async {
@@ -61,7 +69,7 @@ struct FaultyLinkTests {
         #expect(await until { m.isReady })
         m.onOutput { b in stream.bytes.withLock { $0.append(contentsOf: b) } }
         c.send(.text(p, "go\n"))
-        return Rig(fx: fx, relay: relay, c: c, stream: stream)
+        return Rig(fx: fx, relay: relay, c: c, pane: p, mirror: m, stream: stream)
     }
 
     @Test func aShortOutageKeepsTheLinkAndLosesNothing() async throws {
@@ -72,6 +80,7 @@ struct FaultyLinkTests {
         r.relay.restore()
         #expect(await r.waitFor(Self.lines))
         #expect(r.seen == Array(0 ..< Self.lines))
+        #expect(await r.mirrorsTheHost())
         #expect(r.relay.accepted == 1, "a short outage must not cost a relink")
         await r.tearDown()
     }
@@ -86,6 +95,7 @@ struct FaultyLinkTests {
         #expect(await until(.seconds(10)) { r.c.isConnected })
         #expect(await r.waitFor(Self.lines))
         #expect(r.seen == Array(0 ..< Self.lines), "resumed with a gap or a repeat")
+        #expect(await r.mirrorsTheHost())
         #expect(r.relay.accepted >= 2)
         await r.tearDown()
     }
@@ -97,6 +107,7 @@ struct FaultyLinkTests {
         #expect(await until(.seconds(5)) { r.relay.accepted >= 2 && r.c.isConnected })
         #expect(await r.waitFor(Self.lines))
         #expect(r.seen == Array(0 ..< Self.lines))
+        #expect(await r.mirrorsTheHost())
         await r.tearDown()
     }
 
