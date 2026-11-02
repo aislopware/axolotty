@@ -129,6 +129,45 @@ struct HostTests {
         await fx.tearDown()
     }
 
+    @Test func linksAndCopiesGoWhereThePersonTypes() async throws {
+        let fx = try await HostFixture()
+        let here = try await fx.client("here")
+        let far = HostConnection(endpoint: .unix(path: fx.paths.hostSocket.path(percentEncoded: false)),
+                                 hello: ClientHello(client: ClientID(), name: "far", remote: true))
+        try await far.connect()
+        let heard = Heard()
+        let listen = Task { for await e in far.events { if case let .event(ev) = e { heard.add(ev) } } }
+        let (_, _, p) = try await makeSession(here)
+        let program = try await fx.client("cli")
+
+        // Nobody has typed: the link is this Mac's to open.
+        await #expect(throws: ConnectionError.self) { try await program.perform(.openURL("https://example.com/login")) }
+
+        far.send(.paste(p, ""))
+        await far.ping()
+        try await program.perform(.openURL("https://example.com/login"))
+        try await program.perform(.copy(p, "copied there"))
+        await #expect(throws: ConnectionError.self) { try await program.perform(.openURL("file:///etc/passwd")) }
+        #expect(await until { heard.all.count == 2 })
+        #expect(heard.all == [.openURL("https://example.com/login"), .clipboard(p, "copied there")])
+
+        // The person came back to this Mac: links open here again.
+        here.send(.paste(p, ""))
+        await here.ping()
+        await #expect(throws: ConnectionError.self) { try await program.perform(.openURL("https://example.com/b")) }
+        await #expect(throws: ConnectionError.self) { try await program.perform(.copy(p, "here")) }
+        listen.cancel()
+        far.disconnect()
+        await fx.tearDown()
+    }
+
+    final class Heard: @unchecked Sendable {
+        private let lock = NSLock()
+        private var events: [HostEvent] = []
+        func add(_ e: HostEvent) { lock.withLock { events.append(e) } }
+        var all: [HostEvent] { lock.withLock { events } }
+    }
+
     @Test func fileNamesStayPlain() {
         #expect(HostFile.safeName("report.pdf") == "report.pdf")
         #expect(HostFile.safeName("a/b/../c.txt") == "c.txt")

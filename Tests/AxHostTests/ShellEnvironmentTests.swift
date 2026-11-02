@@ -55,4 +55,54 @@ import Testing
         let link = paths.bin.appending(path: "axolotty").path(percentEncoded: false)
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link) == "/usr/bin/true")
     }
+
+    @Test func openAndPbcopyPassThroughUnlessAFarPersonTakesIt() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: "axshim-\(UUID().uuidString.prefix(8))")
+        defer { try? fm.removeItem(at: root) }
+        let bin = root.appending(path: "bin $HOME `x`"), sys = root.appending(path: "sys")
+        for d in [bin, sys] { try fm.createDirectory(at: d, withIntermediateDirectories: true) }
+        let log = root.appending(path: "log").path(percentEncoded: false)
+        func exe(_ url: URL, _ text: String) throws {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path(percentEncoded: false))
+        }
+        // The system's commands and the CLI write down how they were called.
+        try exe(sys.appending(path: "open"), "#!/bin/sh\necho \"open $*\" >> '\(log)'\n")
+        try exe(sys.appending(path: "pbcopy"), "#!/bin/sh\necho \"pbcopy $* <$(cat)>\" >> '\(log)'\n")
+        let cli = bin.appending(path: "axolotty")
+        func run(_ name: String, _ args: [String], stdin: String = "") throws -> [String] {
+            try? fm.removeItem(atPath: log)
+            let shim = root.appending(path: name)
+            try exe(shim, ShellEnvironment.shim(name, cli: cli.path(percentEncoded: false), system: sys.path(percentEncoded: false)))
+            let p = Process()
+            p.executableURL = shim
+            p.arguments = args
+            let input = Pipe()
+            p.standardInput = input
+            try p.run()
+            try input.fileHandleForWriting.write(contentsOf: Data(stdin.utf8))
+            try input.fileHandleForWriting.close()
+            p.waitUntilExit()
+            return ((try? String(contentsOfFile: log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        }
+
+        // No CLI (an old install): the system's own, untouched.
+        #expect(try run("open", ["https://a.example"]) == ["open https://a.example"])
+        #expect(try run("pbcopy", [], stdin: "hi") == ["pbcopy  <hi>"])
+
+        // The far person takes the link (exit 0) or it is this Mac's (exit 1).
+        try exe(cli, "#!/bin/sh\necho \"cli $*\" >> '\(log)'\nexit 0\n")
+        #expect(try run("open", ["https://a.example"]) == ["cli open-url https://a.example"])
+        try exe(cli, "#!/bin/sh\necho \"cli $*\" >> '\(log)'\nexit 1\n")
+        #expect(try run("open", ["https://a.example"]) == ["cli open-url https://a.example", "open https://a.example"])
+        // Only a lone web link is ever asked about.
+        #expect(try run("open", ["-a", "Safari", "https://a.example"]) == ["open -a Safari https://a.example"])
+        #expect(try run("open", ["."]) == ["open ."])
+        #expect(try run("open", ["file:///tmp"]) == ["open file:///tmp"])
+
+        // pbcopy goes through the CLI, which is told where the real one is.
+        try exe(cli, "#!/bin/sh\necho \"cli $* via $AXOLOTTY_SYSTEM_PBCOPY\" >> '\(log)'\n")
+        #expect(try run("pbcopy", ["-pboard", "find"]) == ["cli pbcopy -pboard find via \(sys.path(percentEncoded: false))/pbcopy"])
+    }
 }

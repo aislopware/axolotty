@@ -102,10 +102,15 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
             if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
             _ = pane
         case let .clipboard(_, text):
-            // OSC 52 writes from programs on this Mac (remote hosts cannot reach the pasteboard).
-            guard host.isLocal else { return }
+            // OSC 52 or pbcopy, here or on a far Mac (whose copies are the
+            // person's too: as over ssh, a copy there lands where they sit).
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+        case let .openURL(text):
+            // A far program's link (a sign-in, a preview) opens here, where
+            // the person is; only the web: nothing on this Mac is run.
+            guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+            NSWorkspace.shared.open(url)
         case .claudeConversation:
             break  // AppModel keeps it with the closed session
         }

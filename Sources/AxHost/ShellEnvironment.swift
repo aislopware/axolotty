@@ -139,6 +139,45 @@ enum ShellEnvironment {
             try? fm.removeItem(atPath: link)
             try fm.createSymbolicLink(atPath: link, withDestinationPath: target)
         }
+        for name in ["open", "pbcopy"] {
+            let file = paths.bin.appending(path: name)
+            try write(shim(name, cli: link), to: file)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path(percentEncoded: false))
+        }
+    }
+
+    /// `open` and `pbcopy` first on every pane's PATH: what a program opens
+    /// or copies for the person reaches the Mac they type from (a sign-in
+    /// link, `/copy` in an agent), as if the program ran there. Anything
+    /// else, or with no far person, is the system's own command, unchanged.
+    static func shim(_ name: String, cli: String, system: String = "/usr/bin") -> String {
+        // Inside "…", only these four mean anything to sh.
+        var inner = ""
+        for ch in cli {
+            if "\\\"$`".contains(ch) { inner.append("\\") }
+            inner.append(ch)
+        }
+        let q = "\"" + inner + "\""
+        switch name {
+        case "open":
+            return """
+            #!/bin/sh
+            # Axolotty: a lone web link opens on the Mac the person types from.
+            if [ $# -eq 1 ] && [ -x \(q) ]; then
+              case "$1" in http://*|https://*) \(q) open-url "$1" 2>/dev/null && exit 0 ;; esac
+            fi
+            exec \(system)/open "$@"
+
+            """
+        default:
+            return """
+            #!/bin/sh
+            # Axolotty: a copy also reaches the Mac the person types from.
+            [ -x \(q) ] || exec \(system)/pbcopy "$@"
+            AXOLOTTY_SYSTEM_PBCOPY=\(system)/pbcopy exec \(q) pbcopy "$@"
+
+            """
+        }
     }
 
     static let zshenv = #"""

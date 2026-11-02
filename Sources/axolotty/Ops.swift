@@ -183,4 +183,34 @@ enum Ops {
         case .gone: throw OpError(message: "host went away", exit: .unreachable)
         }
     }
+
+    // MARK: Where the person is
+
+    /// A program here asked to open a web link: on the far Mac the person
+    /// types from, if they do; otherwise `.failed`, for `open` to do here.
+    static func openFar(_ link: String) async throws(OpError) {
+        let (c, _) = try await connect()
+        do { try await c.perform(.openURL(link)) } catch { throw .failed("for this Mac to open") }
+    }
+
+    /// Largest copy sent on (it rides one control frame).
+    static let copyLimit = 512 << 10
+
+    /// What `pbcopy` was given also goes to the far Mac the person types
+    /// from. Quiet: the copy here already happened.
+    static func copyFar(_ text: String) async {
+        guard let raw = env["AXOLOTTY_PANE_ID"], let pane = PaneID(raw),
+              let (c, _) = try? await connect() else { return }
+        try? await c.perform(.copy(pane, text))
+    }
+
+    /// The real pbcopy, fed `text`; its exit status.
+    static func systemPbcopy(_ args: [String], _ text: Data) -> Int32 {
+        (try? ChildProcess.run(env["AXOLOTTY_SYSTEM_PBCOPY"] ?? "/usr/bin/pbcopy", args, input: text, timeout: 10))?.status ?? 1
+    }
+
+    /// A host that doesn't answer never holds a program's `open` or `pbcopy`.
+    static func deadline(_ seconds: Double, exit code: Exit) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { Foundation.exit(code.rawValue) }
+    }
 }

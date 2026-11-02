@@ -139,6 +139,8 @@ public final class HostConnection: @unchecked Sendable {
 
     public init(endpoint: HostEndpoint, hello: ClientHello, timing: LinkLiveness.Timing = .standard) {
         self.endpoint = endpoint
+        var hello = hello
+        hello.remote = hello.remote ?? endpoint.isRemote
         self.hello = hello
         self.timing = timing
         (events, sink) = AsyncStream.makeStream()

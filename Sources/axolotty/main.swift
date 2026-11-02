@@ -35,6 +35,11 @@ let usage = """
       close [--pane P]                    end a pane's program and close it
       attach [--pane P]                   use a pane from this terminal (over ssh, another
                                           emulator); ^] detaches, the program keeps running
+      open-url URL                        open a web link on the Mac the person types from, when
+                                          that is another one (exit 1: open it here); panes'
+                                          `open` does this for a lone https:// link
+      pbcopy [ARGS…]                      /usr/bin/pbcopy, and the text also reaches the Mac
+                                          the person types from (panes' `pbcopy` is this)
       mcp                                 serve these operations to an agent over MCP (stdio)
       bridge                              this host's server on stdin/stdout, for a client
                                           that reaches it through ssh (starts the server)
@@ -188,6 +193,22 @@ case "attach":
 case "bridge":
     _ = Options(argv)
     Bridge.run()
+
+case "open-url":
+    // Exit 1 when the link is for this Mac to open: the `open` shim then does.
+    guard argv.count == 1, let link = argv.first else { fail("usage: axolotty open-url URL", .usage) }
+    Ops.deadline(2, exit: .failed)
+    await run { try await Ops.openFar(link) }
+
+case "pbcopy":
+    // Arguments are pbcopy's own (-pboard, -Prefer).
+    let text = FileHandle.standardInput.readDataToEndOfFile()
+    let status = Ops.systemPbcopy(Array(argv), text)
+    Ops.deadline(2, exit: Exit(rawValue: status) ?? .failed)
+    if let s = String(data: text, encoding: .utf8), !s.isEmpty, text.count <= Ops.copyLimit {
+        await Ops.copyFar(s)
+    }
+    exit(status)
 
 case "mcp":
     _ = Options(argv)

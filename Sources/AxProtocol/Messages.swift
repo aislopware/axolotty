@@ -100,6 +100,14 @@ public enum Intent: Codable, Hashable, Sendable {
     case focusPane(SessionID, PaneID)
     case setZoom(SessionID, PaneID?)
     case setTree(SessionID, SplitTree)
+    /// A program asked to open a web link (`open https://…`): it opens on
+    /// the Mac the person is typing from, when that is another one
+    /// (feature "open"). `.notAllowed` when they are at this Mac, and the
+    /// program's own `open` does it here.
+    case openURL(String)
+    /// A program copied text (`pbcopy`): it reaches the pasteboard of the Mac
+    /// the person is typing from, when that is another one, as OSC 52 does.
+    case copy(PaneID, String)
 }
 
 public enum IntentError: String, Codable, Sendable, Error {
@@ -123,13 +131,17 @@ public struct ClientHello: Codable, Hashable, Sendable {
     /// When true, the host also sends state and attention events (apps); the CLI
     /// sends false and gets only replies.
     public var subscribe: Bool
+    /// The client runs on another Mac (over the tailnet or ssh): links and
+    /// copies a program makes for the person go to it while they type there.
+    public var remote: Bool?
 
-    public init(client: ClientID, name: String, subscribe: Bool = true) {
+    public init(client: ClientID, name: String, subscribe: Bool = true, remote: Bool? = nil) {
         protocolVersion = Wire.version
         features = Wire.features
         self.client = client
         self.name = name
         self.subscribe = subscribe
+        self.remote = remote
     }
 }
 
@@ -198,6 +210,8 @@ public enum HostEvent: Codable, Hashable, Sendable {
     /// A session closed while Claude Code ran in it: that conversation's
     /// UUID, so reopening the session resumes it (`claude --resume`).
     case claudeConversation(SessionID, id: String)
+    /// Open this web link here (`Intent.openURL`; feature "open").
+    case openURL(String)
 }
 
 public struct HostHello: Codable, Hashable, Sendable {

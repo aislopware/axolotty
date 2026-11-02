@@ -664,8 +664,23 @@ public actor Server {
             guard Set(tree.panes) == Set(s.tree.panes), tree.panes.count == s.tree.panes.count else { return .invalid }
             s.tree = tree
             commit([.session(s)])
+        case let .openURL(text):
+            guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  let far = personFar() else { return .notAllowed }
+            far.conn.send(HostMessage.event(.openURL(text)))
+        case let .copy(pane, text):
+            guard let far = personFar() else { return .notAllowed }
+            far.conn.send(HostMessage.event(.clipboard(pane, text)))
         }
         return nil
+    }
+
+    /// The link the person last typed or clicked through, when it comes
+    /// from another Mac that can take links and copies: where they are.
+    private func personFar() -> Link? {
+        guard let key = lastInput, let l = links[key], l.hello?.remote == true,
+              l.hello?.features?.contains("open") == true else { return nil }
+        return l
     }
 
     private func spawn(_ id: PaneID, recipe: SpawnRecipe, cols: UInt16, rows: UInt16) async throws {
