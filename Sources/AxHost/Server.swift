@@ -27,6 +27,11 @@ public struct ServerConfig: Sendable {
     public var holderWatchesServer = false
     /// Keep the Mac from idle-sleeping while any pane is working.
     public var keepAwake = true
+    /// Also listen on this Mac's tailnet addresses (`Tailnet.port`), for the
+    /// person's other devices; nil serves the local socket only.
+    public var tailnetPort: UInt16?
+    /// Who may call on the tailnet (the same person, by default).
+    public var tailnetGate = TailnetGate()
 
     public init(paths: RuntimePaths, holderExecutable: URL?, name: String = Server.defaultName) {
         self.paths = paths
@@ -69,6 +74,8 @@ public actor Server {
     private var tasks: [Task<Void, Never>] = []
     private var listenFD: Int32 = -1
     private var acceptSource: (any DispatchSourceRead)?
+    /// One listener per tailnet address, kept in step with the interfaces.
+    private var tailnetSources: [String: any DispatchSourceRead] = [:]
     private var lockFD: Int32 = -1
     private var saveTask: Task<Void, Never>?
     private var running = false
@@ -132,6 +139,15 @@ public actor Server {
             watchPID: config.holderWatchesServer ? getpid() : nil, onExit: { sink.yield(.exited($0, $1)) }, onDisconnect: { sink.yield(.holderLost) })
         try await recover()
         try listen()
+        if let port = config.tailnetPort {
+            tasks.append(Task { [weak self] in
+                // Tailscale can come up, go down or change address at any time.
+                while !Task.isCancelled {
+                    await self?.listenOnTailnet(port: port)
+                    try? await Task.sleep(for: .seconds(5))
+                }
+            })
+        }
 
         tasks.append(Task { [weak self, paneSignals] in
             for await s in paneSignals { await self?.handle(s) }
@@ -155,6 +171,8 @@ public actor Server {
         running = false
         acceptSource?.cancel()
         acceptSource = nil
+        for src in tailnetSources.values { src.cancel() }
+        tailnetSources.removeAll()
         if listenFD >= 0 { unlink(config.paths.hostSocket.path(percentEncoded: false)) }
         for link in links.values { link.conn.close() }
         links.removeAll()
@@ -281,15 +299,62 @@ public actor Server {
                     Darwin.close(c)
                     continue
                 }
-                let conn = FramedConnection(fd: c, label: "client")
-                sink.yield(.accepted(conn))
-                let key = ObjectIdentifier(conn)
-                conn.start(onFrame: { sink.yield(.frame(key, $0)) }, onClose: { _ in sink.yield(.closed(key)) })
+                Self.serve(FramedConnection(fd: c, label: "client"), sink: sink)
             }
         }
         src.setCancelHandler { Darwin.close(fd) }
         acceptSource = src
         src.resume()
+    }
+
+    private nonisolated static func serve(_ conn: FramedConnection, sink: AsyncStream<Inbound>.Continuation) {
+        sink.yield(.accepted(conn))
+        let key = ObjectIdentifier(conn)
+        conn.start(onFrame: { sink.yield(.frame(key, $0)) }, onClose: { _ in sink.yield(.closed(key)) })
+    }
+
+    /// Listens on every tailnet address this Mac has now and stops on the
+    /// ones it lost. A caller is served only when Tailscale says it is the
+    /// same person (`TailnetGate`); anyone else hears "denied".
+    private func listenOnTailnet(port: UInt16) {
+        let now = Set(Tailnet.localAddresses())
+        for (address, src) in tailnetSources where !now.contains(address) {
+            src.cancel()
+            tailnetSources[address] = nil
+        }
+        for address in now where tailnetSources[address] == nil {
+            guard let fd = try? TCPSocket.listen(address: address, port: port) else { continue }
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+            let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "axolotty.accept.tailnet"))
+            let sink = inboundSink
+            let gate = config.tailnetGate
+            let admission = DispatchQueue(label: "axolotty.admission", attributes: .concurrent)
+            src.setEventHandler {
+                while true {
+                    let c = accept(fd, nil, nil)
+                    guard c >= 0 else { return }
+                    _ = fcntl(c, F_SETFL, fcntl(c, F_GETFL) & ~O_NONBLOCK)
+                    _ = fcntl(c, F_SETFD, FD_CLOEXEC)
+                    var one: Int32 = 1
+                    _ = setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+                    TCPSocket.tune(c)
+                    let peer = TCPSocket.peerAddress(c) ?? ""
+                    admission.async {
+                        let conn = FramedConnection(fd: c, label: "tailnet \(peer)")
+                        if gate.admits(peer) {
+                            Server.serve(conn, sink: sink)
+                        } else {
+                            conn.start(onFrame: { _ in }, onClose: { _ in })
+                            conn.send(HostMessage.error("denied"))
+                            conn.queue.asyncAfter(deadline: .now() + .milliseconds(200)) { conn.close() }
+                        }
+                    }
+                }
+            }
+            src.setCancelHandler { Darwin.close(fd) }
+            tailnetSources[address] = src
+            src.resume()
+        }
     }
 
     // MARK: Inbound

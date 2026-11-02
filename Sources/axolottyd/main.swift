@@ -2,7 +2,10 @@
 // agent status, and every client connection. Programs live in axolotty-ptyd,
 // so this process can restart (crash, update) without losing them.
 //
-// Usage: axolottyd [--home DIR] [--ptyd PATH]
+// It also listens on this Mac's tailnet addresses for the person's other
+// devices (Tailscale says who is calling); --no-tailnet turns that off.
+//
+// Usage: axolottyd [--home DIR] [--ptyd PATH] [--tailnet-port N | --no-tailnet]
 import AxHost
 import AxProtocol
 import Dispatch
@@ -14,15 +17,21 @@ let log = Logger(subsystem: "dev.axolotty", category: "daemon")
 var args = CommandLine.arguments.dropFirst()
 var home: String?
 var ptydOverride: String?
+var tailnetPort = Tailnet.port
+var noTailnet = false
 while let a = args.popFirst() {
     switch a {
     case "--home": home = args.popFirst()
     case "--ptyd": ptydOverride = args.popFirst()
+    case "--no-tailnet": noTailnet = true
+    case "--tailnet-port":
+        guard let n = args.popFirst().flatMap(UInt16.init) else { exit(2) }
+        tailnetPort = n
     case "--version":
         print("axolottyd 0.1.0")
         exit(0)
     default:
-        FileHandle.standardError.write(Data("usage: axolottyd [--home DIR] [--ptyd PATH]\n".utf8))
+        FileHandle.standardError.write(Data("usage: axolottyd [--home DIR] [--ptyd PATH] [--tailnet-port N | --no-tailnet]\n".utf8))
         exit(2)
     }
 }
@@ -53,6 +62,7 @@ do {
     let holder = try bundledHolder().map { try Holder.install($0, paths: paths) }
     var config = ServerConfig(paths: paths, holderExecutable: holder)
     config.cliExecutable = bundledCLI()
+    if !noTailnet { config.tailnetPort = tailnetPort }
     let server = Server(config: config)
     try await server.start()
     log.info("axolottyd serving at \(paths.hostSocket.path(percentEncoded: false), privacy: .public)")
