@@ -7,6 +7,7 @@ import AxModel
 ///
 ///     sidebar open:                  ⑂ branch +12 −3              ◌ Working 4:12
 ///     sidebar hidden: [tile] project › [icon] title   ⑂ branch     ◌ Working 4:12
+///     … on a far Mac: [⌨] MacBook Pro › [tile] project › [icon] title …
 ///
 /// - With the sidebar open, the selected row already names the project and
 ///   the session, so the band starts on the terminal's text column with the
@@ -14,12 +15,18 @@ import AxModel
 /// - With it hidden, the identity comes back in front: the project's 16 pt
 ///   tile and name (13 semibold, full ink), a compact chevron, the program
 ///   icon (carrying its state badge) and the session title (13, secondary).
+///   A session on another Mac starts with that Mac, as the sidebar's section
+///   does: its kind of Mac and name (13, secondary), so the hidden sidebar
+///   never leaves the person guessing where their keys go.
 /// - Trailing, the state: working shows a cyan spinner and the elapsed
 ///   time; waiting or failed show the chip with the agent's own words. One
 ///   cue per state.
 ///
 /// No rule below and no fill of its own. Drags the window.
 final class BandView: NSView {
+    private let hostGlyph = Symbol("laptopcomputer", size: 11, weight: .medium, color: Axo.Color.textTertiary)
+    private let hostName = Label("", font: Axo.Font.body, color: Axo.Color.textSecondary)
+    private let hostChevron = Symbol("chevron.compact.right", size: 10, weight: .semibold, color: Axo.Color.textTertiary)
     private let tile = ProjectTile()
     private let project = Label("", font: Axo.Font.title, color: Axo.Color.text)
     private let chevron = Symbol("chevron.compact.right", size: 10, weight: .semibold, color: Axo.Color.textTertiary)
@@ -42,6 +49,8 @@ final class BandView: NSView {
         }
     }
     private var hasContext = false
+    /// The session is on another Mac (its name leads the path).
+    private var isFar = false
 
     private var activity: Activity = .idle
     private var since: Double = 0
@@ -51,12 +60,13 @@ final class BandView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         diff.isHidden = true
-        for v in [tile, project, chevron, icon, title, branchGlyph, branch, diff, spinner, elapsed, chip] as [NSView] {
+        for v in [hostGlyph, hostName, hostChevron, tile, project, chevron, icon, title, branchGlyph, branch, diff, spinner, elapsed, chip] as [NSView] {
             addSubview(v)
         }
         chip.isHidden = true
         title.lineBreakMode = .byTruncatingTail
         project.lineBreakMode = .byTruncatingTail
+        hostName.lineBreakMode = .byTruncatingTail
         branch.lineBreakMode = .byTruncatingMiddle
         setPath(nil)
     }
@@ -80,12 +90,20 @@ final class BandView: NSView {
         var branch: String?
         /// Subagents working under the agent ("Working 4:12 · 2 subagents").
         var subagents = 0
+        /// The Mac it runs on, when that is not this one: its name and SF Symbol.
+        var host: (name: String, symbol: String)?
     }
 
     /// Shows a session's context, or the app name alone when nothing is open.
     func update(_ c: Context?, key: Bool) {
+        isFar = c?.host != nil
         setPath(c)
         guard let c else { return }
+        if let h = c.host {
+            hostName.stringValue = h.name
+            hostGlyph.image = NSImage(systemSymbolName: h.symbol, accessibilityDescription: nil)
+            hostName.textColor = key ? Axo.Color.textSecondary : Axo.Color.textTertiary
+        }
         tile.set(name: c.project, key: c.projectKey)
         project.stringValue = c.project
         icon.identity = c.identity
@@ -117,7 +135,8 @@ final class BandView: NSView {
         needsLayout = true
     }
 
-    private var identityViews: [NSView] { [tile, project, chevron, icon, title] }
+    private var farViews: [NSView] { [hostGlyph, hostName, hostChevron] }
+    private var identityViews: [NSView] { (isFar ? farViews : []) + [tile, project, chevron, icon, title] }
 
     /// The path fades rather than pops when the sidebar comes and goes.
     private func applyIdentity(animated: Bool) {
@@ -152,6 +171,7 @@ final class BandView: NSView {
         let on = c != nil
         hasContext = on
         for v in [tile, chevron, icon, title] as [NSView] { v.isHidden = !on || !showsIdentity }
+        for v in farViews { v.isHidden = !on || !showsIdentity || !isFar }
         project.isHidden = on && !showsIdentity
         if !on {
             project.stringValue = "Axolotty"
@@ -208,6 +228,13 @@ final class BandView: NSView {
         if hasContext, !showsIdentity {
             layoutFacts(from: x - Axo.Space.lg, right: right)
             return
+        }
+        if !hostName.isHidden {
+            x = centre(hostGlyph, x: x, size: NSSize(width: 16, height: 16)) + Axo.Space.xs
+            let hs = hostName.intrinsicContentSize
+            // The Mac's name gives way before the project's.
+            x = centre(hostName, x: x, size: NSSize(width: min(ceil(hs.width), max(40, (right - x) * 0.25)), height: hs.height))
+            x = centre(hostChevron, x: x + Axo.Space.xs, size: NSSize(width: 12, height: 16)) + Axo.Space.xs
         }
         if !tile.isHidden {
             x = centre(tile, x: x, size: NSSize(width: 16, height: 16)) + Axo.Space.sm

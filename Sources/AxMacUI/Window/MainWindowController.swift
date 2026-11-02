@@ -276,9 +276,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         func band() -> BandView.Context {
             BandView.Context(project: ws?.name ?? host.name, projectKey: ws.map { $0.root.isEmpty ? $0.name : $0.root } ?? host.name,
                              session: identity.rowTitle(title), identity: identity, activity: activity, since: since,
-                             branch: branch, subagents: st.panes(of: sid).reduce(0) { $0 + $1.status.subagentsWorking })
+                             branch: branch, subagents: st.panes(of: sid).reduce(0) { $0 + $1.status.subagentsWorking },
+                             host: host.isLocal ? nil : (host.name, SidebarViewController.hostSymbol(host)))
         }
-        window?.title = title
+        // Mission Control and the Window menu say which Mac, as the band does.
+        window?.title = host.isLocal ? title : "\(title) — \(host.name)"
         updateChip(st, sid)
         // Branch and diff chip follow the focused pane's tree, wherever it is.
         if cwd.isEmpty {
