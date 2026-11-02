@@ -532,14 +532,18 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if action != .release {
             snapToBottom()
             NSCursor.setHiddenUntilMouseMoves(true)
-            // Plain text and a bare ⌫ are guessed at; anything else (Return,
-            // arrows, ⌃ and ⌥ chords) is the host's to answer before the next guess.
-            let chord = optionAlt || !event.modifierFlags.intersection([.control, .command]).isEmpty
-            let plain = !chord && !text.isEmpty && !text.unicodeScalars.contains { $0.properties.generalCategory == .control }
+            // Plain text, a bare ⌫, ← and → are guessed at; anything else
+            // (Return, ↑ ↓, ⌃ and ⌥ chords) is the host's to answer before the next guess.
+            let chord = optionAlt || !event.modifierFlags.intersection([.control, .command, .option, .shift]).isEmpty
+            let plain = !optionAlt && event.modifierFlags.intersection([.control, .command]).isEmpty
+                && !text.isEmpty && !text.unicodeScalars.contains { $0.properties.generalCategory == .control }
             if plain {
                 predict(text)
             } else if !chord, event.keyCode == 51 {  // ⌫ (kVK_Delete): its text is the encoder's, not ours
-                predictErase()
+                predictEdit { p, s, t in p.erased(on: s, at: t) }
+            } else if !chord, event.keyCode == 123 || event.keyCode == 124 {  // ← →
+                let dx = event.keyCode == 123 ? -1 : 1
+                predictEdit { p, s, t in p.moved(by: dx, on: s, at: t) }
             } else {
                 holdPrediction()
             }
@@ -572,10 +576,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if changed { showPrediction(now) }
     }
 
-    private func predictErase() {
+    /// ⌫ or an arrow: an edit of what this run typed, or the host's to answer.
+    private func predictEdit(_ edit: (inout EchoPredictor, EchoPredictor.Screen, Duration) -> Bool) {
         predictor.rtt = connection.rtt
         let now = Self.clock()
-        let changed = mirror.withTerminal { t in predictor.erased(on: echoScreen(t), at: now) } ?? false
+        let changed = mirror.withTerminal { t in edit(&predictor, echoScreen(t), now) } ?? false
         if changed { showPrediction(now) }
     }
 
@@ -600,8 +605,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         // An echo that never comes is a miss; a guess that waits past 250 ms
         // turns marked. Look again then, output or not.
         predictionTimer?.cancel()
-        guard let deadline = predictor.nextDeadline, let first = o.cells.first else { return }
-        let wake = min(deadline, o.marked ? deadline : first.at + EchoPredictor.markedAge)
+        // (An arrow's guess may change no cell, only where the cursor is.)
+        guard let deadline = predictor.nextDeadline, let first = predictor.oldestGuess else { return }
+        let wake = min(deadline, o.marked ? deadline : first + EchoPredictor.markedAge)
         let w = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let t = Self.clock()

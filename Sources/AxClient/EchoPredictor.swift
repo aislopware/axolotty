@@ -7,23 +7,27 @@
 ///   link faster than that the real echo is already in the next frame;
 /// - the cursor is visible, in a shell's input line (OSC 133), on the
 ///   primary screen; no mouse tracking, no hidden prompt;
-/// - each typed character lands on a blank cell, one already showing that
-///   very character, or one of a shell's suggestion for the rest of the line
-///   (zsh-autosuggestions, fish); never the last column, where the line
+/// - a run of typing owns the text it typed, from where it began. At its
+///   end a character lands where only blanks or a shell's suggestion of the
+///   rest of the line (zsh-autosuggestions, fish) follow, since it would
+///   push any other text right; never the last column, where the line
 ///   would wrap. A suggestion typed against is veiled: it no longer fits,
 ///   and the shell will clear or replace it;
-/// - ⌫ only takes back what was typed in this run on this line, never the
-///   prompt or text the host put there.
+/// - inside that text, ← and → move the cursor, a character is inserted
+///   and ⌫ takes the one before the cursor back, the rest moving as a line
+///   editor moves it; only while nothing but blanks follows it;
+/// - ⌫ and ← stop where the run began: the prompt and text the host put
+///   there are the host's, and so is → at the end (it takes a suggestion).
 ///
-/// Guesses are steps in the order typed (put a character, take one back),
-/// as the host will apply them. A frame from the host shows a run of them
-/// done when the cursor is where they leave it and every character they put
-/// is there. Screens repeat (after "a" is the same as after "a", "b", ⌫), so
+/// Guesses are steps in the order typed, each the run's line as the host
+/// will have it after that key. A frame from the host shows a run of them
+/// done when the cursor is where they leave it and the line's text is
+/// there. Screens repeat (after "a" is the same as after "a", "b", ⌫), so
 /// a frame confirms the shortest run it fits, and later frames the rest; one
 /// that fits none contradicts the guesses. Guesses still waiting when their
 /// time is up, on a screen that already fits all of them, are confirmed.
 ///
-/// After a key that isn't predicted (Return, arrows, ⌃ chords), nothing is
+/// After a key that isn't predicted (Return, ↑, ⌃ and ⌥ chords), nothing is
 /// guessed until the host has answered it: until then, where the next
 /// character lands is the host's to say. A guess the host contradicts, or
 /// leaves unconfirmed too long, clears every guess and mutes prediction for a
@@ -103,25 +107,32 @@ public struct EchoPredictor {
     /// How long a miss keeps guesses marked once prediction comes back.
     public static let markedAfterMiss: Duration = .seconds(10)
 
-    /// One key the host hasn't answered yet: a character put at (x, y), or
-    /// the one at (x, y) taken back (`character` nil).
+    /// The run's text as the host will have it, from where the run began,
+    /// and the cursor in it.
+    private struct Line: Equatable {
+        var text: [Character] = []
+        var col = 0
+        /// What the line shows `i` cells in: nil past its end (blank, or
+        /// whatever the host draws there).
+        func at(_ i: Int) -> Character? { i < text.count ? text[i] : nil }
+    }
+
+    /// One key the host hasn't answered yet: the line once it has.
     private struct Step: Equatable {
-        var x: Int
-        var y: Int
-        var character: Character?
+        var line: Line
         var at: Duration
-        /// Where the cursor is once the host has applied it.
-        var after: (x: Int, y: Int) { character == nil ? (x, y) : (x + 1, y) }
-        static func == (a: Step, b: Step) -> Bool { a.x == b.x && a.y == b.y && a.character == b.character && a.at == b.at }
     }
 
     private var steps: [Step] = [] {
         didSet { if steps.isEmpty { veiled = [] } }  // answered: the host's own redraw shows
     }
-    /// The cursor before the first unanswered step.
-    private var origin: (x: Int, y: Int) = (0, 0)
-    /// Where this run of typing began on its line: ⌫ goes no further left.
-    private var runStart: (x: Int, y: Int)?
+    /// Where this run of typing began; its line is laid out from here.
+    private var anchor: (x: Int, y: Int) = (0, 0)
+    /// The line as the host has it, every step before the first unanswered one done.
+    private var base = Line()
+    /// The run goes on: ⌫ and arrows move within what it typed. Off after a
+    /// key the host answers on its own, or a screen that no longer shows it.
+    private var open = false
     /// The latest screen already fits every step (its frames were ambiguous).
     private var fitsAll = false
     /// Cells of a suggestion typing went against, drawn blank until the
@@ -146,25 +157,47 @@ public struct EchoPredictor {
         return max(.seconds(1), r * 3 + .milliseconds(250))
     }
 
-    /// The cells the guesses will leave, left to right.
+    private var latest: Line { steps.last?.line ?? base }
+
+    /// The cells the guesses will leave, left to right: every cell a step
+    /// changed, as the last one leaves it, and the veiled suggestion.
     public var guesses: [Guess] {
-        var cells: [Guess] = []
-        if let at = steps.last?.at {
-            for v in veiled { cells.append(Guess(x: v.x, y: v.y, character: " ", at: at)) }
-        }
+        guard let last = steps.last else { return [] }
+        var when: [Int: Duration] = [:]  // cell → the latest step that changed it
+        var before = base
         for s in steps {
-            let g = Guess(x: s.x, y: s.y, character: s.character ?? " ", at: s.at)
-            if let i = cells.firstIndex(where: { $0.x == s.x && $0.y == s.y }) { cells[i] = g } else { cells.append(g) }
+            for i in 0 ..< max(before.text.count, s.line.text.count) where before.at(i) != s.line.at(i) { when[i] = s.at }
+            before = s.line
         }
+        var cells = veiled.filter { v in !when.keys.contains { anchor.x + $0 == v.x } }
+            .map { Guess(x: $0.x, y: $0.y, character: " ", at: last.at) }
+        for (i, at) in when { cells.append(Guess(x: anchor.x + i, y: anchor.y, character: last.line.at(i) ?? " ", at: at)) }
         return cells.sorted { ($0.y, $0.x) < ($1.y, $1.x) }
     }
 
-    private var cursor: (x: Int, y: Int) { steps.last?.after ?? origin }
+    private var cursor: (x: Int, y: Int) { (anchor.x + latest.col, anchor.y) }
 
-    /// What a cell will show once the guesses land, nil if no guess touches it.
-    private func predicted(_ x: Int, _ y: Int) -> Character?? {
-        if let s = steps.last(where: { $0.x == x && $0.y == y }) { return s.character ?? " " }
-        return veiled.contains { $0.x == x && $0.y == y } ? " " : nil
+    /// Whether the cell `i` in from the anchor will be blank: cleared by a
+    /// step, veiled, or blank on the screen and untouched.
+    private func blank(_ i: Int, on screen: Screen) -> Bool {
+        let x = anchor.x + i
+        if let ch = latest.at(i) { return ch == " " }
+        if steps.contains(where: { $0.line.text.count > i }) || base.text.count > i { return true }
+        if veiled.contains(where: { $0.x == x && $0.y == anchor.y }) { return true }
+        return screen.cell(x, anchor.y) == " "
+    }
+
+    /// Everything after the line's text is blank: an edit inside it moves
+    /// that text and nothing the host drew beside it.
+    private func tailIsBlank(on screen: Screen) -> Bool {
+        (latest.text.count ..< max(latest.text.count, screen.cols - anchor.x)).allSatisfy { blank($0, on: screen) }
+    }
+
+    /// The screen shows `line` done: the cursor where it leaves it, and
+    /// every character of it in place.
+    private func shows(_ line: Line, on screen: Screen) -> Bool {
+        screen.cursorX == anchor.x + line.col && screen.cursorY == anchor.y
+            && line.text.indices.allSatisfy { screen.cell(anchor.x + $0, anchor.y) == line.text[$0] }
     }
 
     private func mayGuess(on screen: Screen, at now: Duration) -> Bool {
@@ -174,7 +207,23 @@ public struct EchoPredictor {
     /// Holds guessing until the host has answered a key sent now.
     private mutating func hold(at now: Duration) {
         heldSince = now
-        runStart = nil
+        open = false
+    }
+
+    /// Starts a run at the cursor, unless one is going (or its guesses still are).
+    private mutating func begin(on screen: Screen) -> Bool {
+        if open { return true }
+        guard steps.isEmpty else { return false }
+        anchor = (screen.cursorX, screen.cursorY)
+        base = Line()
+        open = true
+        return true
+    }
+
+    private mutating func step(_ line: Line, at now: Duration) {
+        steps.append(Step(line: line, at: now))
+        fitsAll = false
+        mutedUntil = nil
     }
 
     // MARK: Input
@@ -184,30 +233,39 @@ public struct EchoPredictor {
     public mutating func typed(_ text: String, on screen: Screen, at now: Duration) -> Bool {
         let before = steps.count
         var guessed = 0
-        if mayGuess(on: screen, at: now) {
-            mutedUntil = nil
-            if steps.isEmpty { origin = (screen.cursorX, screen.cursorY) }
-            fitsAll = false
+        if mayGuess(on: screen, at: now), begin(on: screen) {
             for ch in text {
-                let (x, y) = cursor
-                // Its width is the host's to say, or its cell isn't free to guess in:
-                // a blank cell, or one already showing this very character (a
-                // shell's suggestion of the rest of the line, drawn faintly).
-                let ahead = predicted(x, y)
-                let under = ahead ?? screen.cell(x, y)
-                let suggestion = ahead == nil && screen.suggested(x, y)
-                guard Self.predictable(ch), y == screen.cursorY, x < screen.cols - 1,
-                      under == " " || under == ch || suggestion else { break }
-                if suggestion, under != ch {
-                    // Typed against the suggestion: the rest of it goes too.
-                    var i = x + 1
-                    while i < screen.cols, screen.suggested(i, y), screen.cell(i, y) != " " {
-                        veiled.append((i, y))
-                        i += 1
+                var line = latest
+                let i = line.col, x = anchor.x + i
+                guard Self.predictable(ch), anchor.y == screen.cursorY else { break }
+                if i < line.text.count {
+                    // Inside the line: the rest of it moves right, as a line
+                    // editor inserts; nothing else may stand in its way.
+                    guard anchor.x + line.text.count < screen.cols - 1, tailIsBlank(on: screen) else { break }
+                } else {
+                    // At its end, the cell and everything after it must be free:
+                    // blank, or a shell's suggestion of the rest of the line. Text
+                    // there would be pushed right (the key goes in before it), and
+                    // never the last column, where the line would wrap.
+                    let free = blank(i, on: screen)
+                    let suggestion = !free && screen.suggested(x, anchor.y)
+                    guard x < screen.cols - 1, free || suggestion,
+                          (i + 1 ..< max(i + 1, screen.cols - anchor.x)).allSatisfy({
+                              blank($0, on: screen) || screen.suggested(anchor.x + $0, anchor.y)
+                          })
+                    else { break }
+                    if suggestion, screen.cell(x, anchor.y) != ch {
+                        // Typed against the suggestion: the rest of it goes too.
+                        var j = x + 1
+                        while j < screen.cols, screen.suggested(j, anchor.y), screen.cell(j, anchor.y) != " " {
+                            veiled.append((j, anchor.y))
+                            j += 1
+                        }
                     }
                 }
-                if runStart == nil { runStart = (x, y) }
-                steps.append(Step(x: x, y: y, character: ch, at: now))
+                line.text.insert(ch, at: i)
+                line.col += 1
+                step(line, at: now)
                 guessed += 1
             }
         }
@@ -219,19 +277,33 @@ public struct EchoPredictor {
         return steps.count != before
     }
 
-    /// ⌫ typed at `now`: the last character of this run is taken back, when
-    /// there is one; otherwise it is the host's to say. Returns whether the
-    /// overlay changed.
+    /// ⌫ typed at `now`: the character before the cursor is taken back when
+    /// this run typed it; otherwise it is the host's to say. Returns whether
+    /// the overlay changed.
     @discardableResult
     public mutating func erased(on screen: Screen, at now: Duration) -> Bool {
-        if mayGuess(on: screen, at: now), let run = runStart {
-            if steps.isEmpty { origin = (screen.cursorX, screen.cursorY) }
-            let (x, y) = cursor
-            if y == run.y, x - 1 >= run.x {
-                steps.append(Step(x: x - 1, y: y, character: nil, at: now))
-                fitsAll = false
-                return true
-            }
+        var line = latest
+        if mayGuess(on: screen, at: now), open, line.col > 0,
+           line.col == line.text.count || tailIsBlank(on: screen) {
+            line.text.remove(at: line.col - 1)
+            line.col -= 1
+            step(line, at: now)
+            return true
+        }
+        return interrupted(at: now)
+    }
+
+    /// ← (`by` -1) or → (+1) typed at `now`: the cursor moves within what
+    /// this run typed. Past either end it is the host's to say (→ at the end
+    /// takes a shell's suggestion). Returns whether the overlay changed.
+    @discardableResult
+    public mutating func moved(by dx: Int, on screen: Screen, at now: Duration) -> Bool {
+        var line = latest
+        if mayGuess(on: screen, at: now), open, line.text.indices.contains(line.col + min(dx, 0)),
+           abs(dx) == 1, tailIsBlank(on: screen) {
+            line.col += dx
+            step(line, at: now)
+            return true
         }
         return interrupted(at: now)
     }
@@ -256,31 +328,29 @@ public struct EchoPredictor {
         // answer to it; anything sooner was already on its way before it.
         if let h = heldSince, now - h >= (rtt ?? .zero) { heldSince = nil }
         guard screen.allowsGuessing else {
-            runStart = nil
+            open = false
             guard !steps.isEmpty else { return false }
             steps.removeAll()  // a program took over the screen: no guess means anything now
             return true
         }
         guard !steps.isEmpty else {
-            if let run = runStart, screen.cursorY != run.y { runStart = nil }
+            // The host changed the line on its own (a completion, a redraw):
+            // what this run typed is no longer known.
+            if open, !shows(base, on: screen) { open = false }
             return false
         }
         // The runs of steps the screen shows done. The cell alone can't say:
         // a space looks the same before its echo, and a suggestion shows the
         // rest of the line before it is typed; so the cursor must be where
-        // they leave it, too.
-        let at = (screen.cursorX, screen.cursorY)
-        var fits: [Int] = at == origin ? [0] : []
-        var shown: [Int: Character] = [:]  // x → what steps 0..<k put on the row
-        for (k, s) in steps.enumerated() {
-            shown[s.x] = s.character  // taken back: whatever is there now
-            guard s.after == at, s.y == screen.cursorY else { continue }
-            if shown.allSatisfy({ screen.cell($0.key, s.y) == $0.value }) { fits.append(k + 1) }
-        }
+        // they leave it, too. Screens repeat (after "a" is the same as after
+        // "a", "b", ⌫), so the shortest run that fits is taken, and later
+        // frames confirm the rest.
+        var fits: [Int] = shows(base, on: screen) ? [0] : []
+        for (k, s) in steps.enumerated() where shows(s.line, on: screen) { fits.append(k + 1) }
         guard let k = fits.first(where: { $0 > 0 }) ?? fits.first else { return miss(at: now) }
         fitsAll = fits.last == steps.count
         if k > 0 {
-            origin = steps[k - 1].after
+            base = steps[k - 1].line
             steps.removeFirst(k)
             return true
         }
@@ -292,7 +362,7 @@ public struct EchoPredictor {
     /// shows them all, a miss otherwise.
     private mutating func settle(at now: Duration) -> Bool {
         guard fitsAll else { return miss(at: now) }
-        origin = cursor
+        base = latest
         steps.removeAll()
         return true
     }
@@ -307,9 +377,12 @@ public struct EchoPredictor {
     /// When `tick` next has something to decide, nil when nothing is waiting.
     public var nextDeadline: Duration? { steps.first.map { $0.at + patience } }
 
+    /// When the oldest unanswered key went out.
+    public var oldestGuess: Duration? { steps.first?.at }
+
     private mutating func miss(at now: Duration) -> Bool {
         steps.removeAll()
-        runStart = nil
+        open = false
         misses += 1
         missedAt = now
         mutedUntil = now + max(.seconds(1), (rtt ?? .zero) * 4)
