@@ -86,6 +86,10 @@ public final class HostConnection: @unchecked Sendable {
         var appearance: Appearance?
         var wantConnected = false
         var backoff: Duration = .milliseconds(100)
+        /// When the link last went down (nil while up): the redial ladder
+        /// slows once a host has been gone a minute.
+        var downSince: ContinuousClock.Instant?
+        var redials = 0
         #if os(macOS)
         var child: CommandChild?
         #endif
@@ -97,10 +101,25 @@ public final class HostConnection: @unchecked Sendable {
         var rtt: Duration?
     }
 
-    /// Heartbeats: one every `beat` on remote links; a link silent for
-    /// `silence` is dead (three missed beats) and is redialled at once.
-    static let beat: Duration = .seconds(5)
-    static let silence: Duration = .seconds(15)
+    /// Heartbeats, Slopty's third-generation numbers: a ping every `beat`
+    /// on remote links; a link that has said nothing for `silence` (three
+    /// beats) is dead and is redialled at once.
+    static let beat: Duration = .seconds(2)
+    static let silence: Duration = .seconds(6)
+
+    /// The redial ladder. Remote: 250 ms doubling to 2 s; once the host has
+    /// been gone a minute, 4 s doubling to 30 s. Local: 100 ms to 5 s.
+    /// Every step is jittered ±20 % so clients don't redial a woken host in step.
+    public static func redialDelay(after previous: Duration?, downFor: Duration, remote: Bool) -> Duration {
+        guard remote else {
+            return previous.map { min($0 * 2, .seconds(5)) } ?? .milliseconds(100)
+        }
+        if downFor < .seconds(60) {
+            return previous.map { min($0 * 2, .seconds(2)) } ?? .milliseconds(250)
+        }
+        guard let previous, previous >= .seconds(4) else { return .seconds(4) }
+        return min(previous * 2, .seconds(30))
+    }
 
     private let state = Mutex(State())
 
@@ -263,9 +282,10 @@ public final class HostConnection: @unchecked Sendable {
     /// rather than waited on.
     public func kick() {
         let (conn, stale, idle) = state.withLock { s -> (FramedConnection?, Bool, Bool) in
-            s.backoff = .milliseconds(100)
+            s.redials = 0
+            s.downSince = nil
             let quiet = ContinuousClock.now - s.lastHeard
-            return (s.conn, quiet > .seconds(3), s.conn == nil && s.wantConnected)
+            return (s.conn, quiet > Self.beat, s.conn == nil && s.wantConnected)
         }
         if let conn, stale, endpoint.isRemote {
             // Ask; an answer within a second keeps the link.
@@ -309,12 +329,15 @@ public final class HostConnection: @unchecked Sendable {
     }
 
     private func scheduleReconnect() {
-        let cap: Duration = endpoint.isRemote ? .seconds(30) : .seconds(5)
+        let remote = endpoint.isRemote
         let delay = state.withLock { s -> Duration in
-            let d = s.backoff
-            s.backoff = min(s.backoff * 2, cap)
-            // Jitter, so many clients don't redial a woken host in step.
-            return d * Double.random(in: 0.8 ... 1.2)
+            let now = ContinuousClock.now
+            let since = s.downSince ?? now
+            s.downSince = since
+            let step = Self.redialDelay(after: s.redials == 0 ? nil : s.backoff, downFor: now - since, remote: remote)
+            s.backoff = step
+            s.redials += 1
+            return step * Double.random(in: 0.8 ... 1.2)
         }
         Task { [weak self] in
             try? await Task.sleep(for: delay)
@@ -353,6 +376,8 @@ public final class HostConnection: @unchecked Sendable {
                 s.replica = h.state
                 s.epoch = h.epoch
                 s.backoff = .milliseconds(100)
+                s.redials = 0
+                s.downSince = nil
                 defer { s.welcome = nil }
                 return (s.welcome, s.mirrors, s.appearance)
             }
