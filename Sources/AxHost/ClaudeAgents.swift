@@ -20,6 +20,7 @@
 // Claude Code in front: its `sessionId` (live processes only) is what
 // reopening the session resumes (`Server.closeLater`).
 import AxModel
+import AxProtocol
 import AxSys
 import CoreServices
 import Darwin
@@ -154,24 +155,9 @@ nonisolated enum ClaudeAgents {
     /// whoever started the server stay out of its environment.
     static func run(_ exe: String?, _ args: [String], timeout: Double = 3) -> String? {
         guard let exe else { return nil }
-        let p = Process()
-        p.executableURL = URL(filePath: exe)
-        p.arguments = args
-        p.environment = ProcessInfo.processInfo.environment.filter { !ShellEnvironment.isAgentSessionMarker($0.key) }
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let timer = DispatchSource.makeTimerSource(queue: .global())
-        timer.schedule(deadline: .now() + timeout)
-        timer.setEventHandler { if p.isRunning { p.terminate() } }
-        timer.resume()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        timer.cancel()
-        guard p.terminationStatus == 0 else { return nil }
-        return String(decoding: data, as: UTF8.self)
+        let env = ProcessInfo.processInfo.environment.filter { !ShellEnvironment.isAgentSessionMarker($0.key) }
+        guard let r = try? ChildProcess.run(exe, args, environment: env, timeout: timeout), r.status == 0, !r.timedOut else { return nil }
+        return String(decoding: r.stdout, as: UTF8.self)
     }
 }
 

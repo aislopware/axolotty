@@ -3,6 +3,7 @@
 // `.git/info/exclude`, never the person's .gitignore). The host runs git, so a
 // remote host makes its worktrees where its code is. A branch is never
 // deleted here: removing a worktree only removes the folder.
+import AxProtocol
 import Foundation
 
 public enum Worktrees {
@@ -76,22 +77,16 @@ public enum Worktrees {
     }
 
     static func run(_ args: [String], in dir: String) -> (status: Int32, out: String, err: String) {
-        let p = Process()
-        p.executableURL = URL(filePath: "/usr/bin/git")
-        p.arguments = ["-C", dir] + args
         var env = ProcessInfo.processInfo.environment
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_OPTIONAL_LOCKS"] = "0"
-        p.environment = env
-        let out = Pipe(), err = Pipe()
-        p.standardOutput = out
-        p.standardError = err
-        p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return (-1, "", "\(error)") }
-        let o = out.fileHandleForReading.readDataToEndOfFile()
-        let e = err.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: e, as: UTF8.self))
+        do {
+            // No deadline: adding a worktree checks out a whole tree.
+            let r = try ChildProcess.run("/usr/bin/git", ["-C", dir] + args, environment: env)
+            return (r.status, String(decoding: r.stdout, as: UTF8.self), String(decoding: r.stderr, as: UTF8.self))
+        } catch {
+            return (-1, "", "\(error)")
+        }
     }
 }
 

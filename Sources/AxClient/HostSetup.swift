@@ -1,4 +1,5 @@
 #if os(macOS)
+import AxProtocol
 public import Foundation
 
 /// Puts Axolotty's server on a Mac over ssh, so a far Mac needs nothing
@@ -82,12 +83,16 @@ public struct HostSetup: Sendable {
         progress(.checking)
         _ = try await check()
         progress(.copying)
-        let tar = Process()
-        tar.executableURL = URL(filePath: "/usr/bin/tar")
         // No resource forks or extended attributes: the far side gets plain files.
-        tar.arguments = ["--no-mac-metadata", "-C", from.path(percentEncoded: false), "-cf", "-"] + Self.binaries
-        tar.environment = ["COPYFILE_DISABLE": "1"]
-        let r = try await run(Self.quoted(Self.installScript), input: tar)
+        let dir = from.path(percentEncoded: false), limit = timeout
+        let tar = try await Task.detached {
+            try ChildProcess.run("/usr/bin/tar", ["--no-mac-metadata", "-C", dir, "-cf", "-"] + Self.binaries,
+                                 environment: ["COPYFILE_DISABLE": "1"], timeout: limit)
+        }.value
+        guard tar.status == 0 else {
+            throw Failure.failed("Couldn't pack Axolotty: \(String(decoding: tar.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        let r = try await run(Self.quoted(Self.installScript), input: tar.stdout)
         guard r.status == 0, r.stdout.contains("axolotty: started") else {
             throw Self.failure(status: r.status, stderr: r.stderr.isEmpty ? r.stdout : r.stderr)
         }
@@ -206,39 +211,14 @@ public struct HostSetup: Sendable {
 
     struct Output { var status: Int32; var stdout: String; var stderr: String }
 
-    /// Runs `remote + [line]`, its standard input from `input`'s output.
-    private func run(_ line: String, input: Process? = nil) async throws -> Output {
+    /// Runs `remote + [line]`, `input` on its standard input; given up past `timeout`.
+    private func run(_ line: String, input: Data? = nil) async throws -> Output {
         let argv = remote + [line], limit = timeout
-        return try await Task.detached {
-            let p = Process()
-            p.executableURL = URL(filePath: argv[0])
-            p.arguments = Array(argv.dropFirst())
-            let out = Pipe(), err = Pipe()
-            p.standardOutput = out
-            p.standardError = err
-            if let input {
-                let link = Pipe()
-                input.standardOutput = link
-                input.standardError = FileHandle.nullDevice
-                p.standardInput = link
-                try input.run()
-            } else {
-                p.standardInput = FileHandle.nullDevice
-            }
-            try p.run()
-            // A hung link is given up: the process (and the tar feeding it) are stopped.
-            let killer = DispatchWorkItem { p.terminate(); input?.terminate() }
-            DispatchQueue.global().asyncAfter(deadline: .now() + limit, execute: killer)
-            // Both streams at once: a full pipe on one would stall the other.
-            let errors = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }
-            let o = out.fileHandleForReading.readDataToEndOfFile()
-            let e = await errors.value
-            p.waitUntilExit()
-            input?.waitUntilExit()
-            killer.cancel()
-            return Output(status: p.terminationStatus, stdout: String(decoding: o, as: UTF8.self),
-                          stderr: String(decoding: e, as: UTF8.self))
+        let r = try await Task.detached {
+            try ChildProcess.run(argv[0], Array(argv.dropFirst()), input: input, timeout: limit)
         }.value
+        return Output(status: r.status, stdout: String(decoding: r.stdout, as: UTF8.self),
+                      stderr: String(decoding: r.stderr, as: UTF8.self))
     }
 }
 #endif

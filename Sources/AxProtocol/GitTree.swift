@@ -143,37 +143,13 @@ public enum GitTree {
 
     /// Runs git with a 2 s budget; nil on failure.
     public static func git(_ args: [String], in dir: String) -> String? {
-        let p = Process()
-        p.executableURL = URL(filePath: "/usr/bin/git")
-        p.arguments = ["--no-optional-locks", "-C", dir] + args
         var env = ProcessInfo.processInfo.environment
         env["GIT_OPTIONAL_LOCKS"] = "0"
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["LC_ALL"] = "C"
-        p.environment = env
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let deadline = DispatchTime.now() + .seconds(2)
-        let done = DispatchSemaphore(value: 0)
-        // Read on another thread so a hung git can be abandoned at the deadline;
-        // the box is written once, before the signal, and read only after it.
-        final class Box: @unchecked Sendable { var data = Data() }
-        let box = Box()
-        let reader = out.fileHandleForReading
-        DispatchQueue.global(qos: .utility).async {
-            box.data = reader.readDataToEndOfFile()
-            done.signal()
-        }
-        if done.wait(timeout: deadline) == .timedOut {
-            p.terminate()
-            return nil
-        }
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        return String(decoding: box.data, as: UTF8.self)
+        guard let r = try? ChildProcess.run("/usr/bin/git", ["--no-optional-locks", "-C", dir] + args, environment: env, timeout: 2),
+              r.status == 0, !r.timedOut else { return nil }
+        return String(decoding: r.stdout, as: UTF8.self)
     }
 
     /// The branch checked out at `dir` (walks up to `.git`, follows `gitdir:`

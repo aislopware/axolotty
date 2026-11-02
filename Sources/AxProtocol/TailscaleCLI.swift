@@ -16,21 +16,8 @@ public enum TailscaleCLI {
     /// Runs the CLI and returns its output, or nil when it fails or takes
     /// longer than `timeout` seconds. Blocks: call it off the main thread.
     public static func run(_ arguments: [String], timeout: Double = 3) -> Data? {
-        guard let path else { return nil }
-        let p = Process()
-        p.executableURL = URL(filePath: path)
-        p.arguments = arguments
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        killer.cancel()
-        return p.terminationStatus == 0 ? data : nil
+        guard let path, let r = try? ChildProcess.run(path, arguments, timeout: timeout), r.status == 0, !r.timedOut else { return nil }
+        return r.stdout
     }
 }
 #endif
