@@ -27,7 +27,9 @@ struct LinkSimTests {
         var lost = 0
         var rate = 0.0
         var lostIn: [UInt64] = []
-        for seed in seeds {
+        for (i, seed) in seeds.enumerated() {
+            // A long run says it is alive, so a watchdog can tell slow from stuck.
+            if seeds.count > 20, i % 20 == 0 { progress("sim seed \(seed) of \(seeds.count)") }
             let r = make(seed).run()
             echoes += r.echoes
             lost += r.lostKeys

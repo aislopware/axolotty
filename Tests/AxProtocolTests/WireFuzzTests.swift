@@ -70,6 +70,7 @@ struct WireFuzzTests {
         let trace = ProcessInfo.processInfo.environment["AXFUZZ_TRACE"] != nil
         for seed in Self.seeds {
             if trace { FileHandle.standardError.write(Data("AXSEED=\(seed)\n".utf8)) }
+            if Self.runs > 20000, seed % 20000 == 0 { progress("fuzz run \(seed) of \(Self.runs)") }
             var rng = SimRNG(seed: seed)
             let encoded = Self.validFrames(&rng).map(Wire.encode)
             var starts: [Int] = []
