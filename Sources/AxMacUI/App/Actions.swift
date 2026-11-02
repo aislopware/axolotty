@@ -59,17 +59,13 @@ import AppKit
     @objc optional func increaseFontSize(_ sender: Any?)
     @objc optional func decreaseFontSize(_ sender: Any?)
     @objc optional func resetFontSize(_ sender: Any?)
-    @objc optional func interruptProgram(_ sender: Any?)
     @objc optional func openInEditor(_ sender: Any?)
     @objc optional func newWorktreeSession(_ sender: Any?)
     @objc optional func resumeClaudeSession(_ sender: Any?)
     @objc optional func removeWorktreeSession(_ sender: Any?)
     @objc optional func revealInFinder(_ sender: Any?)
-    @objc optional func quickSelect(_ sender: Any?)
-    @objc optional func copyMode(_ sender: Any?)
     @objc optional func previousPrompt(_ sender: Any?)
     @objc optional func nextPrompt(_ sender: Any?)
-    @objc optional func copyLastOutput(_ sender: Any?)
     @objc optional func showFind(_ sender: Any?)
     @objc optional func findNext(_ sender: Any?)
     @objc optional func findPrevious(_ sender: Any?)
@@ -157,14 +153,6 @@ struct Command: Identifiable {
 
             Command(id: "clear", title: "Clear Buffer", menu: .edit, key: "k", modifiers: cmd,
                     action: #selector((any AxActions).clearBuffer(_:)), separatorBefore: true),
-            Command(id: "interrupt", title: "Send Interrupt (⌃C)", menu: .edit, key: "", modifiers: [],
-                    action: #selector((any AxActions).interruptProgram(_:))),
-            Command(id: "copy-output", title: "Copy Last Output", menu: .edit, key: "c", modifiers: co,
-                    action: #selector((any AxActions).copyLastOutput(_:))),
-            Command(id: "quick-select", title: "Quick Select", menu: .edit, key: " ", modifiers: cs,
-                    action: #selector((any AxActions).quickSelect(_:))),
-            Command(id: "copy-mode", title: "Copy Mode", menu: .edit, key: "x", modifiers: cs,
-                    action: #selector((any AxActions).copyMode(_:))),
             Command(id: "find", title: "Find…", menu: .edit, key: "f", modifiers: cmd,
                     action: #selector((any AxActions).showFind(_:)), separatorBefore: true),
             Command(id: "find-next", title: "Find Next", menu: .edit, key: "g", modifiers: cmd,

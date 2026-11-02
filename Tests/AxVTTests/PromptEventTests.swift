@@ -11,27 +11,9 @@ import Testing
     }
 }
 
-@Suite struct CommandOutputTests {
+@Suite struct PromptJumpTests {
     private func prompt(_ cmd: String) -> String { "\u{1b}]133;A\u{7}$ \(cmd)\r\n\u{1b}]133;C\u{7}" }
     private let end = "\u{1b}]133;D;0\u{7}"
-
-    @Test func lastOutputIsTheLatestCommands() throws {
-        let t = try VTTerminal(cols: 40, rows: 10)
-        _ = t.write(prompt("ls") + "a.txt\r\nb.txt\r\n" + end + prompt("echo hi") + "hi\r\n" + end + "\u{1b}]133;A\u{7}$ ")
-        #expect(t.lastCommandOutput() == "hi")
-    }
-
-    @Test func aRunningCommandGivesItsOutputSoFar() throws {
-        let t = try VTTerminal(cols: 40, rows: 10)
-        _ = t.write(prompt("make") + "step 1\r\nstep 2\r\n")
-        #expect(t.lastCommandOutput() == "step 1\nstep 2")
-    }
-
-    @Test func noMarksNoOutput() throws {
-        let t = try VTTerminal(cols: 40, rows: 4)
-        _ = t.write("plain text\r\n")
-        #expect(t.lastCommandOutput() == nil)
-    }
 
     @Test func promptJumpsMoveTheViewport() throws {
         let t = try VTTerminal(cols: 20, rows: 4)

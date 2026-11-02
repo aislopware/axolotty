@@ -24,8 +24,6 @@ final class Preferences {
     var showStatusBar: Bool { didSet { defaults.set(showStatusBar, forKey: "showStatusBar") } }
     var dimUnfocusedPanes: Bool { didSet { defaults.set(dimUnfocusedPanes, forKey: "dimUnfocusedPanes") } }
     var confirmUnsafePaste: Bool { didSet { defaults.set(confirmUnsafePaste, forKey: "confirmUnsafePaste") } }
-    /// A mouse selection goes to the pasteboard when the button comes up.
-    var copyOnSelect: Bool { didSet { defaults.set(copyOnSelect, forKey: "copyOnSelect") } }
     /// Claude Code started from Axolotty gets `axolotty mcp` (see the panes, start and drive agents).
     var agentTools: Bool { didSet { defaults.set(agentTools, forKey: "agentTools") } }
     /// How Axolotty starts Claude Code: `--permission-mode`, `--model`,
@@ -57,7 +55,6 @@ final class Preferences {
         showStatusBar = defaults.bool(forKey: "showStatusBar")
         dimUnfocusedPanes = defaults.bool(forKey: "dimUnfocusedPanes")
         confirmUnsafePaste = defaults.bool(forKey: "confirmUnsafePaste")
-        copyOnSelect = defaults.bool(forKey: "copyOnSelect")
         agentTools = defaults.bool(forKey: "agentTools")
     }
 

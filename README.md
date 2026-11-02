@@ -17,12 +17,10 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
   - Reopen a closed session (⇧⌘T) with its Claude conversation resumed.
   - Subagents at work show beside the agent's timer.
 - **Shell integration** for zsh, bash and fish:
-  - prompt jumps (⌘↑ ⌘↓) and Copy Last Output (⌥⌘C);
+  - prompt jumps (⌘↑ ⌘↓);
   - a notice when a long command finishes while you're looking elsewhere;
   - a pane's ended bar, where ↩ restarts the program in place.
 - **On screen:**
-  - Quick Select (⇧⌘Space): label every URL, path, hash and address, then copy it, or open it with ⇧;
-  - Copy Mode (⇧⌘X): select and copy with vi keys, through the scrollback;
   - ⌘-click links and `file:line`;
   - Find (⌘F);
   - a "new lines" pill that never scrolls you away;

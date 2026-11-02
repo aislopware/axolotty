@@ -2,26 +2,6 @@ import AxVT
 import Testing
 
 @Suite struct SelectionTests {
-    /// Copy mode works in screen rows (0 is the oldest scrollback row); the
-    /// scrollbar says which of them the viewport shows.
-    @Test func screenCoordinatesSpanScrollbackAndViewport() throws {
-        let t = try VTTerminal(cols: 20, rows: 3)
-        _ = t.write("one\r\ntwo\r\nthree\r\nfour\r\nfive")
-        let pos = t.scrollPosition
-        #expect(pos.visible == 3)
-        #expect(pos.total == 5)
-        #expect(pos.offset == 2)
-        #expect(pos.total - Int(t.rows) + Int(t.cursor.y) == 4)  // the cursor's screen row
-        t.select(screen: (0, 0), (2, 1))
-        #expect(t.selectionText() == "one\ntwo")
-        t.select(screen: (0, 1), (19, 3))  // whole lines, into the viewport
-        #expect(t.selectionText() == "two\nthree\nfour")
-        t.select(screen: (1, 2), (2, 4), rectangle: true)
-        #expect(t.selectionText() == "hr\nou\niv")
-        t.scrollViewport(.top)
-        #expect(t.scrollPosition.offset == 0)
-    }
-
     let geo = VTSelectionGesture.Geometry(cellWidth: 10, paddingLeft: 0, screenHeight: 100)
 
     @Test func dragSelectsCellsAndCopiesPlainText() throws {

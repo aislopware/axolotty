@@ -357,11 +357,11 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     private func symbol(for c: Command) -> String {
         let map: [String: String] = [
             "palette": "command", "open-quickly": "magnifyingglass", "new-session": "plus.rectangle",
-            "new-worktree": "arrow.triangle.branch", "quick-select": "character.cursor.ibeam", "copy-mode": "keyboard", "go-back": "chevron.backward", "pin-session": "pin", "mark-unread": "circlebadge.fill", "go-forward": "chevron.forward", "resume-claude": "clock.arrow.circlepath", "open-editor": "chevron.left.forwardslash.chevron.right",
-            "reveal-finder": "folder", "copy-output": "doc.on.doc", "prev-prompt": "chevron.up.2", "next-prompt": "chevron.down.2",
+            "new-worktree": "arrow.triangle.branch", "go-back": "chevron.backward", "pin-session": "pin", "mark-unread": "circlebadge.fill", "go-forward": "chevron.forward", "resume-claude": "clock.arrow.circlepath", "open-editor": "chevron.left.forwardslash.chevron.right",
+            "reveal-finder": "folder", "prev-prompt": "chevron.up.2", "next-prompt": "chevron.down.2",
             "new-window": "macwindow.badge.plus", "new-workspace": "folder.badge.plus", "open-folder": "folder",
             "reopen": "arrow.uturn.backward", "close-pane": "xmark.rectangle", "close-session": "xmark.square",
-            "close-window": "xmark", "clear": "eraser", "interrupt": "stop.circle", "toggle-sidebar": "sidebar.left",
+            "close-window": "xmark", "clear": "eraser", "toggle-sidebar": "sidebar.left",
             "toggle-status": "rectangle.bottomthird.inset.filled", "font-bigger": "textformat.size.larger",
             "font-smaller": "textformat.size.smaller", "font-reset": "textformat.size", "top": "arrow.up.to.line",
             "bottom": "arrow.down.to.line", "fullscreen": "arrow.up.left.and.arrow.down.right",

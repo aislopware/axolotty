@@ -149,10 +149,6 @@ final class SettingsWindowController: NSWindowController {
             self?.model.prefs.confirmUnsafePaste = v
         }
 
-        let copySelected = check("Copy text as soon as it’s selected", p.copyOnSelect) { [weak self] v in
-            self?.model.prefs.copyOnSelect = v
-        }
-
         let tools = check("Give Claude Code Axolotty’s tools (MCP)", p.agentTools) { [weak self] v in
             self?.model.prefs.agentTools = v
         }
@@ -181,7 +177,6 @@ final class SettingsWindowController: NSWindowController {
             [label("Option key:"), option],
             [label("Panes:"), dim],
             [label("Paste:"), paste],
-            [label("Selection:"), copySelected],
             [label("Agents:"), tools],
             [label("Claude starts in:"), mode],
             [label("Claude model:"), modelPick],

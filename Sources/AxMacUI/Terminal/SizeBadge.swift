@@ -4,8 +4,7 @@ import AppKit
 /// resize, a divider drag, zoom), so the person can size a pane for a
 /// program that wants a width. Not on the pane's first layout. A float
 /// surface, radius 8, 28 tall, tabular meta type; in on Tick, out 700 ms
-/// after the last change. Also says what a pane command just did ("Copied
-/// 42 lines"), where the eyes are, without a toast.
+/// after the last change.
 final class SizeBadge: Surface {
     private let label = Label("", font: Axo.Font.meta, color: Axo.Color.textSecondary)
     static let height: CGFloat = 28
@@ -29,17 +28,15 @@ final class SizeBadge: Surface {
     var preferredWidth: CGFloat { ceil(label.intrinsicContentSize.width) + 2 * 12 }
 
     /// Shows `cols × rows` and (re)starts the fade-out clock.
-    func show(cols: Int, rows: Int) { show("\(cols) × \(rows)") }
-
-    func show(_ text: String, for seconds: TimeInterval = 0.7) {
-        label.stringValue = text
+    func show(cols: Int, rows: Int) {
+        label.stringValue = "\(cols) × \(rows)"
         needsLayout = true
         if isHidden || alphaValue < 1 {
             isHidden = false
             Axo.Motion.run(Axo.Motion.tick) { animator().alphaValue = 1 }
         }
         fade?.invalidate()
-        fade = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+        fade = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 Axo.Motion.run(Axo.Motion.tickOut, { self.animator().alphaValue = 0 }) { [weak self] in
