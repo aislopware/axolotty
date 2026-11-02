@@ -9,6 +9,27 @@ import Testing
 /// End-to-end: server + holder + shells + clients over the real socket.
 @Suite("Host end to end", .timeLimit(.minutes(1)))
 struct HostTests {
+    @Test func aLongCommandLeavesANotice() async throws {
+        let fx = try await HostFixture { $0.longCommand = 0.2 }
+        let c = try await fx.client()
+        let (_, _, p) = try await makeSession(c)
+        func run(_ cmd: String, code: Int) {
+            c.send(.text(p, "printf '\\033]133;C;cmdline_url=%s\\007' '\(cmd)'; sleep 0.4; printf '\\033]133;D;\(code)\\007\\033]133;A\\007'\n"))
+        }
+        run("make%20test", code: 2)
+        #expect(await until { c.replica?.panes[p]?.lastCommand?.command == "make test" })
+        let info = try #require(c.replica?.panes[p])
+        #expect(info.lastCommand?.exitCode == 2)
+        #expect(info.activity == .error)
+        #expect(info.status.headline?.title == "make test")
+        #expect(info.status.headline?.message.hasPrefix("Exit 2 after") == true)
+        // The next command clears the notice; an editor's end is no news.
+        run("vim%20notes.md", code: 0)
+        #expect(await until { c.replica?.panes[p]?.lastCommand?.command == "vim notes.md" })
+        #expect(c.replica?.panes[p]?.activity == .idle)
+        await fx.tearDown()
+    }
+
     @Test func sessionStreamsIntoAMirror() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()

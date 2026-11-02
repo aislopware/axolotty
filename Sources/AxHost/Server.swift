@@ -15,6 +15,9 @@ public struct ServerConfig: Sendable {
     public var limits = PaneLimits()
     /// How often to look up each pane's foreground process.
     public var foregroundPoll: Duration = .seconds(1)
+    /// A shell command at least this long (seconds) that finishes becomes
+    /// done/error until seen, so a build that ends while you look away tells you.
+    public var longCommand: Double = 10
     /// A plain shell instead of the person's login shell (tests, safe mode):
     /// interactive panes run it bare, commands run as `shell -c line`.
     public var shellOverride: String?
@@ -687,6 +690,54 @@ public actor Server {
     /// When each pane's running command started, and its command line.
     private var commandStarts: [PaneID: (Double, String)] = [:]
 
+    static let commandRecordID = "axolotty.command"
+
+    /// Programs a person sits in rather than waits for: their end is no news.
+    static func isInteractive(_ command: String) -> Bool {
+        let words = command.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        guard var first = words.first.map(String.init) else { return true }
+        var rest = words.dropFirst()
+        while first == "sudo" || first == "exec" || first == "command" || first == "nocorrect", let n = rest.first {
+            first = String(n)
+            rest = rest.dropFirst()
+        }
+        first = String(first.split(separator: "/").last ?? Substring(first))
+        let args = rest.map(String.init)
+        if AgentKind.identify(processName: first, argv: [first] + args) != nil { return true }
+        let operand = args.contains { !$0.hasPrefix("-") }
+        let tty = args.contains { $0 == "-it" || $0 == "-ti" || $0 == "-i" || $0 == "--interactive" || $0 == "-t" }
+        switch first {
+        case "python", "python3", "node", "bun", "deno", "irb", "ghci", "lua", "julia", "R":
+            return !operand  // the REPL, not a script
+        case "docker", "podman", "kubectl", "oc":
+            return tty || args.contains("port-forward") || args.contains("-f") && args.contains("logs")
+        case "tail", "journalctl":
+            return args.contains { $0 == "-f" || $0 == "-F" || $0 == "--follow" }
+        default:
+            return interactive.contains(first)
+        }
+    }
+
+    private static let interactive: Set<String> = [
+        "vi", "vim", "nvim", "nano", "emacs", "hx", "helix", "micro", "kak", "less", "more", "man", "most",
+        "ssh", "mosh", "et", "telnet", "tmux", "screen", "zellij", "top", "htop", "btop", "btm", "glances",
+        "psql", "mysql", "sqlite3", "redis-cli", "mongosh", "lazygit", "lazydocker", "tig", "gitui", "yazi",
+        "ranger", "nnn", "lf", "fzf", "watch", "zsh", "bash", "fish", "sh", "su", "login", "k9s", "ncdu",
+    ]
+
+    static func firstLine(_ s: String) -> String {
+        let line = s.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? s
+        return line.count > 80 ? String(line.prefix(79)) + "…" : line
+    }
+
+    /// "12s", "4m 12s", "1h 24m".
+    static func duration(_ s: Double) -> String {
+        let t = max(0, Int(s.rounded()))
+        if t < 60 { return "\(t)s" }
+        if t < 3600 { return t % 60 == 0 ? "\(t / 60)m" : "\(t / 60)m \(t % 60)s" }
+        return "\(t / 3600)h \(t / 60 % 60)m"
+    }
+
     private func apply(_ events: [VTEvent], to id: PaneID, live: Bool) {
         guard var info = state.panes[id] else { return }
         let before = info.activity
@@ -740,10 +791,20 @@ public actor Server {
                 claudeNative.remove(id)
             case let .prompt(.commandStart(command)):
                 commandStarts[id] = (Date().timeIntervalSince1970, command)
+                // A new command supersedes the last one's notice.
+                info.status.clear(Self.commandRecordID)
             case let .prompt(.commandEnd(code)):
                 guard let (start, command) = commandStarts.removeValue(forKey: id) else { break }
                 let now = Date().timeIntervalSince1970
-                info.lastCommand = CommandRecord(command: command, exitCode: code, duration: now - start, endedAt: now)
+                let record = CommandRecord(command: command, exitCode: code, duration: now - start, endedAt: now)
+                info.lastCommand = record
+                if live, record.duration >= config.longCommand, !Self.isInteractive(command) {
+                    let took = Self.duration(record.duration)
+                    let failed = (code ?? 0) != 0
+                    info.status.report(id: Self.commandRecordID, state: failed ? .error : .done, app: "",
+                                       title: Self.firstLine(command),
+                                       message: failed ? "Exit \(code ?? 1) after \(took)" : "Finished in \(took)")
+                }
             case .prompt:
                 break
             case let .clipboardWrite(text):

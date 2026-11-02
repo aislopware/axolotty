@@ -15,8 +15,8 @@ public struct PaneInfo: Hashable, Codable, Sendable, Identifiable {
     /// The program is reading a hidden line (a password): clients turn on
     /// Secure Keyboard Entry while the pane has focus. nil means no.
     public var readsSecret: Bool?
-    /// The shell's last finished command (OSC 133 C…D), for receipts,
-    /// notifications and `axolotty wait --for command`.
+    /// The shell's last finished command (OSC 133 C…D), for the long-command
+    /// notice and `axolotty wait --for command`.
     public var lastCommand: CommandRecord?
     /// Grid size of the authoritative terminal.
     public var cols: UInt16
