@@ -40,6 +40,8 @@ public struct PaneLimits: Sendable {
 /// attach, resume and checkpoint relies on.
 final class PaneHost: @unchecked Sendable {
     let id: PaneID
+    /// This pane's lane on every link: its frames stay in order, and never wait behind another pane's.
+    private var lane: Int { FramedConnection.lane(id) }
     let pid: Int32
     let queue: DispatchQueue
     private let master: Int32
@@ -230,12 +232,12 @@ final class PaneHost: @unchecked Sendable {
         let frames = Self.outputFrames(id, bytes, at: offset)
         let head = offset + UInt64(bytes.count)
         for sub in subscribers.values where !sub.resyncing {
-            if sub.conn.pendingBytes > limits.lagBytes || head &- sub.acked > UInt64(limits.ackLagBytes) {
+            if sub.conn.pendingBytes(lane: lane) > limits.lagBytes || head &- sub.acked > UInt64(limits.ackLagBytes) {
                 sub.resyncing = true
                 armResync()
                 continue
             }
-            for f in frames { sub.conn.send(f) }
+            for f in frames { sub.conn.send(f, lane: lane) }
         }
     }
 
@@ -259,8 +261,8 @@ final class PaneHost: @unchecked Sendable {
         queue.async { [self] in
             let head = ring.head
             if let have, have >= ring.tail, have <= head, let tail = ring.read(from: have) {
-                conn.send(HostMessage.attached(id, cols: terminal.cols, rows: terminal.rows, at: have, resume: true))
-                for f in Self.outputFrames(id, tail, at: have) { conn.send(f) }
+                conn.send(HostMessage.attached(id, cols: terminal.cols, rows: terminal.rows, at: have, resume: true), lane: lane)
+                for f in Self.outputFrames(id, tail, at: have) { conn.send(f, lane: lane) }
             } else {
                 sendSnapshot(to: conn)
             }
@@ -281,17 +283,17 @@ final class PaneHost: @unchecked Sendable {
     private func sendSnapshot(to conn: FramedConnection) {
         let head = ring.head
         guard let snap = try? terminal.snapshot() else {
-            conn.send(HostMessage.error("snapshot failed for \(id)"))
+            conn.send(HostMessage.error("snapshot failed for \(id)"), lane: lane)
             return
         }
-        conn.send(HostMessage.attached(id, cols: terminal.cols, rows: terminal.rows, at: head, resume: false))
+        conn.send(HostMessage.attached(id, cols: terminal.cols, rows: terminal.rows, at: head, resume: false), lane: lane)
         var at = 0
         repeat {
             let n = min(Wire.maxData, snap.count - at)
             var flags: FrameFlags = []
             if at == 0 { flags.insert(.first) }
             if at + n == snap.count { flags.insert(.last) }
-            conn.send(Wire.encode(.snapshot(pane: id, at: head, flags: flags, bytes: Data(snap[at ..< at + n]))))
+            conn.send(Wire.encode(.snapshot(pane: id, at: head, flags: flags, bytes: Data(snap[at ..< at + n]))), lane: lane)
             at += n
         } while at < snap.count
     }
@@ -305,7 +307,7 @@ final class PaneHost: @unchecked Sendable {
             for sub in subscribers.values where sub.resyncing {
                 if sub.conn.isClosed {
                     subscribers[ObjectIdentifier(sub.conn)] = nil
-                } else if sub.conn.pendingBytes < 64 << 10 {
+                } else if sub.conn.pendingBytes(lane: lane) < 64 << 10 {
                     // Skip the backlog: a fresh snapshot at the current head.
                     sendSnapshot(to: sub.conn)
                     sub.acked = ring.head
@@ -404,7 +406,7 @@ final class PaneHost: @unchecked Sendable {
             _ = ax_pty_resize(master, ws)
             terminal.resize(cols: cols, rows: rows, cellWidth: cellWidth, cellHeight: cellHeight)
             let msg = HostMessage.resized(id, cols: cols, rows: rows, at: ring.head)
-            for sub in subscribers.values where !sub.resyncing { sub.conn.send(msg) }
+            for sub in subscribers.values where !sub.resyncing { sub.conn.send(msg, lane: lane) }
         }
     }
 

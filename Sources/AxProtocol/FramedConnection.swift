@@ -9,18 +9,76 @@ import Synchronization
 ///   source drains them. `pendingBytes` tells producers how far behind the peer
 ///   is (the host uses it to decide when to resync a slow client instead of
 ///   buffering without bound).
+/// - Every send goes into a lane: lane 0 (control) always goes first, then
+///   whichever lane has the least queued, a frame at a time. Each pane has
+///   its own lane, so a pane pouring out a build log never holds back the
+///   echo of a key typed into another (Slopty got the same from a QUIC
+///   stream per session). Order holds within a lane, never across lanes.
 public final class FramedConnection: @unchecked Sendable {
     public let fd: Int32
     public let queue: DispatchQueue
     private let readSource: any DispatchSourceRead
     private let writeSource: any DispatchSourceWrite
 
-    private struct Out {
+    /// One lane's queue: whole frames, oldest first.
+    private struct Lane {
         var chunks: [Data] = []
-        var head = 0  // bytes of chunks[0] already written
+        var first = 0
+        var bytes = 0
+        var isEmpty: Bool { first == chunks.count }
+
+        mutating func push(_ d: Data) {
+            chunks.append(d)
+            bytes += d.count
+        }
+
+        mutating func pop() -> Data {
+            let d = chunks[first]
+            first += 1
+            bytes -= d.count
+            if first == chunks.count {
+                chunks.removeAll(keepingCapacity: true)
+                first = 0
+            } else if first >= 256 {
+                chunks.removeFirst(first)
+                first = 0
+            }
+            return d
+        }
+    }
+
+    private struct Out {
+        var lanes: [Int: Lane] = [:]
+        /// The frame being written (a frame is never interleaved with another).
+        var current: Data?
+        var currentLane = 0
+        var head = 0  // bytes of `current` already written
         var pending = 0
         var writing = false
         var closed = false
+
+        /// The lane that goes next: control first, then the least queued.
+        /// `bulk` when even that lane has a backlog (every lane is pouring).
+        func choose() -> (lane: Int, bulk: Bool)? {
+            if let c = lanes[0], !c.isEmpty { return (0, false) }
+            var pick: Int?
+            var least = Int.max
+            for (k, l) in lanes where !l.isEmpty && l.bytes < least {
+                least = l.bytes
+                pick = k
+            }
+            return pick.map { ($0, least > FramedConnection.interactiveBytes) }
+        }
+
+        mutating func next(paced: Bool) -> Data? {
+            if let current { return current }
+            guard let (pick, bulk) = choose(), !(paced && bulk) else { return nil }
+            current = lanes[pick]!.pop()
+            currentLane = pick
+            if lanes[pick]!.isEmpty, pick != 0 { lanes[pick] = nil }
+            head = 0
+            return current
+        }
     }
 
     private let out = Mutex(Out())
@@ -31,6 +89,17 @@ public final class FramedConnection: @unchecked Sendable {
     private var started = false
 
     public var pendingBytes: Int { out.withLock { $0.pending } }
+
+    /// What is queued in one lane (a pane's backlog on this link).
+    public func pendingBytes(lane: Int) -> Int {
+        out.withLock { o in (o.lanes[lane]?.bytes ?? 0) + (o.currentLane == lane && o.current != nil ? (o.current!.count - o.head) : 0) }
+    }
+
+    /// The lane for a stream of frames that must stay in order (one pane's).
+    public static func lane<K: Hashable>(_ key: K) -> Int {
+        let h = key.hashValue
+        return h == 0 ? 1 : h
+    }
     public var isClosed: Bool { closedFlag.load(ordering: .acquiring) }
 
     /// Bytes to skip up to and including `preamble` before any frame (a
@@ -66,11 +135,11 @@ public final class FramedConnection: @unchecked Sendable {
         readSource.resume()
     }
 
-    public func send(_ data: Data) {
+    public func send(_ data: Data, lane: Int = 0) {
         guard !data.isEmpty else { return }
         let kick = out.withLock { o -> Bool in
             guard !o.closed else { return false }
-            o.chunks.append(data)
+            o.lanes[lane, default: Lane()].push(data)
             o.pending += data.count
             if o.writing { return false }
             o.writing = true
@@ -79,10 +148,10 @@ public final class FramedConnection: @unchecked Sendable {
         if kick { queue.async { [weak self] in self?.flush() } }
     }
 
-    public func send(_ frame: Frame) { send(Wire.encode(frame)) }
+    public func send(_ frame: Frame, lane: Int = 0) { send(Wire.encode(frame), lane: lane) }
 
-    public func send(_ message: HostMessage) {
-        if let d = try? MessageCodec.frame(message) { send(d) }
+    public func send(_ message: HostMessage, lane: Int = 0) {
+        if let d = try? MessageCodec.frame(message) { send(d, lane: lane) }
     }
 
     public func send(_ message: ClientMessage) {
@@ -93,7 +162,8 @@ public final class FramedConnection: @unchecked Sendable {
         guard !closedFlag.exchange(true, ordering: .acquiringAndReleasing) else { return }
         out.withLock { o in
             o.closed = true
-            o.chunks.removeAll()
+            o.lanes.removeAll()
+            o.current = nil
             o.head = 0
             o.pending = 0
             o.writing = false
@@ -163,20 +233,80 @@ public final class FramedConnection: @unchecked Sendable {
         return rest
     }
 
+    // MARK: Pacing (TCP links)
+
+    /// A lane with no more than this queued is interactive (an echo, a
+    /// prompt): never paced.
+    static let interactiveBytes = 4 << 10
+
+    /// Delay-based pacing for bulk output on a TCP link, after LEDBAT: while
+    /// the path's round trip sits near its floor, bulk may keep up to `cap`
+    /// bytes in the socket (in flight plus unsent); once queueing shows up
+    /// as extra delay, the cap shrinks. TCP alone fills every buffer on the
+    /// path (a Wi-Fi driver's especially), and a key's echo then queues
+    /// behind a build log already on the wire.
+    private struct Pacer {
+        var cap = 256 << 10
+        var floor: UInt32 = .max
+        var floorAt = ContinuousClock.now
+        var adjustedAt = ContinuousClock.now
+    }
+
+    private var pacer: Pacer?
+    private var retryArmed = false
+
+    /// Paces bulk lanes on this (TCP) socket. Call before `start`.
+    public func pace() { pacer = Pacer() }
+
+    /// Whether bulk output should wait now (on queue).
+    private func bulkMustWait() -> Bool {
+        guard var p = pacer else { return false }
+        var info = tcp_connection_info()
+        var len = socklen_t(MemoryLayout<tcp_connection_info>.size)
+        guard getsockopt(fd, IPPROTO_TCP, TCP_CONNECTION_INFO, &info, &len) == 0 else { return false }
+        let now = ContinuousClock.now
+        let rtt = info.tcpi_rttcur
+        if rtt > 0, rtt <= p.floor || now - p.floorAt > .seconds(10) {
+            p.floor = rtt
+            p.floorAt = now
+        }
+        if now - p.adjustedAt > .milliseconds(5), p.floor != .max {
+            p.adjustedAt = now
+            if rtt > p.floor + 3 {
+                p.cap = max(32 << 10, p.cap * 3 / 4)
+            } else {
+                p.cap = min(8 << 20, p.cap + (32 << 10))
+            }
+        }
+        pacer = p
+        return Int(info.tcpi_snd_sbbytes) >= p.cap
+    }
+
     // MARK: Writing (on queue)
 
     private var writeSourceActive = false
 
     private func flush() {
         while true {
+            let paced = pacer != nil && bulkMustWait()
             let next = out.withLock { o -> (Data, Int)? in
-                guard !o.closed, let first = o.chunks.first else {
+                guard !o.closed, let chunk = o.next(paced: paced) else {
                     o.writing = false
                     return nil
                 }
-                return (first, o.head)
+                return (chunk, o.head)
             }
             guard let (chunk, head) = next else {
+                if paced, !retryArmed, out.withLock({ !$0.closed && $0.choose() != nil }) {
+                    // Bulk waits for the path's queue to drain; look again
+                    // shortly. A new send still kicks a flush at once, so an
+                    // echo never waits on this.
+                    retryArmed = true
+                    queue.asyncAfter(deadline: .now() + .milliseconds(2)) { [weak self] in
+                        self?.retryArmed = false
+                        self?.flush()
+                    }
+                }
                 if writeSourceActive {
                     writeSource.suspend()
                     writeSourceActive = false
@@ -190,7 +320,7 @@ public final class FramedConnection: @unchecked Sendable {
                 out.withLock { o in
                     o.pending -= n
                     if head + n == chunk.count {
-                        o.chunks.removeFirst()
+                        o.current = nil
                         o.head = 0
                     } else {
                         o.head = head + n
@@ -327,6 +457,10 @@ public enum TCPSocket {
         _ = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, socklen_t(MemoryLayout<Int32>.size))
         var idle: Int32 = 10
         _ = setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, socklen_t(MemoryLayout<Int32>.size))
+        // Keep little unsent data in the kernel, so the lanes above (not one
+        // FIFO socket buffer) decide what goes out next.
+        var lowat: Int32 = 16 << 10
+        _ = setsockopt(fd, IPPROTO_TCP, TCP_NOTSENT_LOWAT, &lowat, socklen_t(MemoryLayout<Int32>.size))
         var tos: Int32 = 0xB8  // DSCP EF: expedited forwarding
         _ = setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, socklen_t(MemoryLayout<Int32>.size))
         _ = setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, &tos, socklen_t(MemoryLayout<Int32>.size))

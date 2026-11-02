@@ -341,6 +341,7 @@ public actor Server {
                     let peer = TCPSocket.peerAddress(c) ?? ""
                     admission.async {
                         let conn = FramedConnection(fd: c, label: "tailnet \(peer)")
+                        conn.pace()
                         if gate.admits(peer) {
                             Server.serve(conn, sink: sink)
                         } else {
