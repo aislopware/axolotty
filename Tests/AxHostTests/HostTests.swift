@@ -33,7 +33,7 @@ struct HostTests {
         a.send(.text(p, "printf 'late-%s\\n' joiner\n"))
         #expect(await waitScreen(ma, contains: "late-joiner"))
 
-        let b = try await fx.client("b", platform: .iOS)
+        let b = try await fx.client("b")
         let mb = b.attach(p)
         #expect(await waitScreen(mb, contains: "late-joiner"), "snapshot carries the screen")
         b.send(.text(p, "echo from-b\n"))
@@ -323,7 +323,7 @@ struct HostTests {
         let a = try await fx.client("driver")
         let (_, _, p) = try await makeSession(a)
         let ma = a.attach(p)
-        let b = try await fx.client("watcher", platform: .iOS)
+        let b = try await fx.client("watcher")
         let mb = b.attach(p)
         #expect(await until { mb.isReady })
 

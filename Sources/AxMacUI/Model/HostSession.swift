@@ -36,7 +36,7 @@ final class HostSession: Identifiable {
         self.endpoint = endpoint
         self.isLocal = isLocal
         connection = HostConnection(endpoint: endpoint,
-                                    hello: ClientHello(client: client, name: clientName, platform: .macOS))
+                                    hello: ClientHello(client: client, name: clientName))
     }
 
     var name: String { state?.name ?? (isLocal ? "This Mac" : endpoint.description) }

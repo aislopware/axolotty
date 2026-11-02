@@ -254,7 +254,7 @@ public final class HostConnection: @unchecked Sendable {
         try result.get()
     }
 
-    public func capture(_ pane: PaneID, format: CaptureFormat = .plain, scrollback: Bool = false) async -> String? {
+    public func capture(_ pane: PaneID, scrollback: Bool = false) async -> String? {
         let token = UUID()
         return await withCheckedContinuation { c in
             let conn = state.withLock { s -> FramedConnection? in
@@ -263,7 +263,7 @@ public final class HostConnection: @unchecked Sendable {
                 return conn
             }
             if let conn {
-                conn.send(ClientMessage.capture(token, pane, format, scrollback: scrollback))
+                conn.send(ClientMessage.capture(token, pane, scrollback: scrollback))
             } else {
                 c.resume(returning: nil)
             }

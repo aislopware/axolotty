@@ -201,15 +201,3 @@ ssize_t ax_write_some(int fd, const void *buf, size_t len) {
   }
   return (ssize_t)done;
 }
-
-int ax_reap(pid_t pid, int *status) {
-  int st = 0;
-  pid_t r;
-  do {
-    r = waitpid(pid, &st, WNOHANG);
-  } while (r < 0 && errno == EINTR);
-  if (r < 0) return -errno;
-  if (r == 0) return 0;
-  if (status) *status = st;
-  return 1;
-}

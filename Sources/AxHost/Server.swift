@@ -15,8 +15,6 @@ public struct ServerConfig: Sendable {
     public var limits = PaneLimits()
     /// How often to look up each pane's foreground process.
     public var foregroundPoll: Duration = .seconds(1)
-    /// Close a pane whose program exits with status 0.
-    public var closeOnCleanExit = true
     /// A plain shell instead of the person's login shell (tests, safe mode):
     /// interactive panes run it bare, commands run as `shell -c line`.
     public var shellOverride: String?
@@ -388,8 +386,8 @@ public actor Server {
             panes[id]?.clear()
         case let .seen(id):
             markSeen(id)
-        case let .capture(token, id, format, scrollback):
-            link.conn.send(HostMessage.captured(token, panes[id]?.capture(format, scrollback: scrollback)))
+        case let .capture(token, id, scrollback):
+            link.conn.send(HostMessage.captured(token, panes[id]?.capture(scrollback: scrollback)))
         case let .ping(n):
             link.conn.send(HostMessage.pong(n))
         }
@@ -660,7 +658,8 @@ public actor Server {
     private func paneExited(_ id: PaneID, _ status: ChildStatus) {
         guard var info = state.panes[id] else { return }
         let code = status.exitCode ?? 0
-        if code == 0, config.closeOnCleanExit {
+        // A clean exit closes the pane; a failed one stays to show why.
+        if code == 0 {
             Task { await closePane(id) }
             return
         }
@@ -711,9 +710,6 @@ public actor Server {
             guard var info = state.panes[id] else { return }
             info.ports = ports.isEmpty ? nil : ports
             if info != state.panes[id] { commit([.pane(info)]) }
-        case let .ended(id):
-            // The terminal closed; the exit status follows from the holder.
-            _ = id
         }
     }
 

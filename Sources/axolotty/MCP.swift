@@ -104,7 +104,7 @@ final class MCPServer: Sendable {
                                keys: try Ops.keys(a.string("keys")), force: a.bool("force", false))
             return "Sent"
         case "read_pane":
-            var text = try await Ops.capture(pane: a.string("pane"), format: .plain, scrollback: a.bool("scrollback", false))
+            var text = try await Ops.capture(pane: a.string("pane"), scrollback: a.bool("scrollback", false))
             let last = Int(a.number("last_lines") ?? 120)
             if last > 0 {
                 let lines = text.split(separator: "\n", omittingEmptySubsequences: false)

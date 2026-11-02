@@ -23,7 +23,7 @@ enum Ops {
 
     static func connect(subscribe: Bool = false) async throws(OpError) -> (HostConnection, HostState) {
         let c = HostConnection(endpoint: .unix(path: socketPath),
-                               hello: ClientHello(client: ClientID(), name: "cli", platform: .cli, subscribe: subscribe))
+                               hello: ClientHello(client: ClientID(), name: "cli", subscribe: subscribe))
         do { try await c.connect(reconnect: false) } catch {
             throw OpError(message: "host unreachable at \(socketPath)", exit: .unreachable)
         }
@@ -122,10 +122,10 @@ enum Ops {
 
     // MARK: Output
 
-    static func capture(pane: String?, format: CaptureFormat, scrollback: Bool) async throws(OpError) -> String {
+    static func capture(pane: String?, scrollback: Bool) async throws(OpError) -> String {
         let (c, st) = try await connect()
         let p = try resolvePane(pane, in: st)
-        guard let text = await c.capture(p, format: format, scrollback: scrollback) else { throw .failed("capture failed") }
+        guard let text = await c.capture(p, scrollback: scrollback) else { throw .failed("capture failed") }
         return text
     }
 

@@ -14,7 +14,6 @@ enum PaneSignal: Sendable {
     case foreground(PaneID, program: String, agent: AgentKind?, cwd: String?, leader: Int32, argv: [String])
     case readsSecret(PaneID, Bool)
     case ports(PaneID, [UInt16])
-    case ended(PaneID)
 }
 
 /// Tunables (server-side only; clients need not agree).
@@ -222,7 +221,6 @@ final class PaneHost: @unchecked Sendable {
         readSource?.cancel()
         readSource = nil
         checkpoint()
-        signals.yield(.ended(id))
     }
 
     private func fanOut(_ bytes: Data, at offset: UInt64) {
@@ -420,15 +418,11 @@ final class PaneHost: @unchecked Sendable {
                            palette: a.palette.map { ($0.r, $0.g, $0.b) })
     }
 
-    func capture(_ format: CaptureFormat, scrollback: Bool) -> String {
+    /// The pane's text, plain; the visible screen unless `scrollback`.
+    func capture(scrollback: Bool) -> String {
         queue.sync {
-            let f: VTTerminal.TextFormat = switch format {
-            case .plain: .plain
-            case .vt: .vt
-            case .html: .html
-            }
-            let full = terminal.text(f, trim: true, unwrap: format == .plain)
-            guard !scrollback, format == .plain else { return full }
+            let full = terminal.text(.plain, trim: true, unwrap: true)
+            guard !scrollback else { return full }
             // Visible screen only: the last `rows` lines.
             let lines = full.split(separator: "\n", omittingEmptySubsequences: false)
             return lines.suffix(Int(terminal.rows)).joined(separator: "\n")

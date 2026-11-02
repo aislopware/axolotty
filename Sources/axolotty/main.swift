@@ -24,7 +24,7 @@ let usage = """
                                           enter esc tab space backspace delete up down left
                                           right home end pageup pagedown f1-f12)
                                           send refuses a pane waiting for its person; --force
-      capture [--pane P] [--scrollback] [--format plain|vt|html]
+      capture [--pane P] [--scrollback]   the pane's screen (and history) as plain text
       wait [--pane P] --for done|idle|blocked|error|exit [--timeout SEC]
       wait --pane P1,P2… [--all] --for GOAL
                                           any of several panes (or, with --all, every one);
@@ -146,10 +146,9 @@ case "send":
     }
 
 case "capture":
-    let o = Options(argv, valued: ["pane", "format"], switches: ["scrollback"])
+    let o = Options(argv, valued: ["pane"], switches: ["scrollback"])
     await run {
-        guard let format = CaptureFormat(rawValue: o.flags["format"] ?? "plain") else { throw OpError.usage("unknown format") }
-        print(try await Ops.capture(pane: o.flags["pane"], format: format, scrollback: o.switches.contains("scrollback")))
+        print(try await Ops.capture(pane: o.flags["pane"], scrollback: o.switches.contains("scrollback")))
     }
 
 case "close":

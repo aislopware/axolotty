@@ -51,7 +51,7 @@ import Testing
         let intent = Intent.split(SessionID(), target: pane, new: PaneID(), axis: .vertical, before: false,
                                   recipe: SpawnRecipe(command: ["claude"], cwd: "/tmp", env: ["A": "1"]))
         let msgs: [ClientMessage] = [
-            .hello(ClientHello(client: ClientID(), name: "Mac", platform: .macOS)),
+            .hello(ClientHello(client: ClientID(), name: "Mac")),
             .intent(UUID(), intent),
             .key(pane, KeyInput(key: 30, mods: KeyInput.ctrl, text: "c")),
         ]
@@ -63,7 +63,7 @@ import Testing
             #expect(try MessageCodec.frame(back) == MessageCodec.frame(m))
         }
         var state = HostState(host: HostID(), name: "studio")
-        state.apply(.renamed("studio 2"))
+        state.apply(.workspace(WorkspaceInfo(id: WorkspaceID(), name: "code", root: "/tmp")))
         let welcome = HostMessage.welcome(HostHello(host: state.host, name: "studio", epoch: UUID(), state: state))
         var dec = FrameDecoder()
         dec.feed(try MessageCodec.frame(welcome))
