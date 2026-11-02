@@ -77,8 +77,6 @@ public struct CommandRecord: Hashable, Codable, Sendable {
         self.duration = duration
         self.endedAt = endedAt
     }
-
-    public var failed: Bool { (exitCode ?? 0) != 0 }
 }
 
 /// The OSC 9;4 state behind `PaneInfo.progress`.
