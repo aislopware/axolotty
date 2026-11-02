@@ -29,18 +29,6 @@ import Testing
         #expect(d[0].rect == Rect(x: 500, y: 0, width: 1, height: 601))
     }
 
-    @Test func neighborsFollowGeometry() {
-        // a | (b / c)
-        let t = SplitTree.leaf(a).splitting(a, with: b, axis: .horizontal).splitting(b, with: c, axis: .vertical)
-        // b and c overlap a equally and are equally far from its centre: either is fine.
-        #expect([b, c].contains(t.neighbor(of: a, .right)))
-        #expect(t.neighbor(of: b, .left) == a)
-        #expect(t.neighbor(of: c, .left) == a)
-        #expect(t.neighbor(of: b, .down) == c)
-        #expect(t.neighbor(of: c, .up) == b)
-        #expect(t.neighbor(of: a, .left) == nil)
-    }
-
     @Test func resizeMovesNearestMatchingDividerAndClamps() {
         let t = SplitTree.leaf(a).splitting(a, with: b, axis: .horizontal).splitting(b, with: c, axis: .vertical)
         guard case let .split(_, r, _, inner) = t.resizing(c, axis: .horizontal, by: 0.2) else { Issue.record(); return }
@@ -78,11 +66,6 @@ import Testing
             let f = tree.frames(in: area)
             let sum = f.values.reduce(0.0) { $0 + $1.width * $1.height }
             #expect(abs(sum - 3000 * 2000) < 1, "frames must tile the area")
-            for id in ids {
-                for dir in SplitTree.Direction.allCases {
-                    if let n = tree.neighbor(of: id, dir) { #expect(n != id && tree.contains(n)) }
-                }
-            }
         }
     }
 

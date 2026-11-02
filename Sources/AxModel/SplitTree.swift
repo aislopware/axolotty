@@ -13,8 +13,6 @@ public indirect enum SplitTree: Hashable, Codable, Sendable {
         case vertical
     }
 
-    public enum Direction: String, Hashable, Codable, Sendable, CaseIterable { case left, right, up, down }
-
     public static let minShare = 0.1
 
     // MARK: Queries
@@ -192,32 +190,6 @@ public indirect enum SplitTree: Hashable, Codable, Sendable {
             a.collectDividers(in: Rect(x: rect.x, y: rect.y, width: rect.width, height: ha), gap: gap, into: &out)
             b.collectDividers(in: Rect(x: rect.x, y: rect.y + ha + gap, width: rect.width, height: avail - ha), gap: gap, into: &out)
         }
-    }
-
-    /// The pane spatially next to `from` in `direction`: among panes whose edge
-    /// touches ours on that side, the one overlapping most with our span (ties:
-    /// nearest to our centre).
-    public func neighbor(of from: PaneID, _ direction: Direction) -> PaneID? {
-        let unit = Rect(x: 0, y: 0, width: 10_000, height: 10_000)
-        let f = frames(in: unit)
-        guard let me = f[from] else { return nil }
-        var best: (PaneID, Double, Double)?
-        for (id, r) in f where id != from {
-            let gapDist: Double
-            let overlap: Double
-            switch direction {
-            case .left: gapDist = me.minX - r.maxX; overlap = min(me.maxY, r.maxY) - max(me.minY, r.minY)
-            case .right: gapDist = r.minX - me.maxX; overlap = min(me.maxY, r.maxY) - max(me.minY, r.minY)
-            case .up: gapDist = me.minY - r.maxY; overlap = min(me.maxX, r.maxX) - max(me.minX, r.minX)
-            case .down: gapDist = r.minY - me.maxY; overlap = min(me.maxX, r.maxX) - max(me.minX, r.minX)
-            }
-            guard gapDist >= -0.5, gapDist < 1.5, overlap > 0 else { continue }
-            let centreDist = abs(direction == .left || direction == .right ? r.midY - me.midY : r.midX - me.midX)
-            if best == nil || overlap > best!.1 + 0.5 || (abs(overlap - best!.1) <= 0.5 && centreDist < best!.2) {
-                best = (id, overlap, centreDist)
-            }
-        }
-        return best?.0
     }
 }
 

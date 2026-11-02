@@ -41,16 +41,7 @@ import AppKit
     @objc optional func closePane(_ sender: Any?)
     @objc optional func focusPreviousPane(_ sender: Any?)
     @objc optional func focusNextPane(_ sender: Any?)
-    @objc optional func focusPaneLeft(_ sender: Any?)
-    @objc optional func focusPaneRight(_ sender: Any?)
-    @objc optional func focusPaneUp(_ sender: Any?)
-    @objc optional func focusPaneDown(_ sender: Any?)
-    @objc optional func resizePaneLeft(_ sender: Any?)
-    @objc optional func resizePaneRight(_ sender: Any?)
-    @objc optional func resizePaneUp(_ sender: Any?)
-    @objc optional func resizePaneDown(_ sender: Any?)
     @objc optional func toggleZoom(_ sender: Any?)
-    @objc optional func equalizePanes(_ sender: Any?)
 
     // Terminal
     @objc optional func clearBuffer(_ sender: Any?)
@@ -123,7 +114,6 @@ struct Command: Identifiable {
         let co: NSEvent.ModifierFlags = [.command, .option]
         let cc: NSEvent.ModifierFlags = [.command, .control]
         let up = fn(NSUpArrowFunctionKey), down = fn(NSDownArrowFunctionKey)
-        let left = fn(NSLeftArrowFunctionKey), right = fn(NSRightArrowFunctionKey)
         var list: [Command] = [
             Command(id: "palette", title: "Command Palette…", menu: .view, key: "p", modifiers: cs,
                     action: #selector((any AxActions).showCommandPalette(_:)), inPalette: false),
@@ -218,26 +208,8 @@ struct Command: Identifiable {
                     action: #selector((any AxActions).focusPreviousPane(_:)), separatorBefore: true),
             Command(id: "next-pane", title: "Focus Next Pane", menu: .pane, key: "]", modifiers: cmd,
                     action: #selector((any AxActions).focusNextPane(_:))),
-            Command(id: "focus-left", title: "Focus Pane Left", menu: .pane, key: left, modifiers: co,
-                    action: #selector((any AxActions).focusPaneLeft(_:))),
-            Command(id: "focus-right", title: "Focus Pane Right", menu: .pane, key: right, modifiers: co,
-                    action: #selector((any AxActions).focusPaneRight(_:))),
-            Command(id: "focus-up", title: "Focus Pane Above", menu: .pane, key: up, modifiers: co,
-                    action: #selector((any AxActions).focusPaneUp(_:))),
-            Command(id: "focus-down", title: "Focus Pane Below", menu: .pane, key: down, modifiers: co,
-                    action: #selector((any AxActions).focusPaneDown(_:))),
-            Command(id: "resize-left", title: "Move Divider Left", menu: .pane, key: left, modifiers: cc,
-                    action: #selector((any AxActions).resizePaneLeft(_:)), separatorBefore: true),
-            Command(id: "resize-right", title: "Move Divider Right", menu: .pane, key: right, modifiers: cc,
-                    action: #selector((any AxActions).resizePaneRight(_:))),
-            Command(id: "resize-up", title: "Move Divider Up", menu: .pane, key: up, modifiers: cc,
-                    action: #selector((any AxActions).resizePaneUp(_:))),
-            Command(id: "resize-down", title: "Move Divider Down", menu: .pane, key: down, modifiers: cc,
-                    action: #selector((any AxActions).resizePaneDown(_:))),
             Command(id: "zoom", title: "Zoom Pane", menu: .pane, key: "\r", modifiers: cs,
                     action: #selector((any AxActions).toggleZoom(_:)), separatorBefore: true),
-            Command(id: "equalize", title: "Equalize Panes", menu: .pane, key: "=", modifiers: cc,
-                    action: #selector((any AxActions).equalizePanes(_:))),
         ]
         for i in 1 ... 9 {
             list.append(Command(id: "session-\(i)", title: i == 9 ? "Select Last Session" : "Select Session \(i)",

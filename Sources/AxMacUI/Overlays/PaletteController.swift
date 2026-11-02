@@ -368,10 +368,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             "prev-session": "chevron.up", "next-session": "chevron.down", "next-attention": "bell.badge",
             "prev-attention": "bell", "rename-session": "pencil", "split-right": "rectangle.split.2x1",
             "split-down": "rectangle.split.1x2", "prev-pane": "arrow.left.square", "next-pane": "arrow.right.square",
-            "focus-left": "arrow.left", "focus-right": "arrow.right", "focus-up": "arrow.up", "focus-down": "arrow.down",
-            "resize-left": "arrow.left.and.line.vertical.and.arrow.right", "resize-right": "arrow.left.and.line.vertical.and.arrow.right",
-            "resize-up": "arrow.up.and.line.horizontal.and.arrow.down", "resize-down": "arrow.up.and.line.horizontal.and.arrow.down",
-            "zoom": "arrow.up.left.and.arrow.down.right.square", "equalize": "square.split.2x2",
+            "zoom": "arrow.up.left.and.arrow.down.right.square",
         ]
         return map[c.id] ?? "command"
     }
