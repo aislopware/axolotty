@@ -1,5 +1,8 @@
 # Slopty feature inventory, mapped against Axolotty (2026-11-02)
 
+> **Not a backlog.** This is a record of what Slopty had. Nothing here gets built because it's
+> listed. Axolotty keeps only what it uses and loves (Amp's rule); see `prune-2026-11-02.md`.
+
 **Purpose.** List what Slopty ships, mark what it only planned, and say for each feature what
 Axolotty already has. The aim is to decide what Axolotty still has to build.
 

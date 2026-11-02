@@ -53,9 +53,14 @@ The probe waits 2 s and loses to an earlier DA1 reply. It is turned off by `CLAU
    - the messaging socket;
    - an inspector or approvals in the GUI (the TUI does approvals).
 
-## Open, worth doing next
+## Open
 
-- **Peek & Reply** (slop-desk ⌘⌥J): a card with the waiting agent's question and recent output, answered by typing into its TUI without moving focus. The thing slop-desk users would miss most.
-- **A clickable rollup** of working, waiting and done at the top of the sidebar (slop-desk's rail marks).
-- **Sounds you can choose** per state, and whether they play while the app is in front.
+Decided 2026-11-02, under Amp's rule (a feature stays only if we use it and love it):
+
+- **Peek & Reply: dropped.** The owner didn't find it useful enough. Go to Session (⌘J) and ⇧⌘U take you to the waiting pane.
+- **A rollup: already there.** The sidebar footer's census counts waiting, failed and working sessions, and each count jumps to the next one.
+- **Sounds per state: dropped.** One system notification is enough, and none fires for a finish while the app is in front.
+
+Still open:
+
 - **A tmux passthrough for 7501** when tmux PR #5830 lands: nothing to do but keep the probe reply first.
