@@ -134,6 +134,11 @@ socket and needs neither. pf and dummynet need root.
 - the socket suites repeated until a failure;
 - the simulation and the fuzzer at their long budgets.
 
+It tests HEAD in a worktree of its own (`$TMPDIR/axolotty-deep`, with its
+own `.build`). Work in progress can't break a half-hour run by failing to
+compile under it, and builds here don't queue behind its lock. Commit
+before running it.
+
 ## What the long runs found
 
 The gate's budgets passed every time. Each of these bugs showed up only under

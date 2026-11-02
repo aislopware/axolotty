@@ -6,8 +6,28 @@
 #
 #   scripts/deep.sh            everything (about 25 minutes)
 #   scripts/deep.sh flakes     one step: tsan | asan | flakes | sim | fuzz
+#
+# It tests HEAD, in a worktree of its own with its own .build (AXDEEP_TREE,
+# default $TMPDIR/axolotty-deep). Edits made while it runs can't reach it,
+# and builds in this tree don't wait on its lock. Commit first: changes not
+# committed are not in the run.
 set -u
 cd "$(dirname "$0")/.." || exit 1
+if [ -z "${AXDEEP_INSIDE:-}" ]; then
+    tree=${AXDEEP_TREE:-${TMPDIR:-/tmp}/axolotty-deep}
+    tree=${tree%/}
+    sha=$(git rev-parse HEAD) || exit 1
+    if [ -d "$tree/.git" ] || [ -f "$tree/.git" ]; then
+        git -C "$tree" checkout -q --detach "$sha" || exit 1
+    else
+        git worktree add -q --detach "$tree" "$sha" || exit 1
+    fi
+    # Built by scripts/build-ghostty-vt.sh, not tracked.
+    rsync -a --delete Vendor/GhosttyVT.xcframework "$tree/Vendor/" || exit 1
+    [ -n "$(git status --porcelain --untracked-files=no)" ] && echo "deep: uncommitted changes are not in this run"
+    echo "deep: $(git log -1 --format='%h %s' "$sha") in $tree"
+    AXDEEP_INSIDE=1 exec "$tree/scripts/deep.sh" "$@"
+fi
 logs=.build/deep
 mkdir -p "$logs"
 failed=()
