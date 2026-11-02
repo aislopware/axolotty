@@ -216,27 +216,15 @@ struct HostTests {
         await fx.tearDown()
     }
 
-    @Test func hookReportsUseTheSameRules() async throws {
-        let fx = try await HostFixture()
-        let c = try await fx.client()
-        let (_, _, p) = try await makeSession(c)
-        c.send(.report(p, id: "hook", state: .working, app: "codex", message: "thinking"))
-        #expect(await until { c.replica?.panes[p]?.activity == .working })
-        #expect(c.replica?.panes[p]?.status.headline?.message == "thinking")
-        c.send(.report(p, id: "hook", state: nil, app: "", message: ""))
-        #expect(await until { c.replica?.panes[p]?.activity == .idle })
-        await fx.tearDown()
-    }
-
     @Test func aFinishedRunLeavesItsLengthAsAReceipt() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()
         let (_, _, p) = try await makeSession(c)
         #expect(c.replica?.panes[p]?.lastRun == nil)
-        c.send(.report(p, id: "hook", state: .working, app: "claude", message: "thinking"))
+        c.send(.text(p, "printf '\\033]7501;state=working:app=claude-code\\033\\\\'\n"))
         #expect(await until { c.replica?.panes[p]?.activity == .working })
         try await Task.sleep(for: .milliseconds(300))
-        c.send(.report(p, id: "hook", state: .done, app: "claude", message: "finished"))
+        c.send(.text(p, "printf '\\033]7501;state=done\\033\\\\'\n"))
         #expect(await until { c.replica?.panes[p]?.activity == .done })
         let run = try #require(c.replica?.panes[p]?.lastRun)
         #expect(run >= 0.25 && run < 5)
@@ -252,10 +240,10 @@ struct HostTests {
         let c = try await fx.client()
         let (_, _, p) = try await makeSession(c)
         #expect(await fx.host.holdsWake == false)
-        c.send(.report(p, id: "a", state: .working, app: "claude", message: ""))
+        c.send(.text(p, "printf '\\033]7501;state=working:app=claude-code\\033\\\\'\n"))
         #expect(await until { c.replica?.panes[p]?.activity == .working })
         #expect(await fx.host.holdsWake)
-        c.send(.report(p, id: "a", state: .done, app: "claude", message: ""))
+        c.send(.text(p, "printf '\\033]7501;state=done\\033\\\\'\n"))
         #expect(await until { c.replica?.panes[p]?.activity == .done })
         #expect(await fx.host.holdsWake == false)
         await fx.tearDown()
@@ -269,32 +257,6 @@ struct HostTests {
         #expect(await until { c.replica?.panes[p]?.readsSecret == true })
         c.send(.text(p, "hunter2\n"))
         #expect(await until { c.replica?.panes[p]?.readsSecret == nil })
-        await fx.tearDown()
-    }
-
-    @Test func aLongCommandLeavesAReceipt() async throws {
-        let fx = try await HostFixture { $0.longCommand = 0.2 }
-        let c = try await fx.client()
-        let (_, _, p) = try await makeSession(c)
-        func run(_ cmd: String, code: Int) {
-            c.send(.text(p, "printf '\\033]133;C;cmdline_url=%s\\007' '\(cmd)'; sleep 0.4; printf '\\033]133;D;\(code)\\007\\033]133;A\\007'\n"))
-        }
-        run("make%20test", code: 2)
-        #expect(await until { c.replica?.panes[p]?.lastCommand?.command == "make test" })
-        let info = try #require(c.replica?.panes[p])
-        #expect(info.lastCommand?.exitCode == 2)
-        #expect(info.activity == .error)
-        #expect(info.status.headline?.title == "make test")
-        #expect(info.status.headline?.message.hasPrefix("Exit 2 after") == true)
-        // The next command clears the receipt; an editor's end is no news.
-        run("vim%20notes.md", code: 0)
-        #expect(await until { c.replica?.panes[p]?.lastCommand?.command == "vim notes.md" })
-        #expect(c.replica?.panes[p]?.activity == .idle)
-        // Both stay in the pane's history, oldest first.
-        let json = try #require(await c.capture(p, format: .commands))
-        let history = try JSONDecoder().decode([CommandRecord].self, from: Data(json.utf8))
-        #expect(history.map(\.command) == ["make test", "vim notes.md"])
-        #expect(history.map(\.exitCode) == [2, 0])
         await fx.tearDown()
     }
 

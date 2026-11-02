@@ -1,5 +1,5 @@
-// axolotty — command-line control of an Axolotty host, for people, scripts,
-// hooks and coding agents. Talks to $AXOLOTTY_SOCKET (set in every pane) or
+// axolotty — command-line control of an Axolotty host, for people, scripts
+// and coding agents. Talks to $AXOLOTTY_SOCKET (set in every pane) or
 // the standard runtime socket. `axolotty mcp` serves the same operations to
 // agents over MCP (stdio).
 //
@@ -25,9 +25,6 @@ let usage = """
                                           right home end pageup pagedown f1-f12)
                                           send refuses a pane waiting for its person; --force
       capture [--pane P] [--scrollback] [--format plain|vt|html]
-      status STATE [--pane P] [--id ID] [--app APP] [--message MSG]
-                                          report idle|working|done|blocked|error|clear
-      notify TITLE [BODY]                 desktop notification through the app
       wait [--pane P] --for done|idle|blocked|error|exit [--timeout SEC]
       wait --pane P1,P2… [--all] --for GOAL
                                           any of several panes (or, with --all, every one);
@@ -153,21 +150,6 @@ case "capture":
     await run {
         guard let format = CaptureFormat(rawValue: o.flags["format"] ?? "plain") else { throw OpError.usage("unknown format") }
         print(try await Ops.capture(pane: o.flags["pane"], format: format, scrollback: o.switches.contains("scrollback")))
-    }
-
-case "status":
-    let o = Options(argv, valued: ["pane", "id", "app", "message"])
-    await run {
-        guard let word = o.positional.first else { throw OpError.usage("status needs a state") }
-        try await Ops.report(pane: o.flags["pane"], state: word, id: o.flags["id"] ?? "", app: o.flags["app"] ?? "",
-                             message: o.flags["message"] ?? o.positional.dropFirst().joined(separator: " "))
-    }
-
-case "notify":
-    let o = Options(argv, valued: ["pane"])
-    await run {
-        guard let title = o.positional.first else { throw OpError.usage("notify needs a title") }
-        try await Ops.notify(pane: o.flags["pane"], title: title, body: o.positional.dropFirst().joined(separator: " "))
     }
 
 case "close":

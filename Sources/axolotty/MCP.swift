@@ -130,15 +130,6 @@ final class MCPServer: Sendable {
             }
             guard let info else { return "The pane is gone" }
             return "Pane is \(info.activity.rawValue)" + (info.status.headline.map { ": \($0.message)" } ?? "")
-        case "report_status":
-            guard let state = a.string("state") else { throw .usage("state is required") }
-            try await Ops.report(pane: a.string("pane"), state: state, id: a.string("id") ?? "", app: a.string("app") ?? "",
-                                 message: a.string("message") ?? "")
-            return "Reported \(state)"
-        case "notify":
-            guard let title = a.string("title") else { throw .usage("title is required") }
-            try await Ops.notify(pane: nil, title: title, body: a.string("body") ?? "")
-            return "Notified"
         case "close_pane":
             try await Ops.close(pane: a.string("pane"))
             return "Closed"
@@ -229,19 +220,6 @@ final class MCPServer: Sendable {
              "timeout_seconds": ["type": "number", "description": "Default 600"],
          ], required: ["until"]),
          "annotations": ["readOnlyHint": true]],
-        ["name": "report_status",
-         "description": "Report your own status to the sidebar: working, blocked, done, error, idle, or clear.",
-         "inputSchema": schema([
-             "state": ["type": "string", "enum": ["idle", "working", "done", "blocked", "error", "clear"]],
-             "message": ["type": "string"],
-             "pane": pane,
-         ], required: ["state"])],
-        ["name": "notify",
-         "description": "Show the person a notification (a toast when Axolotty is in front, a banner otherwise).",
-         "inputSchema": schema([
-             "title": ["type": "string"],
-             "body": ["type": "string"],
-         ], required: ["title"])],
         ["name": "close_pane",
          "description": "End a pane's program and close the pane.",
          "inputSchema": schema(["pane": pane], required: ["pane"]),

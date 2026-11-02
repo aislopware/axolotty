@@ -151,9 +151,8 @@ public struct Appearance: Codable, Hashable, Sendable {
     }
 }
 
-/// Text formats for capture (CLI, agents). `commands` is the pane's finished
-/// shell commands (OSC 133), oldest first, as a JSON array of `CommandRecord`.
-public enum CaptureFormat: String, Codable, Sendable { case plain, vt, html, commands }
+/// Text formats for capture (CLI, agents).
+public enum CaptureFormat: String, Codable, Sendable { case plain, vt, html }
 
 public enum ClientMessage: Codable, Sendable {
     case hello(ClientHello)
@@ -178,9 +177,6 @@ public enum ClientMessage: Codable, Sendable {
     case clear(PaneID)
     case seen(PaneID)
     case capture(UUID, PaneID, CaptureFormat, scrollback: Bool)
-    /// Status from a hook or the CLI (`axolotty status`), same rules as OSC 7501.
-    case report(PaneID, id: String, state: StatusRecord.State?, app: String, message: String)
-    case notify(PaneID?, title: String, body: String)
     case ping(UInt64)
 }
 

@@ -54,8 +54,6 @@ import Testing
             .hello(ClientHello(client: ClientID(), name: "Mac", platform: .macOS)),
             .intent(UUID(), intent),
             .key(pane, KeyInput(key: 30, mods: KeyInput.ctrl, text: "c")),
-            .report(pane, id: "", state: .blocked, app: "claude", message: "Allow?"),
-            .report(pane, id: "x", state: nil, app: "", message: ""),
         ]
         for m in msgs {
             var dec = FrameDecoder()

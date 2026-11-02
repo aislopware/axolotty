@@ -129,28 +129,6 @@ enum Ops {
         return text
     }
 
-    // MARK: Status
-
-    static func report(pane: String?, state word: String, id: String, app: String, message: String) async throws(OpError) {
-        let state: StatusRecord.State?
-        if word == "clear" {
-            state = nil
-        } else {
-            guard let s = StatusRecord.State(rawValue: word) else { throw .usage("unknown state \(word)") }
-            state = s
-        }
-        let (c, st) = try await connect()
-        let p = try resolvePane(pane, in: st)
-        c.send(.report(p, id: id, state: state, app: app, message: message))
-        await c.ping()
-    }
-
-    static func notify(pane: String?, title: String, body: String) async throws(OpError) {
-        let (c, _) = try await connect()
-        c.send(.notify((pane ?? env["AXOLOTTY_PANE_ID"]).flatMap { PaneID($0) }, title: title, body: body))
-        await c.ping()
-    }
-
     // MARK: Waiting
 
     static let waitGoals = ["done", "idle", "blocked", "error", "working", "exit", "command"]

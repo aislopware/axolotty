@@ -423,7 +423,7 @@ final class PaneHost: @unchecked Sendable {
     func capture(_ format: CaptureFormat, scrollback: Bool) -> String {
         queue.sync {
             let f: VTTerminal.TextFormat = switch format {
-            case .plain, .commands: .plain
+            case .plain: .plain
             case .vt: .vt
             case .html: .html
             }
