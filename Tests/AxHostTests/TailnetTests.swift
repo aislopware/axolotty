@@ -31,6 +31,14 @@ struct TailnetTests {
         #expect(peers.map(\.relay) == ["sin", nil, "fra"])
         #expect(peers.map(\.online) == [true, true, false])
         #expect(TailnetDirectory.parse(Data(#"{"BackendState":"Stopped"}"#.utf8)) == [])
+
+        // A host is found again however it was dialled, to say how its path goes.
+        for dialled in ["air.ts.example", "AIR.ts.example.", "air", "100.64.0.10"] {
+            #expect(TailnetDirectory.peer(dialledAs: dialled, in: peers)?.name == "Air", "\(dialled)")
+        }
+        #expect(TailnetDirectory.peer(dialledAs: "ai", in: peers) == nil)
+        #expect(TailnetDirectory.relayPlace("sin") == "Singapore")
+        #expect(TailnetDirectory.relayPlace("dc-old") == "dc-old", "a region of its own")
     }
 
     @Test func tellsTailnetAddressesApart() {

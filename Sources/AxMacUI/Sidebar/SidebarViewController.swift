@@ -432,9 +432,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         case .host:
             guard let c = cell as? HostCell else { return }
             let s = Self.hostStatus(host)
+            // Why a far Mac is slow, and that it isn't this app.
+            let relay = host.relay.map { r in
+                "\(host.name) · \(s.meta) through Tailscale's relay in \(TailnetDirectory.relayPlace(r)), not a direct path. Tailscale keeps looking for one."
+            }
             c.set(name: host.isLocal ? "This Mac" : host.name, symbol: Self.hostSymbol(host), meta: s.meta,
-                  retrying: s.retrying, waiting: s.waiting)
-            c.setAccessibilityLabel(host.isLocal ? "This Mac" : "\(host.name), \(s.meta.isEmpty ? "connected" : s.meta)")
+                  retrying: s.retrying, waiting: s.waiting, relay: relay)
+            let said = s.meta.isEmpty ? "connected" : s.meta + (host.relay == nil ? "" : " through a relay")
+            c.setAccessibilityLabel(host.isLocal ? "This Mac" : "\(host.name), \(said)")
         case let .workspace(_, wid):
             guard let c = cell as? WorkspaceCell, let st = host.state, let w = st.workspace(wid) else { return }
             c.set(name: w.name, key: w.root.isEmpty ? w.name : w.root)

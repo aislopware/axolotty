@@ -281,17 +281,22 @@ final class FadingLabel: NSView {
 /// says so in words. Quiet when all is well, plain when it is not.
 ///
 ///   ⌨ MACBOOK PRO                         4 ms
+///   ⌨ MAC STUDIO                       ⋰ 84 ms   (through a relay)
 ///   ⌨ MAC MINI                     ◌ Reconnecting
 final class HostCell: NSTableCellView {
     let glyph = Symbol("laptopcomputer", size: 11, weight: .medium, color: Axo.Color.textTertiary)
     let title = Label("", font: Axo.Font.section, color: Axo.Color.textTertiary)
     let status = StatusGlyphView(frame: .zero)
     let meta = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
+    /// Beside the round trip when Tailscale relays the path: a mark, not a
+    /// word, so the name keeps its room; the tooltip says it in full.
+    let relayed = Symbol("point.3.connected.trianglepath.dotted", size: 10, weight: .regular, color: Axo.Color.textTertiary)
     var hovering = false { didSet { needsLayout = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        for v in [glyph, title, status, meta] as [NSView] { addSubview(v) }
+        for v in [glyph, title, status, relayed, meta] as [NSView] { addSubview(v) }
+        relayed.isHidden = true
         textField = title
         meta.alignment = .right
     }
@@ -303,7 +308,8 @@ final class HostCell: NSTableCellView {
 
     /// `waiting`: the link needs the person (shown in the failure ink);
     /// `retrying`: it is coming back by itself (a spinner).
-    func set(name: String, symbol: String, meta text: String, retrying: Bool, waiting: Bool) {
+    /// `relay`: the path goes through a Tailscale relay (its tooltip).
+    func set(name: String, symbol: String, meta text: String, retrying: Bool, waiting: Bool, relay: String? = nil) {
         title.stringValue = name.uppercased()
         glyph.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         // A spinner says "coming back" by itself; its words would only cost
@@ -312,7 +318,8 @@ final class HostCell: NSTableCellView {
         meta.textColor = waiting ? Axo.Color.status(.blocked) : Axo.Color.textTertiary
         status.activity = retrying ? .working : .idle
         status.isHidden = !retrying
-        toolTip = text.isEmpty ? nil : "\(name) · \(text)"
+        relayed.isHidden = relay == nil || retrying || waiting
+        toolTip = relayed.isHidden ? (text.isEmpty ? nil : "\(name) · \(text)") : relay
         needsLayout = true
     }
 
@@ -326,6 +333,11 @@ final class HostCell: NSTableCellView {
         let ms = meta.intrinsicContentSize
         meta.frame = NSRect(x: right - ms.width, y: (mid - ms.height / 2).rounded(), width: ms.width, height: ms.height)
         var end = meta.frame.minX - (ms.width > 0 ? 4 : 0)
+        if !relayed.isHidden {
+            let r = relayed.intrinsicContentSize
+            relayed.frame = NSRect(x: (end - r.width + 1).rounded(), y: (mid - r.height / 2).rounded(), width: r.width, height: r.height)
+            end = relayed.frame.minX - 4
+        }
         if !status.isHidden {
             status.frame = NSRect(x: end - 16, y: (mid - 8).rounded(), width: 16, height: 16)
             end = status.frame.minX - 2

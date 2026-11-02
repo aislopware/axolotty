@@ -33,6 +33,11 @@ final class HostSession: Identifiable {
     private(set) var phase: Phase = .connecting
     /// The last heartbeat's round trip (remote hosts).
     private(set) var rtt: Duration?
+    /// The Tailscale relay region carrying the link, nil while the path is
+    /// direct (or isn't a tailnet one). A relayed path is why a far Mac
+    /// feels slow; Tailscale often finds a direct one a little later.
+    private(set) var relay: String?
+    private var pathWatch: Task<Void, Never>?
     let changes = Signal<HostChange>()
     /// Reports failed intents (the app shows a toast).
     var onError: ((String) -> Void)?
@@ -89,6 +94,7 @@ final class HostSession: Identifiable {
 
     func stop() {
         loop?.cancel()
+        pathWatch?.cancel()
         connection.disconnect()
     }
 
@@ -97,6 +103,7 @@ final class HostSession: Identifiable {
     func nudge() {
         if case .failed = phase { return }
         connection.kick()
+        if case .connected = phase { watchPath() }  // a new network, a new path
     }
 
     /// Tries again now (after a login, an install, a network change).
@@ -116,6 +123,7 @@ final class HostSession: Identifiable {
             state = hello.state
             phase = .connected
             changes.emit(.connected)
+            watchPath()
         case let .deltas(ds):
             state?.apply(ds)
             changes.emit(.deltas(ds))
@@ -124,6 +132,8 @@ final class HostSession: Identifiable {
         case .attached, .detached:
             break
         case let .disconnected(reason):
+            pathWatch?.cancel()
+            relay = nil
             if case .failed = phase {} else { phase = .offline(reason) }
             changes.emit(.disconnected(reason))
             revive()
@@ -132,6 +142,29 @@ final class HostSession: Identifiable {
         case let .latency(d):
             rtt = d
             changes.emit(.latency)
+        }
+    }
+
+    /// Reads from Tailscale whether the link goes direct or through a relay:
+    /// soon after connecting (a new path starts relayed), then now and then,
+    /// more often while relayed, to see it go direct.
+    private func watchPath() {
+        pathWatch?.cancel()
+        guard case let .tcp(dialled, _) = endpoint else { return }
+        pathWatch = Task { [weak self] in
+            var wait = Duration.seconds(3)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: wait)
+                guard !Task.isCancelled else { return }
+                let peers = await TailnetDirectory.scan()
+                guard let self, !Task.isCancelled else { return }
+                let now = TailnetDirectory.peer(dialledAs: dialled, in: peers)?.relay
+                if now != relay {
+                    relay = now
+                    changes.emit(.latency)
+                }
+                wait = now == nil ? .seconds(120) : .seconds(20)
+            }
         }
     }
 

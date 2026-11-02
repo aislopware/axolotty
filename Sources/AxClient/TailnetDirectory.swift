@@ -63,6 +63,29 @@ public enum TailnetDirectory {
         }
     }
 
+    /// The peer a host was dialled by: its MagicDNS name, short name or address.
+    public static func peer(dialledAs host: String, in peers: [TailnetPeer]) -> TailnetPeer? {
+        let h = host.lowercased().hasSuffix(".") ? String(host.lowercased().dropLast()) : host.lowercased()
+        return peers.first { p in
+            let dns = p.dnsName.lowercased()
+            return dns == h || p.address == h || (!dns.isEmpty && dns.split(separator: ".").first.map(String.init) == h)
+        }
+    }
+
+    /// Where a DERP relay is, from its region code ("sin"); the code as it is
+    /// for a region not named here.
+    public static func relayPlace(_ code: String) -> String {
+        let places = [
+            "ams": "Amsterdam", "blr": "Bengaluru", "dbi": "Dubai", "den": "Denver", "dfw": "Dallas",
+            "fra": "Frankfurt", "hkg": "Hong Kong", "hnl": "Honolulu", "iad": "Ashburn", "jnb": "Johannesburg",
+            "lax": "Los Angeles", "lhr": "London", "mad": "Madrid", "mia": "Miami", "nai": "Nairobi",
+            "nue": "Nuremberg", "nyc": "New York", "ord": "Chicago", "par": "Paris", "sao": "São Paulo",
+            "sea": "Seattle", "sfo": "San Francisco", "sin": "Singapore", "syd": "Sydney", "tok": "Tokyo",
+            "tor": "Toronto", "waw": "Warsaw",
+        ]
+        return places[code.lowercased()] ?? code
+    }
+
     /// The person's machines, from the running Tailscale; empty without one.
     public static func scan() async -> [TailnetPeer] {
         await Task.detached { TailscaleCLI.run(["status", "--json"]).map(parse) ?? [] }.value
