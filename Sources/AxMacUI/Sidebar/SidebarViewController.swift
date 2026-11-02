@@ -454,6 +454,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             c.expanded = outline.isItemExpanded(n)
             c.active = selected.flatMap { h.session($0.session)?.workspace } == wid && selected?.host == n.hostID
             c.rollup.activity = w.sessions.map { st.activity(of: $0) }.max() ?? .idle
+            c.canAdd = host.phase == .connected
             c.onAdd = { [weak self] anchor in
                 var items = AgentPresets.items(local: host.isLocal) { agent in self?.onCreate?(host, wid, agent) }
                 // A worktree needs a repository; a remote root is not checked from here.

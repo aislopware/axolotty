@@ -359,6 +359,8 @@ final class WorkspaceCell: NSTableCellView {
     var active = false { didSet { restyle() } }
     var expanded = true { didSet { restyle() } }
     var hovering = false { didSet { restyle() } }
+    /// Its host is up: a session can start here (no "+" on a Mac out of reach).
+    var canAdd = true { didSet { if canAdd != oldValue { restyle() } } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -385,7 +387,7 @@ final class WorkspaceCell: NSTableCellView {
     private func restyle() {
         // Full ink always: a project never reads quieter than its sessions.
         title.textColor = Axo.Color.text
-        add.isHidden = !hovering
+        add.isHidden = !hovering || !canAdd
         chevron.isHidden = !hovering
         chevron.frameCenterRotation = expanded ? 0 : 90
         rollup.isHidden = expanded || !(rollup.activity == .blocked || rollup.activity == .error)
