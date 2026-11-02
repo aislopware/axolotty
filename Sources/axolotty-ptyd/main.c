@@ -463,8 +463,15 @@ static void on_master(int fd) {
 }
 
 static void on_exit_event(pid_t pid, int64_t data, bool known) {
+  // XNU can post NOTE_EXIT a moment before the child is waitable (about 1
+  // in 2000 exits under load), and WNOHANG then finds nothing: the child
+  // would stay a zombie for good. It has exited, so a blocking wait returns
+  // at once; for an adopted process (not our child) it fails with ECHILD.
   int st = 0;
-  bool reaped = waitpid(pid, &st, WNOHANG) == pid;
+  pid_t r;
+  while ((r = waitpid(pid, &st, 0)) < 0 && errno == EINTR) {
+  }
+  bool reaped = r == pid;
   for (size_t i = 0; i < nsessions; i++) {
     if (sessions[i].pid == pid && sessions[i].status == AXC_ALIVE) {
       // NOTE_EXITSTATUS is only delivered for our own children; an adopted

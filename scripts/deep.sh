@@ -64,7 +64,7 @@ run tsan && step tsan 300 1800 swift test --sanitize=thread
 run asan && step asan 300 1800 bash -c 'swift test --sanitize=address --skip PTYSpawn &&
     swift test --sanitize=address --filter PTYSpawn --no-parallel'
 # The suites on real sockets and processes, repeated until one fails.
-run flakes && step flakes 300 1800 swift test --filter 'FaultyLinkTests|RemoteLinkTests|HolderTests|HostTests|TailnetTests' \
+run flakes && step flakes 300 1800 env AXREAP_RUNS=1000 swift test --filter 'FaultyLinkTests|RemoteLinkTests|HolderTests|HostTests|TailnetTests' \
     --maximum-repetitions 30 --repeat-until fail
 run sim && step sim 180 1200 env AXSIM_SEEDS=200 swift test --filter LinkSimTests
 run fuzz && step fuzz 180 900 env AXFUZZ_RUNS=200000 AXMODEL_RUNS=20000 swift test --filter 'WireFuzzTests|SendLanesModelTests'

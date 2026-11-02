@@ -1,5 +1,6 @@
 import AxHost
 import AxModel
+import AxTestSupport
 import Foundation
 import Testing
 
@@ -45,6 +46,41 @@ struct HolderTests {
         #expect(Set(listed.map(\.id)) == [a, b])
         #expect(listed.allSatisfy { $0.status != .running })
         await #expect(throws: CustodyError.errno(ESRCH)) { try await client.signal(id: b, SIGTERM) }
+    }
+
+    /// XNU can post NOTE_EXIT a moment before the child is waitable: about
+    /// one exit in 2000 under load. A holder that reaped with WNOHANG then
+    /// left that child a zombie for good, and its session's process never
+    /// went away. The gate's count rarely meets one; the long run's does
+    /// (`AXREAP_RUNS`).
+    @Test func everyEndedProgramIsReaped() async throws {
+        let fx = try HolderFixture()
+        let client = try await fx.connect()
+        defer { fx.tearDown(client) }
+        let runs = ProcessInfo.processInfo.environment["AXREAP_RUNS"].flatMap(Int.init) ?? 200
+        let quick = SpawnSpec(path: "/usr/bin/true", argv: ["true"], env: [], cwd: "/tmp", cols: 80, rows: 24)
+        var exits = fx.exits.makeAsyncIterator()
+        var pids: [pid_t] = []
+        while pids.count < runs {
+            var batch = Set<PaneID>()
+            for _ in 0 ..< min(32, runs - pids.count) {
+                let id = PaneID()
+                let h = try await client.spawn(id: id, quick)
+                close(h.master)
+                close(h.ring)
+                pids.append(h.pid)
+                batch.insert(id)
+            }
+            var left = batch
+            while !left.isEmpty, let (id, _) = await exits.next() { left.remove(id) }
+            for id in batch { try await client.close(id: id) }
+            if pids.count % 2000 < 32 { progress("reap \(pids.count)/\(runs)") }
+        }
+        let zombies = eventually { () -> [pid_t]? in
+            let z = pids.filter(isZombie)
+            return z.isEmpty ? z : nil
+        } ?? pids.filter(isZombie)
+        #expect(zombies == [], "\(zombies.count) of \(runs) ended programs were never reaped")
     }
 
     @Test func rejectsDuplicateIdsAndBadExecutables() async throws {

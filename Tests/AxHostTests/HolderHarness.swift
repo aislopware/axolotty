@@ -116,6 +116,15 @@ func shell(_ script: String) -> SpawnSpec {
               cols: 80, rows: 24)
 }
 
+/// Whether `pid` has ended but was never waited for.
+func isZombie(_ pid: pid_t) -> Bool {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return false }
+    return Int32(info.kp_proc.p_stat) == SZOMB
+}
+
 /// Polls `body` until it returns non-nil.
 func eventually<T>(timeout: Duration = .seconds(3), _ body: () throws -> T?) rethrows -> T? {
     let deadline = ContinuousClock.now + timeout

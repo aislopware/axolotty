@@ -126,6 +126,7 @@ socket and needs neither. pf and dummynet need root.
 | `AXSIM_TRACE` | off | 1 | Trace a simulated run's events |
 | `AXFUZZ_RUNS` | 2000 | 200000 | Mutated streams per fuzz test |
 | `AXMODEL_RUNS` | 300 | 20000 | Op sequences per model-based test |
+| `AXREAP_RUNS` | 200 | 6000 | Programs the holder must reap in `everyEndedProgramIsReaped` |
 | `AXFUZZ_TRACE` | off | 1 | Print each seed as it starts, to name the one that traps |
 | `AXBENCH` | off | 1 | Run `EchoBench` against a real host (`AXBENCH_TCP=host:port`, `AXBENCH_CMD`, `AXBENCH_KEYS`) |
 
@@ -154,6 +155,7 @@ where it could be shown, that test failed before the fix.
 | Repeated host suites, then a probe | Foundation's `Process` carries every open description, close-on-exec ones included, until its exec. 71 of 20 000 lock attempts were refused beside a spawn loop, so a restarting `axolottyd` that met the old server's last spawn took itself for a twin | `HostTests.aLockHeldForAnInstantIsWaitedOut` |
 | The ASan step, hung 30 minutes | ASan's fork handler (`asan_mz_force_lock`) deadlocks against other threads' `malloc` on Darwin. The in-process `fork` tests now run alone under ASan. `ptyd`, which forks for real, has one thread | `scripts/deep.sh asan` |
 | Repeated host suites | A process-directed SIGPIPE (in XNU, a write into a pipe whose reader is gone) killed the test process. The writer is not found yet. The app now ignores SIGPIPE, as the daemons do, and a test run logs `AXTEST SIGPIPE`, which fails its deep step | Open |
+| A repeat run's `outputSurvivesServerDisconnectAndReattach`, then a probe | XNU can post `NOTE_EXIT` a moment before the child is waitable (1 to 4 exits in 5000 with twelve probes running). `ptyd` reaped with `WNOHANG`, so that program stayed a zombie for good. The old holder left 4 of 6000 under load | `HolderTests.everyEndedProgramIsReaped` |
 | A planted off-by-four in the frame check | The fuzzer's random bytes never landed a length a few bytes off a frame's real one | `WireFuzzTests.mutate`, case 7 |
 
 ## What the general playbook leaves out
