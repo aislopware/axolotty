@@ -1,0 +1,16 @@
+.cache/
+.build/
+build/
+DerivedData/
+Vendor/GhosttyVT.xcframework/
+.research/bench/
+*.xcodeproj/
+.DS_Store
+.swiftpm/
+dist/
+# Screenshots from design reviews stay local.
+.research/**/*.png
+.impeccable/**/*.png
+# The Impeccable launcher downloads its binary on first run.
+.claude/skills/impeccable/scripts/bin/
+.research/snapshots/

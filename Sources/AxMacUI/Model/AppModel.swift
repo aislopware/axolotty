@@ -1,0 +1,130 @@
+import AppKit
+import AxClient
+import AxModel
+import AxProtocol
+import Foundation
+
+/// App-wide state: preferences, the resolved theme, and every host this client
+/// is connected to.
+final class AppModel {
+    static let shared = AppModel()
+
+    let prefs = Preferences()
+    let paths = RuntimePaths.standard()
+    let clientID: ClientID
+    private(set) var hosts: [HostSession] = []
+    let hostsChanged = Signal<Void>()
+    /// Any host's document or connection changed.
+    let anyChange = Signal<(HostSession, HostChange)>()
+    let themeChanged = Signal<Void>()
+    let fontChanged = Signal<Void>()
+    /// Shown as a toast in the key window.
+    let errors = Signal<String>()
+    /// Something the person asked for can't happen here, said plainly (a
+    /// title and a detail), not as a failure.
+    let notices = Signal<(String, String)>()
+    private var tokens: [SignalToken] = []
+
+    private(set) var systemDark = true
+    private(set) var theme: TerminalTheme = .night
+
+    /// Recently closed sessions (for ⌘⇧T): where they ran and what they were called.
+    struct ClosedSession {
+        var host: UUID
+        var workspace: WorkspaceID
+        var cwd: String
+        var name: String?
+        /// The Claude Code conversation it held, resumed on reopening.
+        var claude: String?
+    }
+
+    var closed: [ClosedSession] = []
+    private var bootstrapped = Set<UUID>()
+
+    /// True once per host per launch: the caller may create the first session.
+    func bootstrap(_ host: HostSession) -> Bool { bootstrapped.insert(host.id).inserted }
+
+    private init() {
+        let defaults = UserDefaults.standard
+        if let s = defaults.string(forKey: "clientID"), let id = ClientID(s) {
+            clientID = id
+        } else {
+            clientID = ClientID()
+            defaults.set(clientID.raw.uuidString, forKey: "clientID")
+        }
+    }
+
+    var local: HostSession? { hosts.first { $0.isLocal } }
+
+    func startLocal() {
+        guard local == nil else { return }
+        let paths = paths
+        let host = HostSession(endpoint: .unix(path: paths.hostSocket.path(percentEncoded: false)), client: clientID,
+                               clientName: Host.current().localizedName ?? "Mac", isLocal: true)
+        add(host) { [weak self] in
+            if let e = await ServerLauncher.ensureRunning(paths) { self?.errors.emit(e) }
+        }
+    }
+
+    func add(_ host: HostSession, prepare: (@MainActor () async -> Void)? = nil) {
+        hosts.append(host)
+        host.onError = { [weak self] in self?.errors.emit($0) }
+        tokens.append(host.changes.observe { [weak self, weak host] change in
+            guard let self, let host else { return }
+            if case .connected = change { host.connection.setAppearance(Appearance(theme: theme)) }
+            anyChange.emit((host, change))
+        })
+        host.start(prepare: prepare)
+        hostsChanged.emit()
+    }
+
+    func host(_ id: UUID) -> HostSession? { hosts.first { $0.id == id } }
+
+    // MARK: Appearance
+
+    func updateSystemAppearance(dark: Bool) {
+        systemDark = dark
+        applyTheme()
+    }
+
+    func applyTheme() {
+        let t = prefs.theme(systemDark: systemDark)
+        guard t != theme else { return }
+        theme = t
+        for h in hosts { h.connection.setAppearance(Appearance(theme: t)) }
+        themeChanged.emit()
+    }
+
+    func setFontSize(_ size: CGFloat) {
+        let s = min(max(size.rounded(), Axo.Font.terminalRange.lowerBound), Axo.Font.terminalRange.upperBound)
+        guard s != prefs.fontSize else { return }
+        prefs.fontSize = s
+        fontChanged.emit()
+    }
+
+    // MARK: Attention
+
+    /// Every pane in a state the person should look at, most urgent first.
+    func attentionPanes() -> [(HostSession, PaneInfo)] {
+        var out: [(HostSession, PaneInfo)] = []
+        for h in hosts {
+            guard let s = h.state else { continue }
+            for sid in s.orderedSessions {
+                for p in s.panes(of: sid) where p.activity == .blocked || p.activity == .error || p.activity == .done {
+                    out.append((h, p))
+                }
+            }
+        }
+        return out.sorted { $0.1.activity > $1.1.activity }
+    }
+
+    /// Every session in sidebar (document) order across hosts.
+    var sidebarOrder: [(HostSession, SessionID)] {
+        hosts.flatMap { h in (h.state?.orderedSessions ?? []).map { (h, $0) } }
+    }
+
+    /// Panes that want the person: waiting for input, or failed and unseen.
+    var waitingCount: Int {
+        hosts.reduce(0) { n, h in n + (h.state.map { $0.attention.blocked + $0.attention.error } ?? 0) }
+    }
+}

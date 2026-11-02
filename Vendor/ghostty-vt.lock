@@ -1,0 +1,5 @@
+# Pinned libghostty-vt. Bump GHOSTTY_COMMIT, run `just vt`, run the VT test suite, commit.
+GHOSTTY_REPO=https://github.com/ghostty-org/ghostty.git
+GHOSTTY_COMMIT=ae0dc1b7136c2baddc3e067663aa041cd555cfda
+# Deployment minimums come from upstream; our targets are macOS 26 / iOS 26.
+ZIG_VERSION=0.17.0

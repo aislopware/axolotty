@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Quiet `swift build`/`swift test` wrapper: prints only diagnostics (deduped) and the result line.
+set -o pipefail
+cmd="${1:-build}"; shift || true
+out="$(swift "$cmd" "$@" 2>&1)"; rc=$?
+printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g; s/\x1b]8;;[^\\]*\\//g; s/\x1b]8;;\\//g' \
+  | grep -E '^/.*: (error|warning):|^error:|Build complete|Test run with|✘|passed after|failed after|Suite .* failed|Test .* failed|recorded an issue' \
+  | grep -v 'Command line:' | awk '!seen[$0]++' | head -${LINES_MAX:-60}
+exit $rc

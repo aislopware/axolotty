@@ -1,0 +1,63 @@
+import AxVT
+import Testing
+
+@Suite struct SelectionTests {
+    /// Copy mode works in screen rows (0 is the oldest scrollback row); the
+    /// scrollbar says which of them the viewport shows.
+    @Test func screenCoordinatesSpanScrollbackAndViewport() throws {
+        let t = try VTTerminal(cols: 20, rows: 3)
+        _ = t.write("one\r\ntwo\r\nthree\r\nfour\r\nfive")
+        let pos = t.scrollPosition
+        #expect(pos.visible == 3)
+        #expect(pos.total == 5)
+        #expect(pos.offset == 2)
+        #expect(pos.total - Int(t.rows) + Int(t.cursor.y) == 4)  // the cursor's screen row
+        t.select(screen: (0, 0), (2, 1))
+        #expect(t.selectionText() == "one\ntwo")
+        t.select(screen: (0, 1), (19, 3))  // whole lines, into the viewport
+        #expect(t.selectionText() == "two\nthree\nfour")
+        t.select(screen: (1, 2), (2, 4), rectangle: true)
+        #expect(t.selectionText() == "hr\nou\niv")
+        t.scrollViewport(.top)
+        #expect(t.scrollPosition.offset == 0)
+    }
+
+    let geo = VTSelectionGesture.Geometry(cellWidth: 10, paddingLeft: 0, screenHeight: 100)
+
+    @Test func dragSelectsCellsAndCopiesPlainText() throws {
+        let t = try VTTerminal(cols: 40, rows: 5)
+        _ = t.write("hello world\r\nsecond line")
+        let g = VTSelectionGesture()
+        g.press(t, col: 0, row: 0, x: 1, y: 5, timeNanos: 1_000_000)
+        g.drag(t, col: 4, row: 0, x: 48, y: 5, geometry: geo)  // past the cell's midpoint
+        g.release(t, col: 4, row: 0)
+        #expect(t.selectionText() == "hello")
+        t.clearSelection()
+        #expect(t.selectionText() == nil)
+    }
+
+    @Test func doubleClickSelectsAWordAndTripleALine() throws {
+        let t = try VTTerminal(cols: 40, rows: 5)
+        _ = t.write("alpha beta gamma")
+        let g = VTSelectionGesture()
+        let base: UInt64 = 5_000_000_000
+        g.press(t, col: 7, row: 0, x: 75, y: 5, timeNanos: base)
+        g.release(t, col: 7, row: 0)
+        g.press(t, col: 7, row: 0, x: 75, y: 5, timeNanos: base + 100_000_000)
+        #expect(t.selectionText() == "beta")
+        g.release(t, col: 7, row: 0)
+        g.press(t, col: 7, row: 0, x: 75, y: 5, timeNanos: base + 200_000_000)
+        #expect(t.selectionText() == "alpha beta gamma")
+    }
+
+    @Test func selectAllAndTrackingFlags() throws {
+        let t = try VTTerminal(cols: 20, rows: 3)
+        _ = t.write("one\r\ntwo")
+        t.selectAll()
+        #expect(t.selectionText()?.contains("two") == true)
+        #expect(!t.mouseTracking)
+        _ = t.write("\u{1B}[?1000h")
+        #expect(t.mouseTracking)
+        #expect(!t.isScrolledBack)
+    }
+}

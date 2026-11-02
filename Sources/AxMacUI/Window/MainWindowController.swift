@@ -1,0 +1,743 @@
+import AppKit
+import AxClient
+import AxModel
+import AxProtocol
+
+/// One window: our own sidebar column, the band, a session's panes and the
+/// status bar, plus the in-window overlay layer (palette, toasts, tooltips).
+/// No system sidebar, toolbar items or child windows: an empty compact
+/// toolbar only sets the titlebar height so the traffic lights sit centred
+/// in the band. Handles every window-level action in the responder chain.
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
+    private let model: AppModel
+    let sidebar: SidebarViewController
+    let content: SessionViewController
+    let shell: ShellView
+    private var tokens: [SignalToken] = []
+    private(set) var selection: (host: HostSession, session: SessionID)?
+    private(set) lazy var palette = PaletteController(model: model, owner: self)
+    private(set) var toasts: ToastCenter?
+    private var branch: String?
+    private var branchFor: String?
+
+    init(model: AppModel, autosave: Bool) {
+        self.model = model
+        sidebar = SidebarViewController(model: model)
+        content = SessionViewController(model: model)
+        shell = ShellView(sidebar: sidebar.view, content: content.view)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Axo.Metric.windowDefault),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        super.init(window: window)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.tabbingMode = .disallowed
+        window.backgroundColor = Axo.Color.ground
+        window.minSize = Axo.Metric.windowMin
+        window.delegate = self
+        window.isRestorable = false
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        // An empty compact toolbar: titlebar height only (traffic lights centred).
+        let toolbar = NSToolbar(identifier: "main")
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
+        window.contentView = shell
+        window.setContentSize(Axo.Metric.windowDefault)
+
+        if autosave { window.setFrameAutosaveName("AxolottyMain") }
+        if !autosave || !window.setFrameUsingName("AxolottyMain") { window.center() }
+
+        toasts = ToastCenter(host: shell.overlay, model: model)
+        toasts?.region = { [weak self] in
+            guard let self else { return .zero }
+            let c = self.shell.content.frame
+            let top = self.shell.titlebarHeight
+            return NSRect(x: c.minX, y: top, width: c.width, height: c.height - top)
+        }
+        toasts?.onActivate = { [weak self] host, pane in self?.reveal(host, pane) }
+        wire()
+        applyTheme()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func wire() {
+        sidebar.onSelect = { [weak self] host, sid in self?.show(host, sid) }
+        sidebar.onNewSession = { [weak self] in self?.newSession(nil) }
+        sidebar.onCreate = { [weak self] host, wid, agent in
+            guard let self else { return }
+            Task { await self.createSession(host, in: wid, cwd: nil, name: nil, launch: self.launchLine(agent, host)) }
+        }
+        sidebar.onNewWorktree = { [weak self] host, wid in self?.palette.showWorktree(host, wid) }
+        sidebar.onRemoveWorktree = { [weak self] host, sid in self?.removeWorktree(host, sid) }
+        content.band.chip.onClick = { [weak self] in self?.content.current?.restoreFocus() }
+        content.emptyView.onLaunch = { [weak self] agent, wid in
+            guard let self, let host = self.currentHost else { return }
+            Task { await self.createSession(host, in: wid, cwd: nil, name: nil, launch: self.launchLine(agent, host)) }
+        }
+        content.emptyView.onOpenFolder = { [weak self] in self?.openFolder(nil) }
+        content.status.onJump = { [weak self] activity in self?.jump(to: activity, forward: true) }
+        sidebar.footer.onJump = { [weak self] activity in self?.jump(to: activity, forward: true) }
+        sidebar.footer.onCycleAppearance = { [weak self] in
+            guard let self else { return }
+            let order = Preferences.ThemeMode.allCases
+            let i = order.firstIndex(of: self.model.prefs.themeMode) ?? 0
+            self.model.prefs.themeMode = order[(i + 1) % order.count]
+            self.model.applyTheme()
+        }
+        sidebar.footer.update(theme: model.prefs.themeMode)
+        tokens.append(model.anyChange.observe { [weak self] host, change in self?.hostChanged(host, change) })
+        tokens.append(model.themeChanged.observe { [weak self] in
+            self?.applyTheme()
+            if let self { self.sidebar.footer.update(theme: self.model.prefs.themeMode) }
+        })
+        tokens.append(model.fontChanged.observe { [weak self] in self?.content.refreshAppearance() })
+        shell.onLayout = { [weak self] in
+            guard let self else { return }
+            // The band clears the traffic lights and the toggle wherever the
+            // content column currently starts (it moves while the sidebar springs).
+            let clear = self.shell.collapsedLeading - self.shell.content.frame.minX
+            self.content.bandHeight = self.shell.titlebarHeight
+            self.content.leadingClearance = max(Axo.Space.xl, clear)
+            self.content.stageLeading = Axo.Metric.sheetInset * (1 - self.shell.reveal)
+            self.toasts?.relayout()
+        }
+        shell.onContentMotion = { [weak self] moving in
+            self?.content.setGridsFrozen(moving)
+        }
+    }
+
+    private func applyTheme() {
+        let t = model.theme
+        DesignTokens.install(t)
+        window?.appearance = NSAppearance(named: t.isDark ? .darkAqua : .aqua)
+        window?.backgroundColor = Axo.Color.rgb(t.background)
+        shell.refreshDesign()
+        content.refreshAppearance()
+        sidebar.refreshVisibleRows()
+    }
+
+    // MARK: Selection
+
+    /// Shows a session in this window and returns focus to its terminal.
+    func show(_ host: HostSession, _ sid: SessionID, focus pane: PaneID? = nil) {
+        guard let info = host.session(sid) else { return }
+        if !navigating, selection?.host !== host || selection?.session != sid {
+            visited.removeSubrange(min(visitedAt + 1, visited.count)...)
+            visited.append((host.id, sid))
+            if visited.count > 100 { visited.removeFirst(visited.count - 100) }
+            visitedAt = visited.count - 1
+        }
+        // Switching to a session reads it (as in Mail): an unread mark goes.
+        if info.isUnread, selection?.host !== host || selection?.session != sid { host.perform(.setUnread(sid, false)) }
+        selection = (host, sid)
+        sidebar.select(host: host.id, session: sid)
+        content.show(host, info, animated: true)
+        if let pane { content.current?.focus(pane) }
+        content.current?.onFocusChange = { [weak self] _ in self?.refreshChrome() }
+        if host.isLocal {
+            UserDefaults.standard.set(sid.raw.uuidString, forKey: "lastSession")
+            UserDefaults.standard.set(info.workspace.raw.uuidString, forKey: "lastWorkspace")
+        }
+        refreshChrome()
+    }
+
+    /// Shows the pane's session and focuses the pane.
+    func reveal(_ host: HostSession, _ pane: PaneID) {
+        guard let sid = host.pane(pane)?.session else { return }
+        show(host, sid, focus: pane)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    private func hostChanged(_ host: HostSession, _ change: HostChange) {
+        switch change {
+        case .connected:
+            content.sync(host)
+            if selection == nil || selection?.host === host { selectInitial(host) }
+        case .deltas:
+            content.sync(host)
+            if let s = selection, s.host === host, host.session(s.session) == nil { selectNeighbor(host) }
+            if selection == nil { selectInitial(host) }
+        case .disconnected:
+            if selection?.host === host || selection == nil {
+                content.showEmpty(.reconnecting(host: host.name))
+            }
+        case .event:
+            break
+        }
+        refreshChrome()
+    }
+
+    private func selectInitial(_ host: HostSession) {
+        guard let st = host.state else { return }
+        if let s = selection, s.host === host, host.session(s.session) != nil {
+            show(host, s.session)
+            return
+        }
+        let last = UserDefaults.standard.string(forKey: "lastSession").flatMap(SessionID.init)
+        if let last, st.sessions[last] != nil {
+            show(host, last)
+        } else if let first = st.orderedSessions.first {
+            show(host, first)
+        } else if host.isLocal, model.bootstrap(host) {
+            // First run against a fresh server: open a Home session right away.
+            Task { await createSession(host, in: st.workspaces.first?.id, cwd: nil, name: nil) }
+        } else {
+            selection = nil
+            showLauncher()
+        }
+    }
+
+    /// The empty window: launch tiles for this host's agents, starting in the
+    /// last project used (or the first).
+    private func showLauncher() {
+        let host = currentHost
+        let projects = host?.state?.workspaces.map {
+            EmptyStateView.Project(id: $0.id, name: $0.name, key: $0.root.isEmpty ? $0.name : $0.root)
+        } ?? []
+        let last = UserDefaults.standard.string(forKey: "lastWorkspace").flatMap(UUID.init(uuidString:)).map(WorkspaceID.init(raw:))
+        content.emptyView.configure(agents: AgentPresets.available(local: host?.isLocal ?? true), projects: projects,
+                                    selected: projects.first { $0.id == last })
+        content.showEmpty(.noSessions)
+    }
+
+    private func selectNeighbor(_ host: HostSession) {
+        let order = model.sidebarOrder
+        if let next = order.first(where: { $0.0 === host }) {
+            show(next.0, next.1)
+        } else if let any = order.first {
+            show(any.0, any.1)
+        } else {
+            selection = nil
+            showLauncher()
+            refreshChrome()
+        }
+    }
+
+    // MARK: Chrome (band, chip, status bar, title)
+
+    func refreshChrome() {
+        let key = window?.isKeyWindow ?? true
+        let counts = model.hosts.reduce((blocked: 0, error: 0, working: 0, done: 0)) { acc, h in
+            guard let a = h.state?.attention else { return acc }
+            return (acc.blocked + a.blocked, acc.error + a.error, acc.working + a.working, acc.done + a.done)
+        }
+        sidebar.footer.update(counts: counts)
+        guard let (host, sid) = selection, let st = host.state, let s = st.sessions[sid] else {
+            content.band.update(nil, key: key)
+            content.band.isHidden = content.current == nil  // the empty sheet says it
+            content.band.chip.isHidden = true
+            content.status.update(branch: nil, cwd: "", counts: counts, key: key)
+            refreshChanges("")
+            window?.title = "Axolotty"
+            return
+        }
+        content.band.isHidden = false
+        let focusedPane = content.current?.focused ?? s.focus
+        let pane = st.panes[focusedPane]
+        let title = st.sessionTitle(sid)
+        let cwd = pane?.pwd ?? ""
+        let identity = st.identity(of: sid)
+        let activity = st.activity(of: sid)
+        let since = st.panes(of: sid).filter { $0.activity == activity }.map(\.activitySince).max() ?? 0
+        let ws = st.workspace(s.workspace)
+        func band() -> BandView.Context {
+            BandView.Context(project: ws?.name ?? host.name, projectKey: ws.map { $0.root.isEmpty ? $0.name : $0.root } ?? host.name,
+                             session: identity.rowTitle(title), identity: identity, activity: activity, since: since,
+                             branch: branch, lastRun: identity == .shell ? nil : st.identityPane(of: sid)?.lastRun,
+                             subagents: st.panes(of: sid).reduce(0) { $0 + $1.status.subagentsWorking })
+        }
+        window?.title = title
+        updateChip(st, sid)
+        if host.isLocal, !cwd.isEmpty {
+            if branchFor != cwd {
+                branchFor = cwd
+                branch = GitBranch.cached(cwd) ?? nil
+                Task { [weak self] in
+                    let b = await GitBranch.lookup(cwd)
+                    guard let self, self.branchFor == cwd else { return }
+                    self.branch = b
+                    self.content.status.update(branch: b, cwd: cwd, counts: counts, key: key)
+                    self.content.band.update(band(), key: key)
+                }
+            }
+        } else {
+            branch = nil
+        }
+        content.band.update(band(), key: key)
+        content.band.ports.set(host.isLocal ? Array(Set(st.panes(of: sid).flatMap { $0.ports ?? [] })).sorted() : [])
+        content.status.update(branch: branch, cwd: cwd, counts: counts, key: key)
+        refreshChanges(host.isLocal ? cwd : "")
+    }
+
+    /// The chip speaks only when the shown session wants the person: an agent
+    /// waiting for input (with its own question) or failed. Working and done
+    /// are already told by the sidebar mark and the terminal itself. In a
+    /// split, the asking pane's strip already floods with the question, so the
+    /// chip stays away unless that pane is hidden behind a zoomed one (one
+    /// answer per question, design-system §1.3).
+    private func updateChip(_ st: HostState, _ sid: SessionID) {
+        let chip = content.band.chip
+        let panes = st.panes(of: sid)
+        guard let p = panes.max(by: { $0.activity < $1.activity }), p.activity == .blocked || p.activity == .error else {
+            setChip(hidden: true)
+            return
+        }
+        // Strips show when the split is not zoomed; zoomed onto the asking
+        // pane there is no strip either, so the chip speaks.
+        if panes.count > 1, st.sessions[sid]?.zoomed == nil {
+            setChip(hidden: true)
+            return
+        }
+        if p.activity == .blocked {
+            chip.update(.blocked, text: String((p.status.headline?.ask ?? "Needs input").prefix(48)))
+        } else {
+            chip.update(.error, text: "Failed")
+        }
+        setChip(hidden: false)
+    }
+
+    private func setChip(hidden: Bool) {
+        let chip = content.band.chip
+        guard chip.isHidden != hidden else {
+            content.band.needsLayout = true
+            return
+        }
+        if hidden {
+            Axo.Motion.fade(in: false, { chip.animator().alphaValue = 0 }) {
+                chip.isHidden = true
+                chip.alphaValue = 1
+            }
+        } else {
+            chip.alphaValue = 0
+            chip.isHidden = false
+            content.band.needsLayout = true
+            Axo.Motion.fade(in: true) { chip.animator().alphaValue = 1 }
+        }
+    }
+
+    // MARK: Window delegate
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        refreshChrome()
+        content.current?.restoreFocus()
+        (NSApp.delegate as? AppDelegate)?.windowBecameKey(self)
+    }
+
+    func windowDidResignKey(_ notification: Notification) { refreshChrome() }
+    func windowWillStartLiveResize(_ notification: Notification) { content.liveResizeStarted() }
+    func windowDidEndLiveResize(_ notification: Notification) { content.liveResizeEnded() }
+
+    func windowWillClose(_ notification: Notification) {
+        palette.dismiss()
+        (NSApp.delegate as? AppDelegate)?.windowClosed(self)
+    }
+
+    // MARK: Actions: sessions and workspaces
+
+    private var currentHost: HostSession? { selection?.host ?? model.local ?? model.hosts.first }
+
+    @objc func newSession(_ sender: Any?) {
+        guard let host = currentHost, let st = host.state else { return }
+        let ws = selection.flatMap { st.sessions[$0.session]?.workspace } ?? st.workspaces.first?.id
+        Task { await createSession(host, in: ws, cwd: nil, name: nil) }
+    }
+
+    /// Creates a session (and a Home workspace if the host has none) and shows it.
+    /// `launch`: a command typed into the new shell once it exists (an agent
+    /// preset). Typed, not spawned, so the pane keeps the person's shell with
+    /// its integration and history, and survives the program exiting.
+    /// The line that starts `agent` in a new session on `host` (nil: a shell).
+    func launchLine(_ agent: AgentKind?, _ host: HostSession, args: String = "") -> String? {
+        agent.map { AgentPresets.launchLine($0, args: args, prefs: model.prefs, local: host.isLocal) }
+    }
+
+    func createSession(_ host: HostSession, in workspace: WorkspaceID?, cwd: String?, name: String?,
+                       launch: String? = nil, worktree: String? = nil) async {
+        var wid = workspace
+        if wid == nil {
+            let w = WorkspaceID()
+            guard await host.performAndWait(.createWorkspace(w, name: "Home", root: host.isLocal ? NSHomeDirectory() : ""))
+            else { return }
+            wid = w
+        }
+        guard let wid else { return }
+        let sid = SessionID()
+        let pane = PaneID()
+        let ok = await host.performAndWait(.createSession(sid, workspace: wid, pane: pane,
+                                                          recipe: SpawnRecipe(cwd: cwd, worktree: worktree), name: name))
+        guard ok else { return }
+        // The PTY buffers it until the shell reads its first line, as typeahead.
+        if let launch { host.connection.send(.text(pane, launch + "\r")) }
+        show(host, sid)
+    }
+
+    @objc func newWorkspace(_ sender: Any?) {
+        guard let window, let host = currentHost else { return }
+        TextPrompt.run(in: window, title: "New Workspace", value: "", placeholder: "Name") { [weak self] name in
+            let trimmed = name.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, let self else { return }
+            let wid = WorkspaceID()
+            Task {
+                guard await host.performAndWait(.createWorkspace(wid, name: trimmed, root: "")) else { return }
+                await self.createSession(host, in: wid, cwd: nil, name: nil)
+            }
+        }
+    }
+
+    @objc func openFolder(_ sender: Any?) {
+        guard let window, let host = currentHost else { return }
+        guard host.isLocal else {
+            TextPrompt.run(in: window, title: "Open Folder on \(host.name)", value: "", placeholder: "/path/to/project") {
+                [weak self] path in
+                guard !path.isEmpty else { return }
+                self?.openWorkspace(host, root: path)
+            }
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Open"
+        panel.message = "Choose a folder to open as a workspace."
+        panel.beginSheetModal(for: window) { [weak self] r in
+            guard r == .OK, let url = panel.url else { return }
+            self?.openWorkspace(host, root: url.path(percentEncoded: false))
+        }
+    }
+
+    private func openWorkspace(_ host: HostSession, root: String) {
+        let trimmed = root.hasSuffix("/") && root.count > 1 ? String(root.dropLast()) : root
+        if let existing = host.state?.workspaces.first(where: { $0.root == trimmed }) {
+            if let sid = existing.sessions.first { show(host, sid) } else {
+                Task { await createSession(host, in: existing.id, cwd: nil, name: nil) }
+            }
+            return
+        }
+        let name = URL(filePath: trimmed).lastPathComponent
+        let wid = WorkspaceID()
+        Task {
+            guard await host.performAndWait(.createWorkspace(wid, name: name, root: trimmed)) else { return }
+            await createSession(host, in: wid, cwd: nil, name: nil)
+        }
+    }
+
+    @objc func closeSession(_ sender: Any?) {
+        guard let (host, sid) = selection, let s = host.session(sid) else { return }
+        // Read before the close ends it: which conversation its Claude held.
+        let claude = host.isLocal ? s.tree.panes.lazy.compactMap { ClaudeHistory.held(byPane: $0.raw.uuidString) }.first : nil
+        model.closed.append(AppModel.ClosedSession(host: host.id, workspace: s.workspace,
+                                                   cwd: host.pane(s.focus)?.pwd ?? "", name: s.name, claude: claude))
+        host.perform(.closeSession(sid))
+    }
+
+    @objc func reopenClosedSession(_ sender: Any?) {
+        guard let c = model.closed.popLast(), let host = model.host(c.host) else { return }
+        let ws = host.state?.workspace(c.workspace)?.id ?? host.state?.workspaces.first?.id
+        // Its Claude conversation comes back where it was; a plain session as a shell.
+        let launch = c.claude.flatMap { ClaudeHistory.hasTranscript($0) ? launchLine(.claude, host, args: "--resume \($0)") : nil }
+        Task { await createSession(host, in: ws, cwd: c.cwd.isEmpty ? nil : c.cwd, name: c.name, launch: launch) }
+    }
+
+    @objc func togglePinned(_ sender: Any?) {
+        guard let (host, sid) = selection, let s = host.session(sid) else { return }
+        host.perform(.setPinned(sid, !s.isPinned))
+    }
+
+    @objc func toggleUnread(_ sender: Any?) {
+        guard let (host, sid) = selection, let s = host.session(sid) else { return }
+        host.perform(.setUnread(sid, !s.isUnread))
+    }
+
+    @objc func renameSession(_ sender: Any?) {
+        guard let (host, sid) = selection else { return }
+        sidebar.rename(host, sid)
+    }
+
+    @objc func selectSessionByNumber(_ sender: Any?) {
+        guard let n = (sender as? NSMenuItem)?.tag else { return }
+        let order = model.sidebarOrder
+        guard !order.isEmpty else { return }
+        let pick = n == 9 ? order[order.count - 1] : (n - 1 < order.count ? order[n - 1] : nil)
+        if let (h, s) = pick { show(h, s) }
+    }
+
+    // MARK: Back and Forward (⌥⌘[ ⌥⌘]), through sessions in the order seen
+
+    private var visited: [(host: UUID, session: SessionID)] = []
+    private var visitedAt = -1
+    private var navigating = false
+
+    @objc func goBack(_ sender: Any?) { travel(-1) }
+    @objc func goForward(_ sender: Any?) { travel(1) }
+
+    /// The nearest session that way that still exists; closed ones are dropped.
+    private func target(_ d: Int) -> Int? {
+        var i = visitedAt + d
+        while i >= 0, i < visited.count {
+            let v = visited[i]
+            if let h = model.host(v.host), h.session(v.session) != nil,
+               h !== selection?.host || v.session != selection?.session { return i }
+            i += d
+        }
+        return nil
+    }
+
+    private func travel(_ d: Int) {
+        guard let i = target(d), let host = model.host(visited[i].host) else { return NSSound.beep() }
+        visitedAt = i
+        navigating = true
+        show(host, visited[i].session)
+        navigating = false
+    }
+
+    @objc func selectNextSession(_ sender: Any?) { step(1) }
+    @objc func selectPreviousSession(_ sender: Any?) { step(-1) }
+
+    private func step(_ d: Int) {
+        let order = model.sidebarOrder
+        guard !order.isEmpty else { return }
+        let i = order.firstIndex { $0.0 === selection?.host && $0.1 == selection?.session } ?? 0
+        let (h, s) = order[(i + d + order.count) % order.count]
+        show(h, s)
+    }
+
+    @objc func selectNextAttention(_ sender: Any?) { jump(to: nil, forward: true) }
+    @objc func selectPreviousAttention(_ sender: Any?) { jump(to: nil, forward: false) }
+
+    /// Cycles through panes that need the person (waiting first), or through
+    /// panes of one activity when the status bar asks.
+    private func jump(to activity: Activity?, forward: Bool) {
+        var list = model.attentionPanes()
+        if let activity {
+            list = model.hosts.flatMap { h in
+                (h.state?.orderedSessions ?? []).flatMap { sid in
+                    (h.state?.panes(of: sid) ?? []).filter { $0.activity == activity }.map { (h, $0) }
+                }
+            }
+        }
+        guard !list.isEmpty else { return }
+        let current = content.current?.focused
+        let i = list.firstIndex { $0.1.id == current }
+        let next = i.map { (forward ? $0 + 1 : $0 - 1 + list.count) % list.count } ?? 0
+        let (h, p) = list[next]
+        reveal(h, p.id)
+    }
+
+    // MARK: Actions: view
+
+    @objc func toggleStatusBar(_ sender: Any?) {
+        model.prefs.showStatusBar.toggle()
+        for w in NSApp.windows { (w.windowController as? MainWindowController)?.content.view.needsLayout = true }
+    }
+
+    @objc func increaseFontSize(_ sender: Any?) { model.setFontSize(model.prefs.fontSize + 1) }
+    @objc func decreaseFontSize(_ sender: Any?) { model.setFontSize(model.prefs.fontSize - 1) }
+    @objc func resetFontSize(_ sender: Any?) { model.setFontSize(Axo.Font.terminalSize) }
+
+    @objc func toggleSessionSidebar(_ sender: Any?) { shell.toggleSidebar() }
+
+    @objc func showCommandPalette(_ sender: Any?) { palette.toggle(.commands) }
+    @objc func showOpenQuickly(_ sender: Any?) { palette.toggle(.sessions) }
+    @objc func showJumpToAgent(_ sender: Any?) { palette.toggle(.agents) }
+
+    /// ⇧⌘R: a past Claude Code conversation, resumed in its own folder.
+    @objc func resumeClaudeSession(_ sender: Any?) {
+        guard let host = currentHost, host.isLocal else { NSSound.beep(); return }
+        let root = selection.flatMap { host.session($0.session)?.workspace }.flatMap { host.state?.workspace($0)?.root } ?? ""
+        palette.showResume(host, root: root)
+    }
+
+    /// Opens `past` with `claude --resume` in its project's workspace (made
+    /// if there is none), named for what it was asked.
+    func resume(_ past: PastSession, on host: HostSession) {
+        let launch = launchLine(.claude, host, args: "--resume \(past.id)")
+        let name = past.title.count > 48 ? String(past.title.prefix(48)) + "…" : past.title
+        let workspaces = host.state?.workspaces ?? []
+        let owner = workspaces.filter { past.project == $0.root || past.project.hasPrefix($0.root + "/") }
+            .max { $0.root.count < $1.root.count }
+        Task {
+            var wid = owner?.id
+            if wid == nil {
+                let w = WorkspaceID()
+                guard await host.performAndWait(.createWorkspace(w, name: URL(filePath: past.project).lastPathComponent,
+                                                                 root: past.project)) else { return }
+                wid = w
+            }
+            await createSession(host, in: wid, cwd: past.project, name: name, launch: launch)
+        }
+    }
+
+    /// ⌥⌘T: a session on its own branch, in a worktree of the current project.
+    @objc func newWorktreeSession(_ sender: Any?) {
+        guard let host = currentHost,
+              let wid = selection.flatMap({ host.session($0.session)?.workspace }) ?? host.state?.workspaces.first?.id
+        else { NSSound.beep(); return }
+        // The focused pane's repository when it is in one (a project's
+        // root need not be), else the project's root.
+        let cwd = currentCwd.flatMap { SidebarViewController.inRepository($0) ? LinkOpener.projectRoot($0) : nil }
+        palette.showWorktree(host, wid, from: cwd)
+    }
+
+    @objc func removeWorktreeSession(_ sender: Any?) {
+        guard let (host, sid) = selection else { return }
+        removeWorktree(host, sid)
+    }
+
+    /// Closes a worktree session and removes its folder; asks first, and
+    /// again in stronger words when the tree has changes. The branch stays.
+    func removeWorktree(_ host: HostSession, _ sid: SessionID) {
+        guard let window, let path = host.session(sid)?.worktree else { return }
+        let branch = host.session(sid)?.name ?? URL(filePath: path).lastPathComponent
+        let ask = NSAlert()
+        ask.messageText = "Remove the worktree for “\(branch)”?"
+        ask.informativeText = "The session closes and its folder, .worktrees/\(URL(filePath: path).lastPathComponent), is deleted. The branch and its commits stay."
+        ask.addButton(withTitle: "Remove")
+        ask.addButton(withTitle: "Cancel")
+        ask.beginSheetModal(for: window) { [weak self] r in
+            guard r == .alertFirstButtonReturn else { return }
+            Task { @MainActor in
+                do {
+                    try await host.connection.perform(.removeWorktree(sid, force: false))
+                } catch ConnectionError.intent(.dirty) {
+                    self?.confirmDirtyRemoval(host, sid, branch: branch)
+                } catch let e as ConnectionError {
+                    self?.model.errors.emit(HostSession.describe(e))
+                } catch {}
+            }
+        }
+    }
+
+    private func confirmDirtyRemoval(_ host: HostSession, _ sid: SessionID, branch: String) {
+        guard let window else { return }
+        let ask = NSAlert()
+        ask.alertStyle = .critical
+        ask.messageText = "“\(branch)” has uncommitted changes"
+        ask.informativeText = "Removing the worktree deletes them. Commit or stash them first to keep them."
+        let remove = ask.addButton(withTitle: "Delete Changes and Remove")
+        remove.hasDestructiveAction = true
+        ask.addButton(withTitle: "Cancel")
+        ask.beginSheetModal(for: window) { r in
+            guard r == .alertFirstButtonReturn else { return }
+            host.perform(.removeWorktree(sid, force: true))
+        }
+    }
+
+    // MARK: Changes
+
+    /// The diff chip follows the focused pane's tree (local hosts).
+    private func refreshChanges(_ cwd: String) {
+        guard !cwd.isEmpty else {
+            content.band.diff.set(nil)
+            content.band.needsLayout = true
+            return
+        }
+        if case let .some(hit) = GitChangesReader.cached(cwd) { content.band.diff.set(hit) }
+        Task { [weak self] in
+            let c = await GitChangesReader.lookup(cwd)
+            guard let self, self.currentCwd == cwd else { return }
+            self.content.band.diff.set(c)
+            self.content.band.needsLayout = true
+        }
+    }
+
+    private var currentCwd: String? {
+        guard let (host, sid) = selection, host.isLocal, let st = host.state, let s = st.sessions[sid] else { return nil }
+        return st.panes[content.current?.focused ?? s.focus]?.pwd
+    }
+
+    /// ⌥⌘O: the focused pane's project (its repository, else its folder) in the editor.
+    @objc func openInEditor(_ sender: Any?) {
+        guard let cwd = currentCwd, !cwd.isEmpty else { NSSound.beep(); return }
+        LinkOpener.openFolder(LinkOpener.projectRoot(cwd))
+    }
+
+    @objc func revealInFinder(_ sender: Any?) {
+        guard let cwd = currentCwd, !cwd.isEmpty else { NSSound.beep(); return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: cwd, directoryHint: .isDirectory)])
+    }
+
+    @objc func showChanges(_ sender: Any?) {
+        guard let cwd = currentCwd, !cwd.isEmpty, let (host, sid) = selection else { return }
+        let workspace = host.session(sid)?.workspace
+        Task { [weak self] in
+            guard let self, let c = await GitChangesReader.lookup(cwd, fresh: true), !c.isEmpty else { NSSound.beep(); return }
+            self.content.band.diff.set(c)
+            self.content.band.layoutSubtreeIfNeeded()
+            let reviewer = [AgentKind.claude, .codex].first { AgentPresets.available(local: true).contains($0) }
+            let actions = ChangesPopover.Actions(
+                open: { NSWorkspace.shared.open(URL(filePath: $0)) },
+                diff: { [weak self] path in self?.showDiff(path, root: c.root) },
+                review: reviewer.map { agent in
+                    { [weak self] in
+                        guard let self else { return }
+                        let prompt = Self.shellQuote("Review the uncommitted changes in this repository (git diff HEAD) and list problems.")
+                        let launch = self.launchLine(agent, host, args: prompt)
+                        Task { await self.createSession(host, in: workspace, cwd: c.root, name: "Review", launch: launch) }
+                    }
+                })
+            let anchor: NSView = self.content.band.diff.isHidden ? self.content.band : self.content.band.diff
+            ChangesPopover.toggle(c, branch: self.branch, from: anchor, actions: actions)
+        }
+    }
+
+    /// `git diff` for one file in a split to the right, through the person's
+    /// pager (so `delta` applies); the pane closes when the pager quits.
+    private func showDiff(_ path: String, root: String) {
+        let f = Self.shellQuote(path)
+        // Titled with the file (OSC 2) so the pane strip names what it shows.
+        let title = Self.shellQuote((path as NSString).lastPathComponent)
+        let script = "printf '\\033]2;%s\\007' \(title); if git ls-files --error-unmatch -- \(f) >/dev/null 2>&1; then git diff HEAD -- \(f); "
+            + "else git diff --no-index -- /dev/null \(f); fi; exit 0"
+        // LESS without -F so a short diff stays on screen until q; -c paints
+        // from the top (plain less writes a short file up from the last row).
+        content.current?.split(.horizontal, recipe: SpawnRecipe(command: ["/bin/zsh", "-lc", script], cwd: root,
+                                                                 env: ["LESS": "-Rc"]))
+    }
+
+    static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(closeSession(_:)), #selector(renameSession(_:)):
+            return selection != nil
+        case #selector(reopenClosedSession(_:)):
+            return !model.closed.isEmpty
+        case #selector(togglePinned(_:)):
+            let s = selection.flatMap { $0.host.session($0.session) }
+            item.title = s?.isPinned == true ? "Unpin Session" : "Pin Session"
+            return s != nil
+        case #selector(toggleUnread(_:)):
+            let s = selection.flatMap { $0.host.session($0.session) }
+            item.title = s?.isUnread == true ? "Mark as Read" : "Mark as Unread"
+            return s != nil
+        case #selector(goBack(_:)):
+            return target(-1) != nil
+        case #selector(goForward(_:)):
+            return target(1) != nil
+        case #selector(resumeClaudeSession(_:)):
+            return currentHost?.isLocal == true
+        case #selector(removeWorktreeSession(_:)):
+            return selection.flatMap { $0.host.session($0.session)?.worktree } != nil
+        case #selector(openInEditor(_:)), #selector(revealInFinder(_:)):
+            return !(currentCwd ?? "").isEmpty
+        case #selector(toggleSessionSidebar(_:)):
+            item.title = shell.collapsed ? "Show Sidebar" : "Hide Sidebar"
+            return true
+        case #selector(toggleStatusBar(_:)):
+            item.title = model.prefs.showStatusBar ? "Hide Status Bar" : "Show Status Bar"
+            return true
+        case #selector(selectNextAttention(_:)), #selector(selectPreviousAttention(_:)):
+            return !model.attentionPanes().isEmpty
+        case #selector(newSession(_:)), #selector(newWorkspace(_:)), #selector(openFolder(_:)):
+            return currentHost?.phase == .connected
+        default:
+            return true
+        }
+    }
+}
