@@ -244,7 +244,12 @@ struct HostTests {
         let other = open(lock, O_RDWR | O_CLOEXEC)
         // Parallel tests spawn too, so taking it is waited for as well.
         #expect(await until(.seconds(2)) { flock(other, LOCK_EX | LOCK_NB) == 0 })
-        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(100)) { close(other) }
+        // A thread of its own, not a dispatch queue: under the deep step's
+        // load every pool worker can be busy past the server's whole wait.
+        Thread.detachNewThread {
+            usleep(100_000)
+            close(other)
+        }
         try await fx.restart()
         await fx.tearDown()
     }
