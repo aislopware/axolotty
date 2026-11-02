@@ -365,12 +365,6 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             lastGeneration = generation
             needsRender = false
         }
-        cursor.preferred = switch prefs.cursorShape {
-        case .bar: .bar
-        case .block: .block
-        case .underline: .underline
-        }
-        cursor.blinkEnabled = prefs.cursorBlink
         cursor.reduceMotion = Axo.Motion.reduced
         let out = cursor.frame(now, cursor: cursorInfo, focused: isCursorFocused)
         let cursorChanged = out.style != lastCursor
@@ -1031,7 +1025,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     private func pasteText(_ text: String) {
         let bracketed = mirror.withTerminal { $0.mode(2004) } ?? false
-        if prefs.confirmUnsafePaste, !bracketed, VTInputEncoder.pasteIsUnsafe(text) {
+        if !bracketed, VTInputEncoder.pasteIsUnsafe(text) {
             let alert = NSAlert()
             alert.messageText = "Paste text that may run commands?"
             alert.informativeText = "The text contains line breaks or control characters, and the program is not in bracketed-paste mode, so it may run as soon as it is pasted."

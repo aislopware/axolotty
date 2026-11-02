@@ -28,9 +28,7 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
   - the diff chip and Changes popover (⇧⌘C);
   - listening ports with one-click open;
   - Open in Editor (⌥⌘O).
-- **Look:**
-  - Axolotty Night and Day, or any Ghostty theme installed on the Mac, picked separately for dark and light;
-  - any installed monospaced font.
+- **Look:** Axolotty Night and Day, following the system or fixed, in any installed monospaced font.
 
 ## Agents drive Axolotty
 

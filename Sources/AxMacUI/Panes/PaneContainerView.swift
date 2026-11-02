@@ -339,7 +339,7 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         let root = host.session(sessionID).flatMap { host.state?.workspace($0.workspace)?.root } ?? ""
         var anyWorking = false
         for (id, v) in views {
-            let dim = model.prefs.dimUnfocusedPanes && multi && id != focused
+            let dim = multi && id != focused
             v.setDimmed(dim, alpha: alpha, animated: animated)
             v.setFocusRing(contrast && multi && id == focused)
             v.showsStrip = multi

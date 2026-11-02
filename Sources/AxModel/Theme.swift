@@ -98,41 +98,6 @@ public struct TerminalTheme: Hashable, Codable, Sendable {
         ]))
 }
 
-extension TerminalTheme {
-    /// Reads a Ghostty theme file (`key = value` lines: `background`,
-    /// `foreground`, `cursor-color`, `cursor-text`, `selection-background`,
-    /// `selection-foreground`, `palette = N=#rrggbb`). Missing palette
-    /// entries and colours fall back to the built-in theme of the same
-    /// lightness; a file without a background and foreground is not a theme.
-    public static func ghostty(name: String, text: String) -> TerminalTheme? {
-        var values: [String: RGB] = [:]
-        var palette: [Int: RGB] = [:]
-        for raw in text.split(whereSeparator: \.isNewline) {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
-            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-            if key == "palette" {
-                let parts = value.split(separator: "=", maxSplits: 1)
-                if parts.count == 2, let i = Int(parts[0].trimmingCharacters(in: .whitespaces)), (0 ..< 16).contains(i),
-                   let c = RGB(hex: parts[1].trimmingCharacters(in: .whitespaces)) {
-                    palette[i] = c
-                }
-            } else if let c = RGB(hex: value) {
-                values[key] = c
-            }
-        }
-        guard let bg = values["background"], let fg = values["foreground"] else { return nil }
-        let base: TerminalTheme = bg.luminance < 0.5 ? .night : .day
-        return TerminalTheme(
-            name: name, background: bg, foreground: fg,
-            cursor: values["cursor-color"] ?? fg, cursorText: values["cursor-text"] ?? bg,
-            selectionBackground: values["selection-background"] ?? fg.mix(bg, 0.75),
-            selectionForeground: values["selection-foreground"],
-            ansi: (0 ..< 16).map { palette[$0] ?? base.ansi[$0] })
-    }
-}
-
 /// Brand and state colours shared by every UI (design spec §2.2).
 public enum Palette {
     public static func activity(_ a: Activity, dark: Bool) -> RGB? {

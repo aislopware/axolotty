@@ -351,7 +351,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// its integration and history, and survives the program exiting.
     /// The line that starts `agent` in a new session on `host` (nil: a shell).
     func launchLine(_ agent: AgentKind?, _ host: HostSession, args: String = "") -> String? {
-        agent.map { AgentPresets.launchLine($0, args: args, prefs: model.prefs, local: host.isLocal) }
+        agent.map { AgentPresets.launchLine($0, args: args, local: host.isLocal) }
     }
 
     func createSession(_ host: HostSession, in workspace: WorkspaceID?, cwd: String?, name: String?,

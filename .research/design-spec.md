@@ -201,7 +201,6 @@ Springs are critically damped unless noted. Use `NSAnimationContext.animate(_ an
 ### 3.3 Cursor (drawn in the Metal pass; with libghostty, use a cursor overlay or a custom shader on `iCurrentCursor` / `iPreviousCursor`, which are verified in Config.zig)
 
 - **Glide**: on a same-row move ≤ 8 cols or a move ≤ 2 rows, interpolate position over 80 ms with ease-out-quad `1 − (1 − t)²`. Larger jumps snap. Suppress the glide while output is streaming (more than 1 move per frame, or during the PTY-burst window). Otty uses 100 ms ≤ 8 cols; diri uses 80 ms ≤ 8 cols / 2 rows.
-- **Entrance**: on focus gain, a block cursor pops at scale `1 + 0.14 · (1 − t)³` over 220 ms (Otty). Bar and underline use 0.4 on their long axis.
 - **Blink** (default on, styled after diri): starts after 500 ms idle. Fade 150 ms, high hold 500 ms, low hold 300 ms, floor opacity 0.25 (it dims rather than vanishing). It stops after 10 cycles to save power and restarts on any keystroke.
 - **Shape**: bar 2pt in Accent by default. The text under a block cursor uses Ground. In an unfocused pane or window the cursor is a hollow block at 1pt.
 - **Reduce Motion**: no glide and no entrance. Blink becomes a hard toggle at the same period (or off if the user disables blinking).

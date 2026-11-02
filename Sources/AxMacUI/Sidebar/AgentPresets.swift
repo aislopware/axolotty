@@ -29,17 +29,12 @@ enum AgentPresets {
     }()
 
     /// The line typed into a new session's shell to start `agent`, with
-    /// `args` (already quoted). Claude Code gets the person's start preset
-    /// (permission mode, model, effort) and, when allowed and local,
-    /// Axolotty's MCP tools (the file is Axolotty's own; the agent's config
-    /// is never written).
-    static func launchLine(_ agent: AgentKind, args: String = "", prefs: Preferences, local: Bool) -> String {
+    /// `args` (already quoted). A local Claude Code gets Axolotty's MCP tools
+    /// (the file is Axolotty's own; the agent's config is never written).
+    static func launchLine(_ agent: AgentKind, args: String = "", local: Bool) -> String {
         var line = agent.executable
         if agent == .claude {
-            if prefs.agentTools, local { line += " --mcp-config \"$AXOLOTTY_MCP\"" }
-            if !prefs.claudeMode.isEmpty { line += " --permission-mode \(prefs.claudeMode)" }
-            if !prefs.claudeModel.isEmpty { line += " --model \(prefs.claudeModel)" }
-            if !prefs.claudeEffort.isEmpty { line += " --effort \(prefs.claudeEffort)" }
+            if local { line += " --mcp-config \"$AXOLOTTY_MCP\"" }
         }
         if !args.isEmpty { line += " " + args }
         return line
