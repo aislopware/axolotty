@@ -42,7 +42,9 @@ it measured becomes a model, and the gate holds the model in virtual time.
   line (`progress(_:)`), so a quiet run is a stuck one. SwiftPM holds a test
   process's output until it exits, so the line also goes straight into the
   watchdog's log (`$AXWATCH_LOG`). Without that, the long sim step looked
-  silent for minutes and was ended twice. Suites that spawn carry
+  silent for minutes and was ended twice; so did thirty repetitions of a
+  four-second test, which is why each faulty-link test reports its end.
+  Suites that spawn carry
   `.timeLimit`. One SwiftPM at a time on `.build`: a second one waits
   silently on the first one's lock.
 - **The gate is small; long runs widen it.** The same tests take a bigger

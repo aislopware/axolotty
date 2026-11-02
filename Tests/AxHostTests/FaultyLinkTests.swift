@@ -54,6 +54,9 @@ struct FaultyLinkTests {
             c.disconnect()
             relay.close()
             await fx.tearDown()
+            // SwiftPM holds the output of a run until it ends; a long run of
+            // repetitions still shows the watchdog it is moving.
+            progress("faulty link: \(Test.current?.name ?? "a test") done, \(relay.accepted) dial(s)")
         }
     }
 
@@ -97,6 +100,47 @@ struct FaultyLinkTests {
         #expect(r.seen == Array(0 ..< Self.lines), "resumed with a gap or a repeat")
         #expect(await r.mirrorsTheHost())
         #expect(r.relay.accepted >= 2)
+        await r.tearDown()
+    }
+
+    /// The Mac woke, or its network changed: the old connection is dead and
+    /// says nothing, while a new dial would work. Left alone, the link
+    /// waits out its liveness (`silence`). A kick (`LinkNudge`) asks at once
+    /// and relinks after one unanswered beat, losing nothing either way.
+    @Test func aKickRelinksADeadLinkBeforeLivenessWould() async throws {
+        let r = try await Self.rig()
+        #expect(await r.waitFor(20))
+
+        // Left alone: still on the dead link a beat later; liveness ends it.
+        r.relay.strand()
+        let alone = ContinuousClock.now
+        try await Task.sleep(for: Self.timing.beat)
+        #expect(r.relay.accepted == 1, "nothing noticed yet: under `silence`")
+        #expect(await until(.seconds(5)) { r.relay.accepted >= 2 && r.c.isConnected })
+        let waited = ContinuousClock.now - alone
+
+        // Kicked: the same death, found out within a beat.
+        r.relay.strand()
+        let kicked = ContinuousClock.now
+        r.c.kick()
+        #expect(await until(.seconds(5)) { r.relay.accepted >= 3 && r.c.isConnected })
+        let took = ContinuousClock.now - kicked
+        #expect(took < waited, "a kick relinked in \(took), no sooner than liveness alone (\(waited))")
+
+        // A dial made before the change hangs in its handshake: a kick
+        // dials again instead of waiting out the welcome's timeout.
+        r.relay.strand(new: true)
+        r.relay.cut()
+        #expect(await until(.seconds(5)) { r.relay.accepted >= 4 })
+        try await Task.sleep(for: Self.timing.beat * 1.5)
+        #expect(!r.c.isConnected, "a handshake nothing answers is not a link")
+        r.relay.strand()
+        r.c.kick()
+        #expect(await until(.seconds(3)) { r.relay.accepted >= 5 && r.c.isConnected }, "the hung handshake was waited on")
+
+        #expect(await r.waitFor(Self.lines))
+        #expect(r.seen == Array(0 ..< Self.lines), "resumed with a gap or a repeat")
+        #expect(await r.mirrorsTheHost())
         await r.tearDown()
     }
 

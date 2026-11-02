@@ -8,6 +8,10 @@
 //   as when the path drops. Bytes already read are held, not lost, and go
 //   on `restore()`, the way TCP delivers them once the path comes back.
 // - `cut()`: every connection reset at once (a NAT that forgot us).
+// - `strand()`: every connection so far goes silent for good, with no
+//   reset, while new dials are answered: what a Mac waking from sleep or
+//   moving to another network finds. `strand(new: true)` takes new dials
+//   into the silence as well.
 // - `delay`: added to every chunk each way.
 //
 // Tests on it wait on the events they mean, never on wall-clock bounds;
@@ -28,6 +32,8 @@ public final class LinkRelay: @unchecked Sendable {
         var fds: [Int32] = []
         var accepted = 0
         var closed = false
+        /// Connections numbered below this carry nothing any more.
+        var strandedBelow = 0
     }
 
     private let state = Mutex(State())
@@ -69,6 +75,12 @@ public final class LinkRelay: @unchecked Sendable {
         lit.broadcast()
         lit.unlock()
     }
+
+    /// Every connection so far goes silent for good (bytes read, never
+    /// passed on, nothing reset); new dials are answered as usual. With
+    /// `new`, dials from now on are taken and go silent too (a path that
+    /// accepts and then carries nothing), until the next `strand()`.
+    public func strand(new: Bool = false) { state.withLock { $0.strandedBelow = new ? .max : $0.accepted } }
 
     /// Resets every connection now.
     public func cut() {
@@ -118,14 +130,15 @@ public final class LinkRelay: @unchecked Sendable {
             }
             var one: Int32 = 1
             for fd in [c, u] { _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size)) }
-            state.withLock { s in
-                s.accepted += 1
+            let number = state.withLock { s -> Int in
+                defer { s.accepted += 1 }
                 s.fds += [c, u]
+                return s.accepted
             }
             let done = Atomic<Int>(0)
             for (from, to) in [(c, u), (u, c)] {
                 Thread.detachNewThread { [self] in
-                    pump(from, to)
+                    pump(from, to, number)
                     shutdown(from, SHUT_RDWR)
                     shutdown(to, SHUT_RDWR)
                     if done.add(1, ordering: .acquiringAndReleasing).newValue == 2 {
@@ -138,12 +151,13 @@ public final class LinkRelay: @unchecked Sendable {
         }
     }
 
-    private func pump(_ from: Int32, _ to: Int32) {
+    private func pump(_ from: Int32, _ to: Int32, _ number: Int) {
         var buf = [UInt8](repeating: 0, count: 32 << 10)
         while true {
             let n = buf.withUnsafeMutableBytes { read(from, $0.baseAddress, $0.count) }
             if n < 0, errno == EINTR { continue }
             guard n > 0 else { return }
+            if number < state.withLock({ $0.strandedBelow }) { continue }  // into the void
             waitLit()
             let d = delay
             if d > .zero { Thread.sleep(forTimeInterval: Double(d.components.attoseconds) / 1e18 + Double(d.components.seconds)) }

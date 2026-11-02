@@ -81,6 +81,8 @@ public final class HostConnection: @unchecked Sendable {
         var intents: [UUID: CheckedContinuation<Result<Void, ConnectionError>, Never>] = [:]
         var captures: [UUID: CheckedContinuation<String?, Never>] = [:]
         var pongs: [UInt64: CheckedContinuation<Void, Never>] = [:]
+        /// A kick's ping, until its pong comes.
+        var kickPing: UInt64?
         var unacked: [PaneID: UInt64] = [:]
         var ackScheduled = false
         var appearance: Appearance?
@@ -97,6 +99,13 @@ public final class HostConnection: @unchecked Sendable {
         var refusal: LinkFailure?
         /// The open link's liveness (remote links; see `LinkLiveness`).
         var liveness: LinkLiveness?
+        /// When the link up now was dialled.
+        var dialedAt: Duration?
+        /// The dial under way: every caller meanwhile waits on this one, so
+        /// two dials never race to be the link (and strand each other's welcome).
+        var dialing: Task<HostHello, any Error>?
+        /// Bumped by each scheduled redial; an older one finds it moved and stands down.
+        var redialTicket = 0
         var heartbeat: Task<Void, Never>?
         var rtt: Duration?
     }
@@ -135,7 +144,8 @@ public final class HostConnection: @unchecked Sendable {
     /// The latest document replica (nil before the first welcome).
     public var replica: HostState? { state.withLock { $0.replica } }
 
-    public var isConnected: Bool { state.withLock { $0.conn != nil && $0.replica != nil } }
+    /// A link is up and the host has said welcome on it (not mid-handshake).
+    public var isConnected: Bool { state.withLock { $0.conn != nil && $0.welcome == nil && $0.replica != nil } }
 
     /// The last heartbeat's round trip (remote links).
     public var rtt: Duration? { state.withLock { $0.rtt } }
@@ -165,6 +175,20 @@ public final class HostConnection: @unchecked Sendable {
     }
 
     private func open() async throws -> HostHello {
+        let dial = state.withLock { s -> Task<HostHello, any Error> in
+            if let d = s.dialing { return d }
+            let d = Task { [weak self] () throws -> HostHello in
+                guard let self else { throw ConnectionError.closed }
+                defer { state.withLock { $0.dialing = nil } }
+                return try await dialOnce()
+            }
+            s.dialing = d
+            return d
+        }
+        return try await dial.value
+    }
+
+    private func dialOnce() async throws -> HostHello {
         let conn: FramedConnection
         switch endpoint {
         case let .unix(path):
@@ -199,12 +223,14 @@ public final class HostConnection: @unchecked Sendable {
                 conn.close(ConnectionError.refused("timed out"))
             }
         }
+        let t = now
         return try await withCheckedThrowingContinuation { c in
             state.withLock { s in
                 s.conn = conn
                 s.welcome = c
                 s.refusal = nil
                 s.liveness = nil
+                s.dialedAt = t
             }
             conn.start(onFrame: { [weak self] in self?.receive($0, on: conn) },
                        onClose: { [weak self] e in self?.closed(conn, e) })
@@ -234,6 +260,7 @@ public final class HostConnection: @unchecked Sendable {
             s.intents = [:]
             s.captures = [:]
             s.pongs = [:]
+            s.kickPing = nil
             return true
         }
         guard mine else { return }
@@ -286,31 +313,40 @@ public final class HostConnection: @unchecked Sendable {
     }
 
     /// Redials now: the network changed, the Mac woke, the person asked.
-    /// A live link that has gone quiet is dropped first, so it is replaced
-    /// rather than waited on.
+    /// A link up is asked first, and dropped unless a beat brings the answer
+    /// or output sent after the question. Bytes that arrive at once prove
+    /// nothing: they were on their way before the network changed. A link
+    /// busy a moment ago is asked too, since a change can end it mid-stream.
+    /// A handshake under way for over a beat rides the old path too and is
+    /// dialled again; a younger one was most likely dialled for this very
+    /// change (path updates come in bursts) and is left to finish.
     public func kick() {
         let t = now
-        let (conn, heard, idle) = state.withLock { s -> (FramedConnection?, Duration?, Bool) in
+        let n = UInt64.random(in: 1 ..< 1 << 63)  // below the liveness pings' range
+        let (conn, asked, shaking, idle) = state.withLock { s -> (FramedConnection?, Bool, Bool, Bool) in
             s.redials = 0
             s.downSince = nil
-            return (s.conn, s.liveness?.lastHeard, s.conn == nil && s.wantConnected)
+            let shaking = s.welcome != nil && s.dialedAt.map { t - $0 >= timing.beat } ?? false
+            let asked = s.liveness != nil
+            if asked { s.kickPing = n }
+            return (s.conn, asked, shaking, s.conn == nil && s.wantConnected)
         }
-        if let conn, let heard, t - heard > timing.beat / 2, endpoint.isRemote {
-            // Ask; an answer within one beat keeps the link.
-            conn.send(ClientMessage.ping(0))
-            conn.queue.asyncAfter(deadline: .now() + .nanoseconds(Int(timing.beat / .nanoseconds(1)))) { [weak self, weak conn] in
+        if let conn, shaking, endpoint.isRemote {
+            conn.close(ConnectionError.refused("dialled before the network changed"))
+        } else if let conn, asked, endpoint.isRemote {
+            conn.send(ClientMessage.ping(n))
+            let beat = timing.beat
+            conn.queue.asyncAfter(deadline: .now() + .nanoseconds(Int(beat / .nanoseconds(1)))) { [weak self, weak conn] in
                 guard let self, let conn else { return }
-                if state.withLock({ ($0.liveness?.lastHeard ?? heard) <= heard }) {
-                    conn.close(ConnectionError.refused("silent"))
+                let silent = state.withLock { s -> Bool in
+                    guard s.conn === conn, s.kickPing == n else { return false }
+                    s.kickPing = nil
+                    return (s.liveness?.lastHeard ?? t) < t + beat / 2
                 }
+                if silent { conn.close(ConnectionError.refused("silent")) }
             }
         } else if idle {
-            Task { [weak self] in
-                guard let self, state.withLock({ $0.conn == nil }) else { return }
-                if (try? await open()) == nil, state.withLock({ $0.conn == nil && $0.wantConnected }) {
-                    scheduleReconnect()
-                }
-            }
+            scheduleReconnect(after: .zero)
         }
     }
 
@@ -342,22 +378,32 @@ public final class HostConnection: @unchecked Sendable {
         state.withLock { $0.heartbeat = task }
     }
 
-    private func scheduleReconnect() {
+    /// Redials after the ladder's next step (or `delay`). Only the latest
+    /// schedule stands: a link that closed mid-handshake is rescheduled both
+    /// by its close and by its failed dial, and those must be one redial.
+    private func scheduleReconnect(after delay: Duration? = nil) {
         let remote = endpoint.isRemote
-        let delay = state.withLock { s -> Duration in
+        let (wait, ticket) = state.withLock { s -> (Duration, Int) in
+            s.redialTicket &+= 1
+            if let delay { return (delay, s.redialTicket) }
             let now = ContinuousClock.now
             let since = s.downSince ?? now
             s.downSince = since
             let step = Self.redialDelay(after: s.redials == 0 ? nil : s.backoff, downFor: now - since, remote: remote)
             s.backoff = step
             s.redials += 1
-            return step * Double.random(in: 0.8 ... 1.2)
+            return (step * Double.random(in: 0.8 ... 1.2), s.redialTicket)
         }
         Task { [weak self] in
-            try? await Task.sleep(for: delay)
-            guard let self, state.withLock({ $0.wantConnected && $0.conn == nil }) else { return }
-            if (try? await open()) == nil, state.withLock({ $0.conn == nil && $0.wantConnected }) { scheduleReconnect() }
+            if wait > .zero { try? await Task.sleep(for: wait) }
+            guard let self, redialStands(ticket) else { return }
+            if (try? await open()) == nil, redialStands(ticket) { scheduleReconnect() }
         }
+    }
+
+    /// Still wanted, still down, and no later redial scheduled.
+    private func redialStands(_ ticket: Int) -> Bool {
+        state.withLock { $0.wantConnected && $0.conn == nil && $0.redialTicket == ticket }
     }
 
     // MARK: Receiving (connection queue)
@@ -427,7 +473,10 @@ public final class HostConnection: @unchecked Sendable {
             state.withLock { $0.captures.removeValue(forKey: token) }?.resume(returning: text)
         case let .pong(n):
             let t = now
-            let (waiter, rtt) = state.withLock { s in (s.pongs.removeValue(forKey: n), s.liveness?.pong(n, at: t)) }
+            let (waiter, rtt) = state.withLock { s in
+                if s.kickPing == n { s.kickPing = nil }
+                return (s.pongs.removeValue(forKey: n), s.liveness?.pong(n, at: t))
+            }
             waiter?.resume()
             if let rtt {
                 state.withLock { $0.rtt = rtt }
