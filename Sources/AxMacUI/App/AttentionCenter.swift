@@ -6,6 +6,8 @@ import UserNotifications
 /// Routes host events to the person (spec §1.4): a toast when the app is active
 /// but the pane is not on screen, a system notification when the app is in the
 /// background, and the Dock badge for waiting or failed panes at all times.
+/// An agent finishing while the app is in front makes no toast: with many
+/// sessions running that is noise, and its row already turns green.
 /// A notice is withdrawn (banner and toast) once its pane no longer wants
 /// the person: they looked, or it moved on. One banner per pane: a newer
 /// state replaces the older. Waiting is Time Sensitive (breaks through a
@@ -90,6 +92,7 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
                 self.pending[pane] = nil
                 // Still in that state, and not seen meanwhile (seen turns done/error idle).
                 guard host.pane(pane)?.activity == activity else { return }
+                if activity == .done, NSApp.isActive { return }
                 self.deliver(host, pane, title: title, body: message, activity: activity)
             }
         case let .notification(pane, title, body):
