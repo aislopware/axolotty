@@ -48,10 +48,13 @@ final class LinkVeil: NSView, DesignRefreshable {
 
     /// What the capsule says ("Reconnecting to MacBook Pro", or why it
     /// waits) and the one thing it offers (nil: nothing to do but wait).
-    func set(_ text: String, retrying: Bool, action title: String?, _ handler: (() -> Void)?) {
+    /// `idle`: nothing is under way, the Mac is only waited for (offline),
+    /// so no glyph at all.
+    func set(_ text: String, retrying: Bool, idle: Bool = false, action title: String?, _ handler: (() -> Void)?) {
         label.stringValue = text
         // Amber, as in the sidebar: it waits on the person, nothing failed.
-        spinner.activity = retrying ? .working : .blocked
+        spinner.activity = idle ? .idle : retrying ? .working : .blocked
+        spinner.isHidden = idle
         setAccessibilityLabel(text)
         action.isHidden = title == nil
         if let title, action.title != title { action.title = title }
@@ -76,18 +79,19 @@ final class LinkVeil: NSView, DesignRefreshable {
         Axo.Motion.still { scrim.frame = bounds }
         let h = Axo.Metric.controlLarge
         let pad = Axo.Space.sm
-        let glyph = Axo.Metric.statusSlot
+        let glyph = spinner.isHidden ? 0 : Axo.Metric.statusSlot
+        let lead = spinner.isHidden ? pad + 2 : pad + glyph + Axo.Space.xs
         let text = ceil(label.intrinsicContentSize.width)
         let button = action.isHidden ? 0 : ceil(action.intrinsicContentSize.width)
         let tail = action.isHidden ? pad + 2 : Axo.Space.sm + button + 4
-        let w = pad + glyph + Axo.Space.xs + text + tail
+        let w = lead + text + tail
         // A third of the way down the stage: where the eye already is.
         let x = ((bounds.width - w) / 2).rounded()
         let y = max(Axo.Space.lg, (bounds.height * 0.32 - h / 2).rounded())
         capsule.frame = NSRect(x: x, y: y, width: w, height: h)
         spinner.frame = NSRect(x: pad, y: ((h - glyph) / 2).rounded(), width: glyph, height: glyph)
         let lh = ceil(label.intrinsicContentSize.height)
-        label.frame = NSRect(x: spinner.frame.maxX + Axo.Space.xs, y: ((h - lh) / 2).rounded(), width: text, height: lh)
+        label.frame = NSRect(x: lead, y: ((h - lh) / 2).rounded(), width: text, height: lh)
         let bh = Axo.Metric.controlSmall
         action.frame = NSRect(x: label.frame.maxX + Axo.Space.sm, y: ((h - bh) / 2).rounded(), width: button, height: bh)
     }

@@ -298,6 +298,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         refreshVisibleRows()
     }
 
+    /// Nothing of the list is on screen (the window waits on a host).
+    func deselect() {
+        selected = nil
+        guard isViewLoaded else { return }
+        syncSelection(animated: true)
+        refreshVisibleRows()
+    }
+
     private func syncSelection(animated: Bool) {
         suppressSelection = true
         defer { suppressSelection = false }
@@ -631,6 +639,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return (ms < 1 ? "<1 ms" : "\(Int(ms.rounded())) ms", false, false)
         case .connecting, .offline:
             if h.nobodyListens, !h.isLocal { return ("Not running", false, true) }
+            // Tailscale says the machine is away: nothing is working, nothing to do.
+            if h.waitsForTheMac { return ("Offline", false, false) }
             return h.phase == .connecting ? ("Connecting", true, false) : ("Reconnecting", true, false)
         case .failed(.needsLogin(_)): return ("Sign in", false, true)
         case .failed(.notInstalled): return ("Not set up", false, true)

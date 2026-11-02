@@ -16,9 +16,9 @@ struct TailnetTests {
         {"BackendState":"Running","Self":{"ID":"s","HostName":"Studio","OS":"macOS","UserID":2},
          "Peer":{
           "k1":{"ID":"n1","HostName":"MacBook Pro","DNSName":"mbp.ts.example.","OS":"macOS","Online":false,"UserID":2,
-                "Relay":"fra","CurAddr":"","TailscaleIPs":["100.64.0.2"]},
+                "Relay":"fra","CurAddr":"","TailscaleIPs":["100.64.0.2"],"LastSeen":"2026-11-02T22:40:51.830779125Z"},
           "k2":{"ID":"n2","HostName":"Mini","DNSName":"mini.ts.example.","OS":"macOS","Online":true,"UserID":2,
-                "Relay":"fra","CurAddr":"192.168.1.9:41641","TailscaleIPs":["100.64.0.9"]},
+                "Relay":"fra","CurAddr":"192.168.1.9:41641","TailscaleIPs":["100.64.0.9"],"LastSeen":"0001-01-01T00:00:00Z"},
           "k3":{"ID":"n3","HostName":"Air","DNSName":"air.ts.example.","OS":"macOS","Online":true,"UserID":2,
                 "Relay":"sin","CurAddr":"","TailscaleIPs":["100.64.0.10"]},
           "k4":{"ID":"n4","HostName":"build","DNSName":"build.ts.example.","OS":"linux","Online":true,"UserID":2},
@@ -30,6 +30,8 @@ struct TailnetTests {
         #expect(peers.map(\.dialName) == ["air.ts.example", "mini.ts.example", "mbp.ts.example"])
         #expect(peers.map(\.relay) == ["sin", nil, "fra"])
         #expect(peers.map(\.online) == [true, true, false])
+        // When it was last heard from, to the second; Go's zero time is never.
+        #expect(peers.map(\.lastSeen) == [nil, nil, Date(timeIntervalSince1970: 1_793_659_251)])
         #expect(TailnetDirectory.parse(Data(#"{"BackendState":"Stopped"}"#.utf8)) == [])
 
         // A host is found again however it was dialled, to say how its path goes.

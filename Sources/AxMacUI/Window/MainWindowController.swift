@@ -161,7 +161,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             // back: a drop is routine on a remote link, and the work is still
             // worth reading. Only a window with nothing of it shown says so whole.
             content.linkChanged(host)
-            if selection == nil || (selection?.host === host && content.current?.host !== host) {
+            let waitingElsewhere = arriving.map { $0 !== host } ?? false
+            if (selection == nil && !waitingElsewhere) || (selection?.host === host && content.current?.host !== host) {
                 showAway(host)
             }
         case .event:
@@ -194,7 +195,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// it has none, the way a first launch opens one on this Mac.
     func arrive(at host: HostSession) {
         guard let st = host.state, host.phase == .connected else {
+            // The window goes there now and says how the link is doing
+            // (connecting, or why it can't, with the one thing to do), not
+            // a line in the sidebar under a session the person just left.
             arriving = host
+            selection = nil
+            sidebar.deselect()
+            showAway(host)
+            refreshChrome()
             return
         }
         arriving = nil
@@ -233,7 +241,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         awayHost = host
         let status = host.linkStatus ?? ("Reconnecting to \(host.name)", true)
         content.showEmpty(.away(title: status.text, detail: host.linkDetail, retrying: status.retrying,
-                                action: host.linkRemedy?.title))
+                                action: host.linkRemedy?.title,
+                                machine: host.waitsForTheMac ? SidebarViewController.hostSymbol(host) : nil))
     }
 
     /// The empty window: launch tiles for this host's agents, starting in the

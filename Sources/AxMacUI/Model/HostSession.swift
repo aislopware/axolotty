@@ -43,6 +43,19 @@ final class HostSession: Identifiable {
     /// The far Mac is up but refuses the link at its port: Axolotty isn't
     /// running there (not installed, or its server stopped).
     private(set) var nobodyListens = false
+    /// Tailscale says the far Mac is offline (asleep, shut, off the net),
+    /// with when it last heard from it; nil while it is online or unknown.
+    private(set) var offline: Offline?
+    struct Offline: Equatable { var lastSeen: Date? }
+    private var downWatch: Task<Void, Never>?
+
+    /// Only the machine is waited for: Tailscale says it is offline, and
+    /// nothing (a setup, a login) is the person's to do.
+    var waitsForTheMac: Bool {
+        guard offline != nil, !nobodyListens, settingUp == nil else { return false }
+        if case .failed = phase { return false }
+        return phase != .connected
+    }
     var settingUp: HostSetup.Step? {
         didSet { if settingUp != oldValue { changes.emit(.setup) } }
     }
@@ -95,6 +108,7 @@ final class HostSession: Identifiable {
     /// reconnecting with backoff until stopped.
     func start(prepare: (@MainActor () async -> Void)? = nil) {
         self.prepare = prepare
+        watchTailnetWhileDown()
         loop = Task { [weak self] in
             guard let self else { return }
             let events = connection.events
@@ -126,6 +140,7 @@ final class HostSession: Identifiable {
 
     func stop() {
         loop?.cancel()
+        downWatch?.cancel()
         pathWatch?.cancel()
         connection.disconnect()
     }
@@ -204,6 +219,28 @@ final class HostSession: Identifiable {
         }
     }
 
+    /// While a far Mac's link is down, asks Tailscale every few seconds
+    /// whether the machine itself is there: "offline, last seen 50 minutes
+    /// ago" says more than a spinner, and needs nothing of the person.
+    private func watchTailnetWhileDown() {
+        guard !isLocal, case let .tcp(dialled, _) = endpoint else { return }
+        downWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                if let self, phase != .connected {
+                    let peers = await TailnetDirectory.scan()
+                    guard !Task.isCancelled else { return }
+                    let p = TailnetDirectory.peer(dialledAs: dialled, in: peers)
+                    let now = p.flatMap { $0.online ? nil : Offline(lastSeen: $0.lastSeen) }
+                    if now != offline {
+                        offline = now
+                        if phase != .connected { changes.emit(.disconnected(nil)) }
+                    }
+                }
+                try? await Task.sleep(for: .seconds(8))
+            }
+        }
+    }
+
     /// This Mac's server went away (stopped, crashed past launchd's retries,
     /// or a dev build's that nothing keeps alive): start it again rather than
     /// redial an empty socket forever. A server mid-restart answers first, and
@@ -266,8 +303,11 @@ final class HostSession: Identifiable {
         return switch phase {
         case .connected: nil
         case .connecting, .offline:
-            nobodyListens && !isLocal ? ("Axolotty isn't running on \(name)", false)
-                : ("Reconnecting to \(isLocal ? "This Mac" : name)", true)
+            if nobodyListens, !isLocal { ("Axolotty isn't running on \(name)", false) }
+            else if offline != nil { ("\(name) is offline", true) }
+            // Never reached yet this run: connecting, not coming back.
+            else if state == nil { ("Connecting to \(isLocal ? "This Mac" : name)", true) }
+            else { ("Reconnecting to \(isLocal ? "This Mac" : name)", true) }
         case .failed(.needsLogin(_)): ("\(name) needs you to sign in", false)
         case .failed(.notInstalled): ("Axolotty isn't set up on \(name)", false)
         case .failed(.incompatible(_)): ("\(name) runs another Axolotty version", false)
@@ -275,16 +315,35 @@ final class HostSession: Identifiable {
         }
     }
 
+    /// "50 minutes ago", "yesterday".
+    static func ago(_ d: Date, now: Date = Date()) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        f.dateTimeStyle = .named
+        return f.localizedString(for: d, relativeTo: now)
+    }
+
     /// The one line under the status while the link is down: what is
     /// happening and what will bring it back.
     var linkDetail: String {
-        if settingUp != nil { return "Copying Axolotty there and starting its server." }
+        switch settingUp {
+        case .checking?: return "Checking \(name) over SSH."
+        case .copying?: return "Copying Axolotty there. It starts by itself after."
+        case .starting?: return "Starting its server. This window opens there once it answers."
+        case nil: break
+        }
         switch phase {
         case .connected: return ""
         case .connecting, .offline:
             if nobodyListens, !isLocal {
                 return "\(name) is reachable. Set Axolotty up there over SSH and this Mac connects by itself."
             }
+            if let o = offline {
+                let seen = o.lastSeen.map { "Tailscale last saw it \(Self.ago($0)). " } ?? ""
+                return seen + (state == nil ? "This window opens there the moment it's back."
+                    : "Your sessions keep running there; this window reattaches the moment it's back.")
+            }
+            if state == nil { return "This window opens there the moment it answers." }
             return "Your sessions keep running on the server. This window reattaches as soon as it answers."
         case .failed(.needsLogin(_)): return "ssh wants a password or a host key decision. Sign in there once, then try again."
         case .failed(.notInstalled): return "Set it up over SSH and this Mac connects by itself."
@@ -303,7 +362,8 @@ final class HostSession: Identifiable {
             if nobodyListens || phase == .failed(.notInstalled) { return ("Set Up over SSH", target) }
             if isBehind { return ("Update There", target) }
         }
-        return ("Reconnect Now", nil)
+        if case .failed = phase {} else if offline != nil { return nil }  // nothing to do but wait for it
+        return (state == nil ? "Try Now" : "Reconnect Now", nil)
     }
 
     // MARK: Queries

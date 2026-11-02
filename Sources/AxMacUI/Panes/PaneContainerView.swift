@@ -187,7 +187,8 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         if v.superview !== self || subviews.last !== v { addSubview(v, positioned: .above, relativeTo: nil) }
         v.frame = bounds
         let remedy = host.linkRemedy
-        v.set(status.text, retrying: status.retrying, action: remedy?.title) { [weak self] in
+        v.set(status.text, retrying: status.retrying, idle: host.waitsForTheMac,
+              action: remedy?.title) { [weak self] in
             guard let self else { return }
             if let target = remedy?.setUp { model.setUp(target) } else { host.retry() }
         }

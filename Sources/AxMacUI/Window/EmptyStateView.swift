@@ -5,7 +5,9 @@ enum EmptyState: Equatable {
     case noSessions
     /// The host of this window is out of reach: what is happening, one line
     /// on what brings it back, and the one thing to do (nil: just wait).
-    case away(title: String, detail: String, retrying: Bool, action: String?)
+    /// `machine`: an SF Symbol of the Mac, shown (quiet) in place of the
+    /// spinner when nothing is under way, only waited for (it is offline).
+    case away(title: String, detail: String, retrying: Bool, action: String?, machine: String? = nil)
 }
 
 /// The window with no session open: a sheet like any pane (the frame stays),
@@ -38,6 +40,7 @@ final class EmptyStateView: NSView {
 
     private let mark = AxoMarkView(frame: .zero)
     private let spinner = StatusGlyphView(frame: .zero)
+    private let machine = NSImageView()
     private let title = Label("", font: NSFont.systemFont(ofSize: Prim.Size.t7, weight: .semibold), color: Axo.Color.text)
     private let detail = Label("", font: Axo.Font.body, color: Axo.Color.textSecondary)
     private var tiles: [LaunchTile] = []
@@ -61,7 +64,9 @@ final class EmptyStateView: NSView {
         pill.onClick = { [weak self] in self?.showProjects() }
         remedy.target = self
         remedy.action = #selector(runRemedy)
-        for v in [mark, spinner, title, detail, pill, remedy] as [NSView] { addSubview(v) }
+        machine.imageScaling = .scaleNone
+        machine.contentTintColor = Axo.Color.textDisabled
+        for v in [mark, spinner, machine, title, detail, pill, remedy] as [NSView] { addSubview(v) }
         set(.noSessions)
     }
 
@@ -97,12 +102,14 @@ final class EmptyStateView: NSView {
         state = s
         let reconnecting = s != .noSessions
         var waits = false
+        var symbol: String?
         switch s {
         case .noSessions:
             title.stringValue = "Start a session"
             detail.stringValue = ""
             remedy.isHidden = true
-        case let .away(t, d, retrying, action):
+        case let .away(t, d, retrying, action, m):
+            symbol = m
             title.stringValue = t
             detail.stringValue = d
             waits = !retrying
@@ -110,7 +117,10 @@ final class EmptyStateView: NSView {
             if let action, remedy.title != action { remedy.title = action }
         }
         mark.isHidden = reconnecting
-        spinner.isHidden = !reconnecting
+        machine.isHidden = symbol == nil
+        machine.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }?
+            .withSymbolConfiguration(.init(pointSize: 30, weight: .light))
+        spinner.isHidden = !reconnecting || symbol != nil
         spinner.activity = !reconnecting ? .idle : waits ? .blocked : .working
         detail.isHidden = !reconnecting
         pill.isHidden = reconnecting
@@ -169,6 +179,7 @@ final class EmptyStateView: NSView {
         let m = NSRect(x: (bounds.midX - markH / 2).rounded(), y: y, width: markH, height: markH)
         mark.frame = m
         spinner.frame = m.insetBy(dx: 16, dy: 16)
+        machine.frame = m
         y += markH + 16
         title.frame = NSRect(x: (bounds.midX - max(w, ts.width) / 2).rounded(), y: y, width: max(w, ts.width), height: ts.height)
         y += ts.height

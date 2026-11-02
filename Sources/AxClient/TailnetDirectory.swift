@@ -15,6 +15,8 @@ public struct TailnetPeer: Equatable, Sendable, Identifiable {
     public var online: Bool
     /// The DERP region the path goes through, nil when it is direct.
     public var relay: String?
+    /// When the tailnet last heard from it (nil: never, or not said).
+    public var lastSeen: Date?
 
     public var dialName: String { dnsName.isEmpty ? address : dnsName }
 }
@@ -38,6 +40,7 @@ public enum TailnetDirectory {
             var Relay: String?
             var CurAddr: String?
             var TailscaleIPs: [String]?
+            var LastSeen: String?
         }
         struct Status: Decodable {
             var BackendState: String?
@@ -56,11 +59,21 @@ public enum TailnetDirectory {
             let name = host.isEmpty || host == "localhost" ? String(dns.split(separator: ".").first ?? "") : host
             let direct = !(n.CurAddr ?? "").isEmpty
             return TailnetPeer(id: n.ID ?? key, name: name, dnsName: dns, address: address, online: n.Online ?? false,
-                               relay: direct ? nil : (n.Relay?.isEmpty == false ? n.Relay : nil))
+                               relay: direct ? nil : (n.Relay?.isEmpty == false ? n.Relay : nil),
+                               lastSeen: n.LastSeen.flatMap(seen))
         }
         return peers.sorted { a, b in
             a.online != b.online ? a.online : a.name.localizedStandardCompare(b.name) == .orderedAscending
         }
+    }
+
+    /// Tailscale's LastSeen ("2026-11-02T22:40:51.830779125Z"); its zero
+    /// time ("0001-01-01T00:00:00Z") is never.
+    static func seen(_ s: String) -> Date? {
+        // Nanoseconds are more than ISO8601DateFormatter reads: whole seconds do.
+        let whole = s.split(separator: ".").first.map { $0.hasSuffix("Z") ? String($0) : $0 + "Z" } ?? s
+        guard let d = ISO8601DateFormatter().date(from: whole), d.timeIntervalSince1970 > 0 else { return nil }
+        return d
     }
 
     /// The peer a host was dialled by: its MagicDNS name, short name or address.
