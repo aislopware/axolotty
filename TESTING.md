@@ -38,8 +38,11 @@ it measured becomes a model, and the gate holds the model in virtual time.
   runs under `scripts/watchdog.sh`, after Slopty's xtask watchdog. If no
   output comes for a bound, or the run passes its total, it lists the
   processes under the run, samples each leaf's stacks into the log, and
-  ends the process group with exit 124. Long tests print a progress line
-  (`progress(_:)`), so a quiet run is a stuck one. Suites that spawn carry
+  ends every process under it with exit 124. Long tests print a progress
+  line (`progress(_:)`), so a quiet run is a stuck one. SwiftPM holds a test
+  process's output until it exits, so the line also goes straight into the
+  watchdog's log (`$AXWATCH_LOG`). Without that, the long sim step looked
+  silent for minutes and was ended twice. Suites that spawn carry
   `.timeLimit`. One SwiftPM at a time on `.build`: a second one waits
   silently on the first one's lock.
 - **The gate is small; long runs widen it.** The same tests take a bigger

@@ -18,8 +18,15 @@ stall=$1 total=$2 log=$3
 shift 4
 poll=15
 
+# SwiftPM holds a test process's output until it exits, so a long test's
+# progress lines go straight to the log as well (`progress(_:)` in
+# AxTestSupport appends to $AXWATCH_LOG).
+: >"$log"
+AXWATCH_LOG="$(cd "$(dirname "$log")" && pwd)/$(basename "$log")"
+export AXWATCH_LOG
+
 # Its own process group, so the whole tree can be ended at once.
-python3 -c 'import os, sys; os.setpgrp(); os.execvp(sys.argv[1], sys.argv[1:])' "$@" >"$log" 2>&1 &
+python3 -c 'import os, sys; os.setpgrp(); os.execvp(sys.argv[1], sys.argv[1:])' "$@" >>"$log" 2>&1 &
 pid=$!
 start=$SECONDS
 last_size=-1

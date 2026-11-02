@@ -38,7 +38,17 @@ public struct SeededRNG: RandomNumberGenerator, Sendable {
 /// A heartbeat line from a long test, on standard error: a watchdog that
 /// sees no output for minutes takes the run for stuck (`scripts/watchdog.sh`).
 public func progress(_ line: String) {
-    FileHandle.standardError.write(Data("… \(line)\n".utf8))
+    let text = "… \(line)\n"
+    FileHandle.standardError.write(Data(text.utf8))
+    // SwiftPM holds a test process's output until it exits; the watchdog
+    // reads its log, so the line goes there too, at once.
+    if let log = ProcessInfo.processInfo.environment["AXWATCH_LOG"] {
+        let fd = open(log, O_WRONLY | O_APPEND)
+        if fd >= 0 {
+            _ = text.withCString { write(fd, $0, strlen($0)) }
+            close(fd)
+        }
+    }
 }
 
 /// SIGPIPE in the test process, said instead of dying of it. XNU raises a
