@@ -216,6 +216,39 @@ struct HostTests {
         await fx.tearDown()
     }
 
+    /// `wait --for done` sees a finish the person saw (and so cleared) before
+    /// the waiter looked: by then the replica says idle, the changes say done.
+    @Test func aWaiterCatchesAFinishSeenBeforeItLooked() async throws {
+        let fx = try await HostFixture()
+        let app = try await fx.client("app")
+        let (_, _, p) = try await makeSession(app)
+        app.send(.text(p, "printf '\\033]7501;state=working:app=claude-code\\033\\\\'\n"))
+        #expect(await until { app.replica?.panes[p]?.activity == .working })
+
+        let waiter = try await fx.client("waiter")
+        let watch = PaneWait(goal: .done, panes: [p], state: try #require(waiter.replica))
+        #expect(watch.reachedNow().isEmpty)
+        app.send(.text(p, "printf '\\033]7501;state=done\\033\\\\'\n"))
+        #expect(await until { app.replica?.panes[p]?.activity == .done })
+        app.send(.seen(p))  // what the app does for a finish in front of the person
+        #expect(await until { waiter.replica?.panes[p]?.activity == .idle })
+
+        let reader = Task {
+            var watch = watch
+            for await e in waiter.events {
+                if case let .deltas(ds) = e, !watch.feed(ds).isEmpty { return true }
+            }
+            return false
+        }
+        let timer = Task {
+            try? await Task.sleep(for: .seconds(5))
+            reader.cancel()
+        }
+        #expect(await reader.value)
+        timer.cancel()
+        await fx.tearDown()
+    }
+
     @Test func aFinishedRunLeavesItsLengthAsAReceipt() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()

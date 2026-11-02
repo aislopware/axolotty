@@ -24,11 +24,10 @@ enum Ops {
     static func connect(subscribe: Bool = false) async throws(OpError) -> (HostConnection, HostState) {
         let c = HostConnection(endpoint: .unix(path: socketPath),
                                hello: ClientHello(client: ClientID(), name: "cli", subscribe: subscribe))
-        do { try await c.connect(reconnect: false) } catch {
+        // The welcome's state: the changes a subscriber gets next follow it.
+        do { return (c, try await c.connect(reconnect: false).state) } catch {
             throw OpError(message: "host unreachable at \(socketPath)", exit: .unreachable)
         }
-        guard let st = c.replica else { throw .failed("no state") }
-        return (c, st)
     }
 
     /// A pane id or unique prefix (≥ 4); nil means this pane ($AXOLOTTY_PANE_ID).
@@ -131,48 +130,39 @@ enum Ops {
 
     // MARK: Waiting
 
-    static let waitGoals = ["done", "idle", "blocked", "error", "working", "exit", "command"]
+    static let waitGoals = PaneWait.Goal.allCases.map(\.rawValue)
 
-    /// Waits until the pane reaches `goal` (an activity, `exit`, or
-    /// `command`: the next shell command to finish, returned). Throws a
+    /// Waits until the pane reaches `goal` (see `PaneWait.Goal`; for
+    /// `command`, the finished command is the returned pane's last). Throws a
     /// timeout after `timeout` seconds (0 waits forever).
     static func wait(pane: String?, goal: String, timeout: Double) async throws(OpError) -> PaneInfo? {
-        try await wait(panes: [pane], all: false, goal: goal, timeout: timeout).first?.1
+        try await wait(panes: [pane], goal: goal, timeout: timeout).first?.1
     }
 
-    /// Waits on several panes: until any of them reaches `goal` (or, with
-    /// `all`, every one has). Returns the panes that have, in the order given.
-    /// An agent that started others waits on them this way.
-    static func wait(panes: [String?], all: Bool, goal: String, timeout: Double) async throws(OpError)
-        -> [(PaneID, PaneInfo?)]
-    {
-        guard waitGoals.contains(goal) else { throw .usage("unknown wait goal \(goal)") }
+    /// Waits until any of the panes reaches `goal`; returns those that did,
+    /// in the order given. An agent that started others waits on them this way.
+    static func wait(panes: [String?], goal word: String, timeout: Double) async throws(OpError) -> [(PaneID, PaneInfo?)] {
+        guard let goal = PaneWait.Goal(rawValue: word) else { throw .usage("unknown wait goal \(word)") }
         let (c, st) = try await connect(subscribe: true)
         var ids: [PaneID] = []
         for pane in panes {
             let p = try resolvePane(pane, in: st)
             if !ids.contains(p) { ids.append(p) }
         }
-        let watched = ids
-        let lastEnded = Dictionary(uniqueKeysWithValues: watched.map { ($0, st.panes[$0]?.lastCommand?.endedAt ?? 0) })
-        @Sendable func done(_ p: PaneID, _ s: HostState) -> Bool {
-            guard let info = s.panes[p] else { return goal == "exit" || goal == "command" }
-            switch goal {
-            case "exit": return info.exitStatus != nil
-            case "command": return (info.lastCommand?.endedAt ?? 0) > (lastEnded[p] ?? 0)
-            default: return info.activity.rawValue == goal
-            }
-        }
-        @Sendable func reached(_ s: HostState) -> Bool {
-            all ? watched.allSatisfy { done($0, s) } : watched.contains { done($0, s) }
-        }
-        func result(_ s: HostState) -> [(PaneID, PaneInfo?)] { watched.filter { done($0, s) }.map { ($0, s.panes[$0]) } }
-        if reached(st) { return result(st) }
-        enum Outcome: Sendable { case reached, gone, timedOut }
+        let watch = PaneWait(goal: goal, panes: ids, state: st)
+        let now = watch.reachedNow()
+        if !now.isEmpty { return now }
+        enum Outcome: Sendable { case reached([(PaneID, PaneInfo?)]), gone, timedOut }
         let outcome = await withTaskGroup(of: Outcome.self) { group in
             group.addTask {
+                // Every change in order, so a finish the person saw (and so
+                // cleared) before this task looked still counts.
+                var watch = watch
                 for await e in c.events {
-                    if case .deltas = e, let s = c.replica, reached(s) { return .reached }
+                    if case let .deltas(ds) = e {
+                        let got = watch.feed(ds)
+                        if !got.isEmpty { return .reached(got) }
+                    }
                     if case .disconnected = e { return .gone }
                 }
                 return .gone
@@ -188,8 +178,8 @@ enum Ops {
             return first
         }
         switch outcome {
-        case .reached: return c.replica.map(result) ?? []
-        case .timedOut: throw OpError(message: "timed out waiting for \(goal)", exit: .timeout)
+        case let .reached(got): return got
+        case .timedOut: throw OpError(message: "timed out waiting for \(word)", exit: .timeout)
         case .gone: throw OpError(message: "host went away", exit: .unreachable)
         }
     }

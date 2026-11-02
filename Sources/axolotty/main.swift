@@ -25,10 +25,10 @@ let usage = """
                                           right home end pageup pagedown f1-f12)
                                           send refuses a pane waiting for its person; --force
       capture [--pane P] [--scrollback]   the pane's screen (and history) as plain text
-      wait [--pane P] --for done|idle|blocked|error|exit [--timeout SEC]
-      wait --pane P1,P2… [--all] --for GOAL
-                                          any of several panes (or, with --all, every one);
-                                          prints those that got there
+      wait [--pane P] --for done|blocked|error|exit [--timeout SEC]
+                                          done: the program finished (done, or idle again
+                                          after working); exit: it exited
+      wait --pane P1,P2… --for GOAL       any of several panes; prints those that got there
       wait [--pane P] --for command [--timeout SEC]
                                           the next shell command to finish; prints it and
                                           exits with its status
@@ -156,14 +156,14 @@ case "close":
     await run { try await Ops.close(pane: o.flags["pane"]) }
 
 case "wait":
-    let o = Options(argv, valued: ["pane", "for", "timeout"], switches: ["all"])
+    let o = Options(argv, valued: ["pane", "for", "timeout"])
     let goal = o.flags["for"] ?? "done"
     let panes = o.flags["pane"].map { $0.split(separator: ",").map { String($0) as String? } } ?? [nil]
     await run {
         let timeout = Double(o.flags["timeout"] ?? "") ?? 0
         if panes.count > 1 {
             // Several panes: name the ones that got there, one a line.
-            for (p, info) in try await Ops.wait(panes: panes, all: o.switches.contains("all"), goal: goal, timeout: timeout) {
+            for (p, info) in try await Ops.wait(panes: panes, goal: goal, timeout: timeout) {
                 print("\(Ops.short(p)) \(info.map { $0.exitStatus != nil ? "exited" : $0.activity.rawValue } ?? "closed")")
             }
             return

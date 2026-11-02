@@ -115,14 +115,13 @@ final class MCPServer: Sendable {
             let goal = a.string("until") ?? "done"
             let timeout = a.number("timeout_seconds") ?? 600
             if let many = a.raw["panes"] as? [String], !many.isEmpty {
-                let all = a.bool("all", false)
-                let got = try await Ops.wait(panes: many, all: all, goal: goal, timeout: timeout)
+                let got = try await Ops.wait(panes: many, goal: goal, timeout: timeout)
                 let lines = got.map { p, info in
                     "\(p.raw.uuidString.lowercased()): " + (info.map { i in
                         i.activity.rawValue + (i.status.headline.map { ": \($0.message)" } ?? "")
                     } ?? "closed")
                 }
-                return (all ? "All reached \(goal):\n" : "Reached \(goal):\n") + lines.joined(separator: "\n")
+                return "Reached \(goal):\n" + lines.joined(separator: "\n")
             }
             let info = try await Ops.wait(pane: a.string("pane"), goal: goal, timeout: timeout)
             if goal == "command", let r = info?.lastCommand {
@@ -211,11 +210,10 @@ final class MCPServer: Sendable {
          ]),
          "annotations": ["readOnlyHint": true]],
         ["name": "wait_for",
-         "description": "Wait until a pane is done, idle, blocked, error or working, until its program exits, or (command) until its next shell command finishes, then say how it ended. With `panes`, wait on several (agents you started): until any one gets there, or every one with `all`.",
+         "description": "Wait until a pane is done (its program finished working), blocked or error, until its program exits, or (command) until its next shell command finishes, then say how it ended. With `panes`, wait on several (agents you started) until any one gets there.",
          "inputSchema": schema([
              "pane": pane,
              "panes": ["type": "array", "items": ["type": "string"], "description": "Several pane ids instead of `pane`"],
-             "all": ["type": "boolean", "description": "With panes: wait for every one (default: the first)"],
              "until": ["type": "string", "enum": waitGoals],
              "timeout_seconds": ["type": "number", "description": "Default 600"],
          ], required: ["until"]),
