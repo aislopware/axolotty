@@ -390,14 +390,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     func close(_ host: HostSession, _ sid: SessionID) {
         guard let s = host.session(sid) else { return }
         model.closed.append(AppModel.ClosedSession(host: host.id, workspace: s.workspace,
-                                                   cwd: host.pane(s.focus)?.pwd ?? "", name: s.name))
+                                                   cwd: host.pane(s.focus)?.pwd ?? "", name: s.name,
+                                                   claude: host.state?.panes(of: sid).contains { $0.agent == .claude } ?? false))
         host.perform(.closeSession(sid))
     }
 
     @objc func reopenClosedSession(_ sender: Any?) {
         guard let c = model.closed.popLast(), let host = model.host(c.host) else { return }
         let ws = host.state?.workspace(c.workspace)?.id ?? host.state?.workspaces.first?.id
-        Task { await createSession(host, in: ws, cwd: c.cwd.isEmpty ? nil : c.cwd, name: c.name) }
+        // Claude Code picks its conversation back up (`--continue`: the latest
+        // one in that folder); anything else comes back as a shell there.
+        let launch = c.claude ? launchLine(.claude, host, args: "--continue") : nil
+        Task { await createSession(host, in: ws, cwd: c.cwd.isEmpty ? nil : c.cwd, name: c.name, launch: launch) }
     }
 
     @objc func renameSession(_ sender: Any?) {

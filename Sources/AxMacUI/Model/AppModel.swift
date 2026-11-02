@@ -28,12 +28,14 @@ final class AppModel {
     private(set) var systemDark = true
     private(set) var theme: TerminalTheme = .night
 
-    /// Recently closed sessions (for ⌘⇧T): where they ran and what they were called.
+    /// Recently closed sessions (for ⌘⇧T): where they ran, what they were
+    /// called, and whether Claude Code was running in them.
     struct ClosedSession {
         var host: UUID
         var workspace: WorkspaceID
         var cwd: String
         var name: String?
+        var claude = false
     }
 
     var closed: [ClosedSession] = []

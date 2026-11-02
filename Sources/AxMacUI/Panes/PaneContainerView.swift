@@ -469,7 +469,8 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
     @objc func closePane(_ sender: Any?) {
         if tree.count == 1, let s = host.session(sessionID) {
             model.closed.append(AppModel.ClosedSession(host: host.id, workspace: s.workspace,
-                                                       cwd: host.pane(focused)?.pwd ?? "", name: s.name))
+                                                       cwd: host.pane(focused)?.pwd ?? "", name: s.name,
+                                                       claude: host.pane(focused)?.agent == .claude))
         }
         host.perform(.closePane(focused))
     }

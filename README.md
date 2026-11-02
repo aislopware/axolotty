@@ -9,7 +9,7 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
 - **Agent status from the agent itself.** Claude Code reports over OSC 7501, and any other program can too. Rows, the band, the Dock badge, toasts and notifications all follow it. A notification goes away as soon as you've seen its pane.
 - **Find who needs you.** Go to Session (⌘J) lists sessions as needs-you, then finished, then working. Next waiting agent is ⇧⌘U.
 - **Worktree sessions.** ⌥⌘T, or "New Worktree…" on a project's "+", starts an agent on its own branch in `<repo>/.worktrees/<branch>`. "Remove Worktree…" deletes the folder and keeps the branch.
-- **Reopen a closed session** (⇧⌘T) in its folder. Subagents at work show beside the agent's timer.
+- **Reopen a closed session** (⇧⌘T) in its folder; Claude Code picks its conversation back up (`claude --continue`). Subagents at work show beside the agent's timer.
 - **Shell integration** for zsh, bash and fish:
   - prompt jumps (⌘↑ ⌘↓);
   - a pane's ended bar, where ↩ restarts the program in place.
