@@ -88,6 +88,65 @@ struct HostTests {
         await fx.tearDown()
     }
 
+    @Test func aFileSentToTheHostLandsWholeUnderItsName() async throws {
+        let fx = try await HostFixture()
+        let c = try await fx.client()
+        let drops = (fx.config.drops.path(percentEncoded: false) as NSString).standardizingPath
+        // Not a whole number of pieces, so the last one is short.
+        var bytes = Data(count: HostFile.piece * 5 + 123)
+        for i in bytes.indices { bytes[i] = UInt8(truncatingIfNeeded: i &* 31 &+ 7) }
+        let file = fx.paths.root.appending(path: "Screen Shot 1.png")
+        try bytes.write(to: file)
+        let seen = Seen()
+        let path = try #require(await c.send(file: file) { seen.add($0) })
+        #expect(path.hasPrefix(drops + "/") && path.hasSuffix("/Screen Shot 1.png"))
+        #expect(FileManager.default.contents(atPath: path) == bytes)
+        #expect(seen.all.last == 1 && seen.all == seen.all.sorted(), "progress climbs to the whole")
+
+        // Exactly a piece, nothing at all, and a name that tries to leave.
+        for (data, name, want) in [(Data(repeating: 1, count: HostFile.piece), "a.bin", "a.bin"),
+                                   (Data(), "empty.txt", "empty.txt"), (Data("x".utf8), "../../.ssh/config", "config")] {
+            let p = try #require(await c.send(data: data, name: name))
+            #expect((p as NSString).lastPathComponent == want)
+            #expect((p as NSString).deletingLastPathComponent.hasPrefix(drops + "/"), "inside the drops folder")
+            #expect(FileManager.default.contents(atPath: p) == data)
+        }
+        await fx.tearDown()
+    }
+
+    @Test func aHalfSentFileGoesWithItsLink() async throws {
+        let fx = try await HostFixture()
+        let c = try await fx.client()
+        c.send(.file(UUID(), name: "half.bin", bytes: Data(repeating: 2, count: 100), last: false))
+        await c.ping()
+        let drops = fx.config.drops.path(percentEncoded: false)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: drops).count == 1, "it was being written")
+        c.disconnect()
+        let gone = await until(.seconds(5)) {
+            ((try? FileManager.default.contentsOfDirectory(atPath: drops)) ?? []).isEmpty
+        }
+        #expect(gone, "the link went before the last piece")
+        await fx.tearDown()
+    }
+
+    @Test func fileNamesStayPlain() {
+        #expect(HostFile.safeName("report.pdf") == "report.pdf")
+        #expect(HostFile.safeName("a/b/../c.txt") == "c.txt")
+        #expect(HostFile.safeName("..") == "file")
+        #expect(HostFile.safeName(".env") == "env", "nothing hidden")
+        #expect(HostFile.safeName("") == "file")
+        #expect(HostFile.safeName("bad\nname\u{7}.txt") == "badname.txt")
+        let long = HostFile.safeName(String(repeating: "x", count: 300) + ".png")
+        #expect(long.utf8.count <= 200 && long.hasSuffix(".png"))
+    }
+
+    final class Seen: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Double] = []
+        func add(_ v: Double) { lock.withLock { values.append(v) } }
+        var all: [Double] { lock.withLock { values } }
+    }
+
     @Test func sessionStreamsIntoAMirror() async throws {
         let fx = try await HostFixture()
         let c = try await fx.client()

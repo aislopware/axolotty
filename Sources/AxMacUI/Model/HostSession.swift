@@ -85,7 +85,7 @@ final class HostSession: Identifiable {
     var far: FarHost? {
         guard !isLocal else { return nil }
         let ssh: String? = if case let .tcp(dialled, _) = endpoint { dialled } else { nil }
-        return FarHost(id: id, ssh: ssh, connection: connection)
+        return FarHost(id: id, ssh: ssh, connection: connection, name: name)
     }
 
     /// Connects (after `prepare`, e.g. launching the local server) and keeps

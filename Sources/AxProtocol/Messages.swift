@@ -181,6 +181,12 @@ public enum ClientMessage: Codable, Sendable {
     /// Which of a far pane's printed paths exist on the host, resolved
     /// against the pane's directory (feature "paths"): ⌘-click opens them.
     case paths(UUID, cwd: String, candidates: [String])
+    /// A piece of a file for the host (feature "files"): a file dropped on,
+    /// or an image pasted into, a far pane goes there, so the path its
+    /// program is given is one it can open. Pieces of one file share the
+    /// token, in order, `last` on the final one; each is at most
+    /// `HostFile.piece` bytes, sent on a lane of its own behind every key.
+    case file(UUID, name: String, bytes: Data, last: Bool)
 }
 
 public enum HostEvent: Codable, Hashable, Sendable {
@@ -230,6 +236,9 @@ public enum HostMessage: Codable, Sendable {
     case gitTree(UUID, GitReport)
     /// The answer to `ClientMessage.paths`, one per candidate.
     case pathsFound(UUID, [HostPath?])
+    /// The answer to the `ClientMessage.file` marked last: where the host
+    /// saved it, or nil if it couldn't.
+    case fileSaved(UUID, path: String?)
     case error(String)
     /// The client speaks another wire generation; the host closes the link.
     /// One side needs updating (`generation` is the host's).

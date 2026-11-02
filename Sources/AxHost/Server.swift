@@ -32,6 +32,9 @@ public struct ServerConfig: Sendable {
     public var tailnetPort: UInt16?
     /// Who may call on the tailnet (the same person, by default).
     public var tailnetGate = TailnetGate()
+    /// Where files sent from far panes go: the user's temporary folder,
+    /// whose path has no spaces to quote.
+    public var drops = FileManager.default.temporaryDirectory.appending(path: "axolotty-drops", directoryHint: .isDirectory)
 
     public init(paths: RuntimePaths, holderExecutable: URL?, name: String = Server.defaultName) {
         self.paths = paths
@@ -78,6 +81,7 @@ public actor Server {
     private var tailnetSources: [String: any DispatchSourceRead] = [:]
     private var lockFD: Int32 = -1
     private var saveTask: Task<Void, Never>?
+    private var drops: Drops
     private var running = false
 
     // Claude Code status from outside, for panes running tmux (`ClaudeAgents.swift`).
@@ -110,6 +114,7 @@ public actor Server {
 
     public init(config: ServerConfig) {
         self.config = config
+        drops = Drops(root: config.drops)
         let identity = Self.loadIdentity(config.paths)
         state = Self.loadDocument(config.paths) ?? HostState(host: identity, name: config.name)
         state.host = identity
@@ -401,6 +406,7 @@ public actor Server {
             for (p, set) in focused where set.contains(key) { setFocus(p, key, false) }
             for (p, d) in drivers where d == key { drivers[p] = nil }
             if lastInput == key { lastInput = nil }
+            drops.drop(owner: key)
         case let .exited(id, status):
             paneExited(id, status)
         case .holderLost:
@@ -493,6 +499,10 @@ public actor Server {
             let conn = link.conn
             Task.detached(priority: .utility) {
                 conn.send(HostMessage.pathsFound(token, HostPath.resolve(candidates, cwd: cwd)))
+            }
+        case let .file(token, name, bytes, last):
+            if let saved = drops.put(token, name: name, bytes: bytes, last: last, from: ObjectIdentifier(link.conn)) {
+                link.conn.send(HostMessage.fileSaved(token, path: saved))
             }
         }
     }

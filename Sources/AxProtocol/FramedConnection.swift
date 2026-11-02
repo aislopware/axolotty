@@ -93,8 +93,8 @@ public final class FramedConnection: @unchecked Sendable {
         if let d = try? MessageCodec.frame(message) { send(d, lane: lane) }
     }
 
-    public func send(_ message: ClientMessage) {
-        if let d = try? MessageCodec.frame(message) { send(d) }
+    public func send(_ message: ClientMessage, lane: Int = 0) {
+        if let d = try? MessageCodec.frame(message) { send(d, lane: lane) }
     }
 
     public func close(_ error: (any Error)? = nil) {

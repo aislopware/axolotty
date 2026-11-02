@@ -863,13 +863,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     // MARK: Size while resizing
 
-    private var sizeBadge: SizeBadge?
+    private var sizeBadge: PaneBadge?
 
     private func showSize() { badge.show(cols: grid.cols, rows: grid.rows); layoutSizeBadge() }
 
-    private var badge: SizeBadge {
+    private var badge: PaneBadge {
         if let b = sizeBadge { return b }
-        let b = SizeBadge()
+        let b = PaneBadge()
         addSubview(b)
         sizeBadge = b
         return b
@@ -924,7 +924,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     private func layoutSizeBadge() {
         guard let b = sizeBadge else { return }
-        let w = b.preferredWidth, h = SizeBadge.height
+        let w = min(b.preferredWidth, bounds.width - 24), h = PaneBadge.height
         b.frame = NSRect(x: ((bounds.width - w) / 2).rounded(), y: ((bounds.height - h) / 2).rounded(), width: w, height: h)
     }
 
@@ -1173,7 +1173,20 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     }
 
     @objc func paste(_ sender: Any?) {
-        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return }
+        let pb = NSPasteboard.general
+        if let far = linkContext.far {
+            // What only this Mac has goes across first: copied files, or an
+            // image (a screenshot for an agent), pasted as the paths there.
+            if let urls = Self.fileURLs(pb) {
+                sendFar(urls.map { .file($0) }, to: far)
+                return
+            }
+            if pb.string(forType: .string) == nil, let png = Self.pastedImage(pb) {
+                sendFar([.data(png, name: Self.imageName())], to: far)
+                return
+            }
+        }
+        guard let text = pb.string(forType: .string), !text.isEmpty else { return }
         pasteText(text)
     }
 
@@ -1337,7 +1350,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         case #selector(copy(_:)):
             return mirror.withTerminal { $0.hasSelection } ?? false
         case #selector(paste(_:)):
-            return NSPasteboard.general.string(forType: .string) != nil
+            let pb = NSPasteboard.general
+            return pb.string(forType: .string) != nil
+                || (linkContext.far != nil && (Self.fileURLs(pb) != nil || Self.pastedImage(pb) != nil))
         case #selector(findNext(_:)), #selector(findPrevious(_:)):
             return !findNeedle.isEmpty
         case #selector(closeFind(_:)):
@@ -1353,9 +1368,12 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         let pb = sender.draggingPasteboard
-        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
-           !urls.isEmpty
-        {
+        if let urls = Self.fileURLs(pb) {
+            // On a far pane a path here means nothing: the files go there.
+            if let far = linkContext.far {
+                sendFar(urls.map { .file($0) }, to: far)
+                return true
+            }
             let quoted = urls.map { Self.shellQuote($0.path(percentEncoded: false)) }.joined(separator: " ")
             connection.send(.paste(pane, quoted + " "))
             return true
@@ -1365,6 +1383,122 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             return true
         }
         return false
+    }
+
+    static func fileURLs(_ pb: NSPasteboard) -> [URL]? {
+        let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        return urls?.isEmpty == false ? urls : nil
+    }
+
+    /// The pasteboard's image as PNG (a screenshot copied with ⌃⇧⌘4).
+    static func pastedImage(_ pb: NSPasteboard) -> Data? {
+        if let png = pb.data(forType: .png) { return png }
+        guard let tiff = pb.data(forType: .tiff), let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    static func imageName(at date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return "image-\(f.string(from: date)).png"
+    }
+
+    // MARK: Sending files to a far host
+
+    enum Outgoing {
+        case file(URL)
+        case data(Data, name: String)
+        var name: String {
+            switch self {
+            case let .file(u): u.lastPathComponent
+            case let .data(_, n): n
+            }
+        }
+    }
+
+    /// Bytes sent so far, written by the sending tasks, read by the badge.
+    private nonisolated final class Sent: @unchecked Sendable {
+        private let lock = NSLock()
+        private var bytes: [Int: Double] = [:]
+        func set(_ i: Int, _ share: Double) { lock.withLock { bytes[i] = share } }
+        func total(_ sizes: [Double]) -> Double {
+            lock.withLock { sizes.indices.reduce(0) { $0 + (bytes[$1] ?? 0) * sizes[$1] } }
+        }
+    }
+
+    private var sending: Task<Void, Never>?
+
+    /// Shows the first of `texts` (longest first) that fits the pane whole:
+    /// a narrow pane drops words rather than cutting one in half.
+    private func say(_ texts: String..., color: NSColor = Axo.Color.textSecondary, linger: Double?) {
+        let room = bounds.width - 24
+        badge.show(texts.first { PaneBadge.width(of: $0) <= room } ?? texts[texts.count - 1], color: color, linger: linger)
+        layoutSizeBadge()
+    }
+
+    /// Sends files (one after another) to the far host, then pastes where
+    /// they landed, as a drop pastes local paths. The badge shows only past
+    /// a quarter second, so a screenshot just appears as its path.
+    private func sendFar(_ items: [Outgoing], to far: FarHost) {
+        guard sending == nil else { return }
+        let fm = FileManager.default
+        for case let .file(u) in items {
+            var dir: ObjCBool = false
+            if fm.fileExists(atPath: u.path(percentEncoded: false), isDirectory: &dir), dir.boolValue {
+                return say("Only files can be sent to \(far.name)", "Only files can be sent", color: Axo.Color.status(.error), linger: 2.5)
+            }
+        }
+        guard far.connection.hostFeatures.contains("files") else {
+            return say("Update Axolotty on \(far.name) to send it files", "Update Axolotty there first", color: Axo.Color.status(.error), linger: 3)
+        }
+        let sizes: [Double] = items.map {
+            switch $0 {
+            case let .file(u): Double((try? fm.attributesOfItem(atPath: u.path(percentEncoded: false))[.size] as? NSNumber)?.int64Value ?? 0)
+            case let .data(d, _): Double(d.count)
+            }
+        }
+        if let i = sizes.firstIndex(where: { $0 > Double(HostFile.maxBytes) }) {
+            return say("\(items[i].name) is over 2 GB", color: Axo.Color.status(.error), linger: 2.5)
+        }
+        let whole = max(1, sizes.reduce(0, +))
+        let what = items.count == 1 ? items[0].name : "\(items.count) files"
+        let sent = Sent()
+        let started = Date()
+        let tick = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, Date().timeIntervalSince(started) > 0.25 else { return }
+                // 100% is the host saying it has it all, not the last piece leaving.
+                let pct = min(99, Int((sent.total(sizes) / whole * 100).rounded(.down)))
+                self.say("Sending \(what) to \(far.name) · \(pct)%", "Sending \(what) · \(pct)%", "Sending · \(pct)%", linger: nil)
+            }
+        }
+        RunLoop.main.add(tick, forMode: .common)
+        let connection = far.connection
+        sending = Task { [weak self] in
+            var paths: [String] = []
+            var failed: String?
+            for (i, item) in items.enumerated() {
+                let progress: @Sendable (Double) -> Void = { sent.set(i, $0) }
+                let path: String? = switch item {
+                case let .file(u): await connection.send(file: u, progress: progress)
+                case let .data(d, name): await connection.send(data: d, name: name, progress: progress)
+                }
+                if let path { paths.append(path) } else { failed = failed ?? item.name }
+            }
+            tick.invalidate()
+            guard let self else { return }
+            self.sending = nil
+            if let failed {
+                self.say("Couldn't send \(failed) to \(far.name)", "Couldn't send \(failed)", "Not sent", color: Axo.Color.status(.error), linger: 2.5)
+            } else {
+                self.badge.hide()
+            }
+            guard !paths.isEmpty else { return }
+            self.snapToBottom()
+            self.holdPrediction()
+            self.connection.send(.paste(self.pane, paths.map(Self.shellQuote).joined(separator: " ") + " "))
+        }
     }
 
     static func shellQuote(_ s: String) -> String {

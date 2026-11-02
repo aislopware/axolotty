@@ -24,6 +24,7 @@ final class HostFixture: @unchecked Sendable {
                          "PS1": "$ "]
         c.foregroundPoll = .milliseconds(100)
         c.holderWatchesServer = true
+        c.drops = root.appending(path: "drops", directoryHint: .isDirectory)
         configure(&c)
         config = c
         host = Server(config: c)

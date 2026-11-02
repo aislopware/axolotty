@@ -83,6 +83,7 @@ public final class HostConnection: @unchecked Sendable {
         var pongs: [UInt64: CheckedContinuation<Void, Never>] = [:]
         var gits: [UUID: CheckedContinuation<GitReport?, Never>] = [:]
         var finds: [UUID: CheckedContinuation<[HostPath?]?, Never>] = [:]
+        var saves: [UUID: CheckedContinuation<String?, Never>] = [:]
         /// What the host said it can do in its welcome.
         var hostFeatures: Set<String> = []
         /// A kick's ping, until its pong comes.
@@ -207,6 +208,9 @@ public final class HostConnection: @unchecked Sendable {
                 throw ConnectionError.refused("\(error)")
             }
             conn = FramedConnection(fd: fd, label: "host")
+            // A file going to the host fills every buffer on the path unless
+            // paced; keys and pings (lane 0) are never held.
+            conn.pace()
         case let .command(argv, _):
             #if os(macOS)
             let child: CommandChild
@@ -253,6 +257,7 @@ public final class HostConnection: @unchecked Sendable {
             taken.pongs = s.pongs
             taken.gits = s.gits
             taken.finds = s.finds
+            taken.saves = s.saves
             taken.wantConnected = s.wantConnected
             taken.refusal = s.refusal
             #if os(macOS)
@@ -268,6 +273,7 @@ public final class HostConnection: @unchecked Sendable {
             s.pongs = [:]
             s.gits = [:]
             s.finds = [:]
+            s.saves = [:]
             s.kickPing = nil
             return true
         }
@@ -277,6 +283,7 @@ public final class HostConnection: @unchecked Sendable {
         taken.pongs.values.forEach { $0.resume() }
         taken.gits.values.forEach { $0.resume(returning: nil) }
         taken.finds.values.forEach { $0.resume(returning: nil) }
+        taken.saves.values.forEach { $0.resume(returning: nil) }
         let banner = conn.bannerText
         Task { [weak self] in
             var failure = taken.refusal
@@ -486,6 +493,8 @@ public final class HostConnection: @unchecked Sendable {
             state.withLock { $0.gits.removeValue(forKey: token) }?.resume(returning: report)
         case let .pathsFound(token, found):
             state.withLock { $0.finds.removeValue(forKey: token) }?.resume(returning: found)
+        case let .fileSaved(token, path):
+            state.withLock { $0.saves.removeValue(forKey: token) }?.resume(returning: path)
         case let .pong(n):
             let t = now
             let (waiter, rtt) = state.withLock { s in
@@ -592,6 +601,83 @@ public final class HostConnection: @unchecked Sendable {
                 conn.send(ClientMessage.paths(token, cwd: cwd, candidates: Array(candidates.prefix(HostPath.maxBatch))))
             } else {
                 c.resume(returning: nil)
+            }
+        }
+    }
+
+    /// Sends a file to the host, a piece at a time on a lane of its own, so
+    /// keys typed meanwhile go first; returns where the host saved it. nil
+    /// with no link, from a host too old to take files, or if reading,
+    /// sending or saving failed. `progress` hears the share sent (0…1).
+    public func send(file: URL, name: String? = nil, progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> String? {
+        guard let h = try? FileHandle(forReadingFrom: file) else { return nil }
+        guard let size = try? h.seekToEnd(), size <= HostFile.maxBytes, (try? h.seek(toOffset: 0)) != nil else {
+            try? h.close()
+            return nil
+        }
+        // The sending task reads and closes it: nothing else touches it after this.
+        let pieces = Pieces(close: { try? h.close() }) { try h.read(upToCount: HostFile.piece) ?? Data() }
+        return await send(name: name ?? file.lastPathComponent, size: size, pieces: pieces, progress: progress)
+    }
+
+    /// Sends `data` to the host as a file called `name` (a pasted image).
+    public func send(data: Data, name: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> String? {
+        guard UInt64(data.count) <= HostFile.maxBytes else { return nil }
+        var at = 0
+        let pieces = Pieces {
+            let end = min(data.count, at + HostFile.piece)
+            defer { at = end }
+            return data.subdata(in: at ..< end)
+        }
+        return await send(name: name, size: UInt64(data.count), pieces: pieces, progress: progress)
+    }
+
+    /// A file's pieces, read in turn by the one task that sends them.
+    private final class Pieces: @unchecked Sendable {
+        let next: () throws -> Data
+        let close: () -> Void
+        init(close: @escaping () -> Void = {}, _ next: @escaping () throws -> Data) {
+            self.next = next
+            self.close = close
+        }
+    }
+
+    private func send(name: String, size: UInt64, pieces: Pieces, progress: @escaping @Sendable (Double) -> Void) async -> String? {
+        let token = UUID()
+        let lane = FramedConnection.lane(token)
+        let conn = state.withLock { s -> FramedConnection? in
+            guard let conn = s.conn, s.welcome == nil, s.hostFeatures.contains("files") else { return nil }
+            return conn
+        }
+        guard let conn else {
+            pieces.close()
+            return nil
+        }
+        return await withCheckedContinuation { c in
+            state.withLock { $0.saves[token] = c }
+            Task.detached { [weak self] in
+                defer { pieces.close() }
+                var sent: UInt64 = 0
+                do {
+                    while true {
+                        // Read no further ahead than the link takes it.
+                        while conn.pendingBytes(lane: lane) > HostFile.window {
+                            guard !conn.isClosed else { throw CancellationError() }
+                            try await Task.sleep(for: .milliseconds(4))
+                        }
+                        guard !conn.isClosed else { throw CancellationError() }
+                        let bytes = try pieces.next()
+                        sent += UInt64(bytes.count)
+                        let last = bytes.count < HostFile.piece || sent >= size
+                        conn.send(ClientMessage.file(token, name: name, bytes: bytes, last: last), lane: lane)
+                        progress(size == 0 ? 1 : min(1, Double(sent) / Double(size)))
+                        if last { return }
+                    }
+                } catch {
+                    // The host drops the half-sent file when this link goes;
+                    // the person hears that it failed now.
+                    self?.state.withLock { $0.saves.removeValue(forKey: token) }?.resume(returning: nil)
+                }
             }
         }
     }

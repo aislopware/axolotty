@@ -11,6 +11,8 @@ struct FarHost {
     /// editor's Remote-SSH; nil when it isn't reached that way.
     let ssh: String?
     let connection: HostConnection
+    /// What the person calls it ("Mac Studio").
+    let name: String
 }
 
 /// Where a pane's printed paths live: relative ones resolve against `cwd`,
