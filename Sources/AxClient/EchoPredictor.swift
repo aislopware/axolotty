@@ -7,8 +7,10 @@
 ///   link faster than that the real echo is already in the next frame;
 /// - the cursor is visible, in a shell's input line (OSC 133), on the
 ///   primary screen; no mouse tracking, no hidden prompt;
-/// - each guessed cell is blank now, so its echo can be told apart from what
-///   was there; never in the last column, where the line would wrap.
+/// - each guessed cell is blank, or already shows that very character (a
+///   shell's suggestion for the rest of the line); never the last column,
+///   where the line would wrap. An echo counts once the host's cursor has
+///   moved past its cell with the character in it.
 ///
 /// After a key that isn't plain text (Return, arrows, ⌃ chords), nothing is
 /// guessed until the host has answered it: until then, where the next
@@ -117,8 +119,11 @@ public struct EchoPredictor {
                 let y = guesses.last?.y ?? screen.cursorY
                 let x = guesses.last.map { $0.x + 1 } ?? screen.cursorX
                 // Its width is the host's to say, or its cell isn't free to guess in.
+                // A blank cell, or one already showing this very character (a
+                // shell's suggestion of the rest of the line, drawn faintly).
+                let under = screen.cell(x, y)
                 guard Self.predictable(ch), y == screen.cursorY, x >= screen.cursorX, x < screen.cols - 1,
-                      screen.cell(x, y) == " " else { break }
+                      under == " " || under == ch else { break }
                 guesses.append(Guess(x: x, y: y, character: ch, at: now))
                 guessed += 1
             }
@@ -157,10 +162,12 @@ public struct EchoPredictor {
         }
         var kept: [Guess] = []
         for g in guesses {
+            // Its echo landed once the host's cursor has moved past it with
+            // the character in place. The cell alone can't say: a space looks
+            // the same before its echo, and a suggestion shows the rest of the
+            // line before it is typed.
             let passed = screen.cursorY != g.y || screen.cursorX > g.x
-            // Its echo landed. A space looks the same before its echo as
-            // after: only the host's cursor moving past it says it came.
-            if screen.cell(g.x, g.y) == g.character, g.character != " " || passed { continue }
+            if passed, screen.cell(g.x, g.y) == g.character { continue }
             if passed || now - g.at >= patience { return miss(at: now) }
             kept.append(g)
         }

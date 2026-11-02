@@ -78,7 +78,7 @@ struct EchoPredictorTests {
             let r4 = p.typed("a", on: g.screen(), at: .zero)
             #expect(!r4)
         }
-        // Over text already there (a suggestion, the middle of a line) the echo couldn't be told apart.
+        // Over other text (the middle of a line, a suggestion that went another way) it would collide.
         g = Grid()
         g.cells[0][2] = "x"
         var p = EchoPredictor(rtt: Self.ms(50))
@@ -136,6 +136,29 @@ struct EchoPredictorTests {
         let next = p.typed("c", on: g.screen(), at: Self.ms(62))
         #expect(next)
         #expect(p.guesses.first.map { [$0.x, $0.y] } == [3, 1])
+    }
+
+    /// zsh-autosuggestions draws the rest of a remembered command faintly
+    /// after the cursor. Typing along it is guessed over it, and the faint
+    /// text never counts as an echo: only the host's cursor moving on does.
+    @Test func aSuggestionIsTypedAlongButNeverTakenForTheEcho() {
+        var p = EchoPredictor(rtt: Self.ms(50))
+        var g = Grid()
+        let first = p.typed("e", on: g.screen(), at: .zero)
+        #expect(first)
+        g.put("e")
+        for (i, ch) in "cho hi".enumerated() { g.cells[0][3 + i] = ch }  // the suggestion
+        p.observed(g.screen(), at: Self.ms(50))
+        #expect(p.guesses.isEmpty, "e echoed and the cursor moved on")
+        let along = p.typed("ch", on: g.screen(), at: Self.ms(60))
+        #expect(along, "c and h sit where the suggestion already shows them")
+        p.observed(g.screen(), at: Self.ms(70))  // the suggestion again, no echo yet
+        #expect(p.guesses.map(\.character) == ["c", "h"], "the suggestion's c is not c's echo")
+        g.x = 5
+        p.observed(g.screen(), at: Self.ms(110))
+        #expect(p.guesses.isEmpty && p.misses == 0)
+        let off = p.typed("x", on: g.screen(), at: Self.ms(120))
+        #expect(!off, "the suggestion says o here: x would collide with it")
     }
 
     @Test func aKeyLeftUnguessedHoldsLaterGuessesNotEarlierOnes() {
