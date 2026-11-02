@@ -126,12 +126,20 @@ public actor Server {
         let paths = config.paths
         try paths.prepare()
         try ShellEnvironment.install(paths, cli: config.cliExecutable)
-        lockFD = open(paths.run.appending(path: "d.lock").path(percentEncoded: false), O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
-        guard lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) == 0 else {
-            if lockFD >= 0 { Darwin.close(lockFD) }
-            lockFD = -1
-            throw ServerError.alreadyRunning
+        // Only a lock held elsewhere means another server: any other failure
+        // (no descriptors left, no permission) is said as itself, or the
+        // daemon would exit quietly believing it has a twin.
+        let fd = open(paths.run.appending(path: "d.lock").path(percentEncoded: false), O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        var rc: Int32
+        repeat { rc = flock(fd, LOCK_EX | LOCK_NB) } while rc != 0 && errno == EINTR
+        guard rc == 0 else {
+            let e = errno
+            Darwin.close(fd)
+            if e == EWOULDBLOCK { throw ServerError.alreadyRunning }
+            throw POSIXError(POSIXErrorCode(rawValue: e) ?? .EIO)
         }
+        lockFD = fd
         running = true
         let sink = inboundSink
         custody = try await Holder.connect(

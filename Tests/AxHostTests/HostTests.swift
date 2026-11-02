@@ -63,6 +63,21 @@ struct HostTests {
         await fx.tearDown()
     }
 
+    /// One server per root: a second is told so; a lock it cannot even
+    /// open is an error of its own, not a twin (the daemon exits quietly
+    /// on `alreadyRunning`).
+    @Test func aSecondServerIsRefusedAndOtherLockFailuresSayWhy() async throws {
+        let fx = try await HostFixture()
+        await #expect(throws: ServerError.alreadyRunning) { try await Server(config: fx.config).start() }
+        await fx.host.stop()
+        let lock = fx.paths.run.appending(path: "d.lock").path(percentEncoded: false)
+        chmod(lock, 0)
+        await #expect(throws: POSIXError(.EACCES)) { try await Server(config: fx.config).start() }
+        chmod(lock, 0o600)
+        try await fx.restart()
+        await fx.tearDown()
+    }
+
     /// The point of the three-process design: restart the server, keep the program.
     @Test func serverRestartKeepsProgramsAndScreen() async throws {
         let fx = try await HostFixture()
