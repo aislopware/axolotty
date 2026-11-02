@@ -69,8 +69,6 @@ public struct CommandRecord: Hashable, Codable, Sendable {
         self.duration = duration
         self.endedAt = endedAt
     }
-
-    public var failed: Bool { (exitCode ?? 0) != 0 }
 }
 
 /// A sidebar row: one split tree of panes.
@@ -173,12 +171,10 @@ public struct HostState: Hashable, Codable, Sendable {
     public enum Delta: Hashable, Codable, Sendable {
         case workspace(WorkspaceInfo)
         case workspaceRemoved(WorkspaceID)
-        case workspaceOrder([WorkspaceID])
         case session(SessionInfo)
         case sessionRemoved(SessionID)
         case pane(PaneInfo)
         case paneRemoved(PaneID)
-        case renamed(String)
     }
 
     public mutating func apply(_ delta: Delta) {
@@ -187,10 +183,6 @@ public struct HostState: Hashable, Codable, Sendable {
             if let i = workspaces.firstIndex(where: { $0.id == w.id }) { workspaces[i] = w } else { workspaces.append(w) }
         case let .workspaceRemoved(id):
             workspaces.removeAll { $0.id == id }
-        case let .workspaceOrder(order):
-            let byID = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) })
-            let ordered = order.compactMap { byID[$0] }
-            workspaces = ordered + workspaces.filter { !order.contains($0.id) }
         case let .session(s):
             sessions[s.id] = s
         case let .sessionRemoved(id):
@@ -199,8 +191,6 @@ public struct HostState: Hashable, Codable, Sendable {
             panes[p.id] = p
         case let .paneRemoved(id):
             panes[id] = nil
-        case let .renamed(n):
-            name = n
         }
         revision &+= 1
     }

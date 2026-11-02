@@ -35,9 +35,9 @@ final class HostFixture: @unchecked Sendable {
         try await host.start()
     }
 
-    func client(_ name: String = "test", platform: Platform = .macOS) async throws -> HostConnection {
+    func client(_ name: String = "test") async throws -> HostConnection {
         let c = HostConnection(endpoint: .unix(path: paths.hostSocket.path(percentEncoded: false)),
-                               hello: ClientHello(client: ClientID(), name: name, platform: platform))
+                               hello: ClientHello(client: ClientID(), name: name))
         try await c.connect()
         return c
     }

@@ -109,22 +109,18 @@ public enum IntentError: String, Codable, Sendable, Error {
 
 // MARK: - Messages
 
-public enum Platform: String, Codable, Sendable { case macOS, iOS, cli }
-
 public struct ClientHello: Codable, Hashable, Sendable {
     public var protocolVersion: Int
     public var client: ClientID
     public var name: String
-    public var platform: Platform
     /// When true, the host also sends state and attention events (apps); the CLI
     /// sends false and gets only replies.
     public var subscribe: Bool
 
-    public init(client: ClientID, name: String, platform: Platform, subscribe: Bool = true) {
+    public init(client: ClientID, name: String, subscribe: Bool = true) {
         protocolVersion = Wire.version
         self.client = client
         self.name = name
-        self.platform = platform
         self.subscribe = subscribe
     }
 }
@@ -144,10 +140,6 @@ public struct Appearance: Codable, Hashable, Sendable {
         dark = theme.isDark
     }
 }
-
-/// Text formats for capture (CLI, agents). `commands` is the pane's finished
-/// shell commands (OSC 133), oldest first, as a JSON array of `CommandRecord`.
-public enum CaptureFormat: String, Codable, Sendable { case plain, vt, html, commands }
 
 public enum ClientMessage: Codable, Sendable {
     case hello(ClientHello)
@@ -171,10 +163,8 @@ public enum ClientMessage: Codable, Sendable {
     /// Erase the pane's scrollback and screen (⌘K).
     case clear(PaneID)
     case seen(PaneID)
-    case capture(UUID, PaneID, CaptureFormat, scrollback: Bool)
-    /// Status from a hook or the CLI (`axolotty status`), same rules as OSC 7501.
-    case report(PaneID, id: String, state: StatusRecord.State?, app: String, message: String)
-    case notify(PaneID?, title: String, body: String)
+    /// The pane's text, plain (CLI, agents).
+    case capture(UUID, PaneID, scrollback: Bool)
     case ping(UInt64)
 }
 

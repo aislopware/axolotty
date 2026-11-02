@@ -1,6 +1,6 @@
 // `axolotty mcp`: the CLI's operations as MCP tools, over stdio (newline-
 // delimited JSON-RPC 2.0). An agent running in an Axolotty pane can see the
-// other panes, start sessions and splits, hand prompts to other agents
+// other panes, start sessions, hand prompts to other agents
 // (bracketed paste, Enter on its own), read their screens and wait for them.
 // Requests run concurrently (a long `wait_for` does not hold up the rest);
 // replies are written one line at a time.
@@ -96,45 +96,32 @@ final class MCPServer: Sendable {
             let (_, st) = try await Ops.connect()
             return Self.describe(st)
         case "new_session":
-            let p = try await Ops.newSession(cwd: a.string("cwd"), name: a.string("name"), workspace: nil,
+            let p = try await Ops.newSession(cwd: a.string("cwd"), name: a.string("name"),
                                              command: a.string("command").map { [$0] } ?? [], worktree: a.string("worktree"))
             return "Started pane \(p.raw.uuidString.lowercased())"
-        case "split_pane":
-            let p = try await Ops.split(pane: a.string("pane"), down: a.string("direction") == "down", before: false,
-                                        command: a.string("command").map { [$0] } ?? [])
-            return "Split into pane \(p.raw.uuidString.lowercased())"
         case "send_input":
-            let mode = a.string("mode") ?? "paste"
-            guard mode == "paste" || mode == "type" else { throw .usage("mode is paste or type") }
-            try await Ops.send(pane: a.string("pane"), text: a.string("text") ?? "", paste: mode == "paste",
-                               enter: a.bool("submit", true), keys: try Ops.keys(a.string("keys")), force: a.bool("force", false))
+            try await Ops.send(pane: a.string("pane"), text: a.string("text") ?? "", enter: a.bool("submit", true),
+                               keys: try Ops.keys(a.string("keys")), force: a.bool("force", false))
             return "Sent"
         case "read_pane":
-            var text = try await Ops.capture(pane: a.string("pane"), format: .plain, scrollback: a.bool("scrollback", false))
+            var text = try await Ops.capture(pane: a.string("pane"), scrollback: a.bool("scrollback", false))
             let last = Int(a.number("last_lines") ?? 120)
             if last > 0 {
                 let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
                 if lines.count > last { text = lines.suffix(last).joined(separator: "\n") }
             }
             return text
-        case "list_commands":
-            var list = try await Ops.commands(pane: a.string("pane"))
-            if a.bool("failed_only", false) { list = list.filter(\.failed) }
-            list = Array(list.suffix(Int(a.number("last") ?? 20)))
-            guard !list.isEmpty else { return "No finished commands in this pane yet" }
-            return list.map(Ops.describe).joined(separator: "\n")
         case "wait_for":
             let goal = a.string("until") ?? "done"
             let timeout = a.number("timeout_seconds") ?? 600
             if let many = a.raw["panes"] as? [String], !many.isEmpty {
-                let all = a.bool("all", false)
-                let got = try await Ops.wait(panes: many, all: all, goal: goal, timeout: timeout)
+                let got = try await Ops.wait(panes: many, goal: goal, timeout: timeout)
                 let lines = got.map { p, info in
                     "\(p.raw.uuidString.lowercased()): " + (info.map { i in
                         i.activity.rawValue + (i.status.headline.map { ": \($0.message)" } ?? "")
                     } ?? "closed")
                 }
-                return (all ? "All reached \(goal):\n" : "Reached \(goal):\n") + lines.joined(separator: "\n")
+                return "Reached \(goal):\n" + lines.joined(separator: "\n")
             }
             let info = try await Ops.wait(pane: a.string("pane"), goal: goal, timeout: timeout)
             if goal == "command", let r = info?.lastCommand {
@@ -142,15 +129,6 @@ final class MCPServer: Sendable {
             }
             guard let info else { return "The pane is gone" }
             return "Pane is \(info.activity.rawValue)" + (info.status.headline.map { ": \($0.message)" } ?? "")
-        case "report_status":
-            guard let state = a.string("state") else { throw .usage("state is required") }
-            try await Ops.report(pane: a.string("pane"), state: state, id: a.string("id") ?? "", app: a.string("app") ?? "",
-                                 message: a.string("message") ?? "")
-            return "Reported \(state)"
-        case "notify":
-            guard let title = a.string("title") else { throw .usage("title is required") }
-            try await Ops.notify(pane: nil, title: title, body: a.string("body") ?? "")
-            return "Notified"
         case "close_pane":
             try await Ops.close(pane: a.string("pane"))
             return "Closed"
@@ -187,12 +165,12 @@ final class MCPServer: Sendable {
 
     static let instructions = """
         Axolotty is the terminal you run in. These tools see and drive its panes: list them, \
-        start a session or split (optionally running a command, such as another agent), hand text \
-        to a pane, read its screen, and wait until it is done, blocked, or its next shell command \
+        start a session (optionally running a command, such as another agent), hand text to a \
+        pane, read its screen, and wait until it is done, blocked, or its next shell command \
         ends. Pane ids accept unique prefixes of 4+ characters; omitting a pane means your own. \
-        To give another agent a prompt use send_input with mode paste (the default), which submits \
-        it safely. Never answer another agent's permission prompt for its person: send_input refuses \
-        a pane that waits for its person unless force is set.
+        send_input pastes the text and presses Enter on its own afterwards, which is how to give \
+        another agent a prompt. Never answer another agent's permission prompt for its person: \
+        send_input refuses a pane that waits for its person unless force is set.
         """
 
     private static func schema(_ props: [String: [String: Any]], required: [String] = []) -> [String: Any] {
@@ -203,7 +181,7 @@ final class MCPServer: Sendable {
 
     static var tools: [[String: Any]] { [
         ["name": "list_panes",
-         "description": "Every workspace, session and pane: activity (idle, working, blocked, done, error), program or agent, directory, what a waiting agent asks, listening ports, and the last shell command with its exit code.",
+         "description": "Every workspace, session and pane: activity (idle, working, blocked, done, error), program or agent, directory, what a waiting agent asks, and the last shell command with its exit code.",
          "inputSchema": schema([:]),
          "annotations": ["readOnlyHint": true]],
         ["name": "new_session",
@@ -214,20 +192,12 @@ final class MCPServer: Sendable {
              "name": ["type": "string", "description": "Session name shown in the sidebar"],
              "command": ["type": "string", "description": "Command line to run instead of an interactive shell"],
          ])],
-        ["name": "split_pane",
-         "description": "Split a pane, optionally running a command in the new one. Returns the new pane id.",
-         "inputSchema": schema([
-             "pane": pane,
-             "direction": ["type": "string", "enum": ["right", "down"], "description": "Default right"],
-             "command": ["type": "string", "description": "Command line to run instead of an interactive shell"],
-         ])],
         ["name": "send_input",
-         "description": "Give a pane input. mode paste (default) pastes the text as one bracketed paste and presses Enter on its own afterwards (submit), which is how to hand a prompt to an agent's TUI; mode type types it raw (\\n is Enter). keys presses named keys after the text, for example `ctrl+c` or `esc,down,enter`. Refused while the pane waits for its person unless force is true.",
+         "description": "Give a pane input: the text as one bracketed paste, then Enter on its own afterwards (submit), which is how to hand a prompt to an agent's TUI. keys presses named keys after the text, for example `ctrl+c` or `esc,down,enter`. Refused while the pane waits for its person unless force is true.",
          "inputSchema": schema([
              "pane": pane,
              "text": ["type": "string"],
-             "mode": ["type": "string", "enum": ["paste", "type"]],
-             "submit": ["type": "boolean", "description": "Press Enter after a paste (default true)"],
+             "submit": ["type": "boolean", "description": "Press Enter after the text (default true)"],
              "keys": ["type": "string", "description": "Comma-separated [ctrl|alt|shift|super+]key: a-z 0-9 enter esc tab space backspace delete up down left right home end pageup pagedown f1-f12"],
              "force": ["type": "boolean"],
          ])],
@@ -239,37 +209,15 @@ final class MCPServer: Sendable {
              "last_lines": ["type": "integer", "description": "Keep only the last N lines (default 120, 0 for all)"],
          ]),
          "annotations": ["readOnlyHint": true]],
-        ["name": "list_commands",
-         "description": "The shell commands that finished in a pane (from shell integration), oldest first: exit code, duration and the command line. Use it to check whether a test or build passed without reading the screen.",
-         "inputSchema": schema([
-             "pane": pane,
-             "last": ["type": "integer", "description": "Only the last N (default 20)"],
-             "failed_only": ["type": "boolean", "description": "Only commands that exited non-zero"],
-         ]),
-         "annotations": ["readOnlyHint": true]],
         ["name": "wait_for",
-         "description": "Wait until a pane is done, idle, blocked, error or working, until its program exits, or (command) until its next shell command finishes, then say how it ended. With `panes`, wait on several (agents you started): until any one gets there, or every one with `all`.",
+         "description": "Wait until a pane is done (its program finished working), blocked or error, until its program exits, or (command) until its next shell command finishes, then say how it ended. With `panes`, wait on several (agents you started) until any one gets there.",
          "inputSchema": schema([
              "pane": pane,
              "panes": ["type": "array", "items": ["type": "string"], "description": "Several pane ids instead of `pane`"],
-             "all": ["type": "boolean", "description": "With panes: wait for every one (default: the first)"],
              "until": ["type": "string", "enum": waitGoals],
              "timeout_seconds": ["type": "number", "description": "Default 600"],
          ], required: ["until"]),
          "annotations": ["readOnlyHint": true]],
-        ["name": "report_status",
-         "description": "Report your own status to the sidebar: working, blocked, done, error, idle, or clear.",
-         "inputSchema": schema([
-             "state": ["type": "string", "enum": ["idle", "working", "done", "blocked", "error", "clear"]],
-             "message": ["type": "string"],
-             "pane": pane,
-         ], required: ["state"])],
-        ["name": "notify",
-         "description": "Show the person a notification (a toast when Axolotty is in front, a banner otherwise).",
-         "inputSchema": schema([
-             "title": ["type": "string"],
-             "body": ["type": "string"],
-         ], required: ["title"])],
         ["name": "close_pane",
          "description": "End a pane's program and close the pane.",
          "inputSchema": schema(["pane": pane], required: ["pane"]),

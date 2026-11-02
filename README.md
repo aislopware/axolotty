@@ -6,13 +6,12 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
 
 ## What it does
 
-- **Agent status from the agent itself.** Claude Code reports over OSC 7501; other programs can use `axolotty status`. Rows, the band, the Dock badge, toasts and notifications all follow it. A notification goes away as soon as you've seen its pane.
+- **Agent status from the agent itself.** Claude Code reports over OSC 7501, and any other program can too. Rows, the band, the Dock badge, toasts and notifications all follow it. A notification goes away as soon as you've seen its pane.
 - **Find who needs you.** Go to Session (⌘J) lists sessions as needs-you, then finished, then working. Next waiting agent is ⇧⌘U.
 - **Worktree sessions.** ⌥⌘T, or "New Worktree…" on a project's "+", starts an agent on its own branch in `<repo>/.worktrees/<branch>`. "Remove Worktree…" deletes the folder and keeps the branch.
 - **Reopen a closed session** (⇧⌘T) in its folder. Subagents at work show beside the agent's timer.
 - **Shell integration** for zsh, bash and fish:
   - prompt jumps (⌘↑ ⌘↓);
-  - a notice when a long command finishes while you're looking elsewhere;
   - a pane's ended bar, where ↩ restarts the program in place.
 - **On screen:**
   - ⌘-click links and `file:line`;
@@ -28,16 +27,14 @@ Claude Code started from Axolotty gets its tools via `--mcp-config "$AXOLOTTY_MC
 ```
 axolotty ls                                  # workspaces, sessions, panes, status
 axolotty new --cwd ~/code/app --worktree fix/login -- claude
-axolotty send --pane 1a2b --paste "Run the tests and fix what fails"
+axolotty send --pane 1a2b "Run the tests and fix what fails"
 axolotty wait --pane 1a2b --for done
-axolotty wait --pane 1a2b,3c4d --all --for done   # several agents at once
-axolotty commands --pane 1a2b --failed       # shell commands with exit codes
-axolotty events --json                       # follow every change
-axolotty attach --pane 1a2b                  # use a pane from ssh; ^] detaches
+axolotty wait --pane 1a2b,3c4d --for done    # whichever finishes first
+axolotty capture --pane 1a2b                 # the pane's screen as text
 axolotty mcp                                 # the same, as MCP tools over stdio
 ```
 
-`send` won't type into a pane whose agent is waiting for its person unless you pass `--force`. That way an agent never answers another agent's permission prompt by accident.
+`send` pastes the text, then presses Enter on its own, which is how an agent's TUI takes a prompt. It won't type into a pane whose agent is waiting for its person unless you pass `--force`. That way an agent never answers another agent's permission prompt by accident.
 
 ## Build
 

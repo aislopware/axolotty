@@ -86,7 +86,7 @@ enum ShellEnvironment {
         env["TERM_PROGRAM_VERSION"] = termProgramVersion
         env["AXOLOTTY_PANE_ID"] = pane.raw.uuidString
         env["AXOLOTTY_SOCKET"] = paths.hostSocket.path(percentEncoded: false)
-        // The CLI first on PATH (agents call `axolotty status` / `axolotty notify`).
+        // The CLI first on PATH (agents call `axolotty`).
         var bin = paths.bin.path(percentEncoded: false)
         if bin.count > 1, bin.hasSuffix("/") { bin.removeLast() }
         env["PATH"] = bin + ":" + (env["PATH"] ?? "")
@@ -113,7 +113,7 @@ enum ShellEnvironment {
     }
 
     /// Writes the integration scripts (idempotent), and links the CLI onto
-    /// every pane's PATH so programs and agents can call `axolotty status`.
+    /// every pane's PATH so programs and agents can call `axolotty`.
     static func install(_ paths: RuntimePaths, cli: URL? = nil) throws {
         let fm = FileManager.default
         let dir = paths.shellIntegration.appending(path: "zsh")

@@ -3,9 +3,9 @@ import AxModel
 import Foundation
 import Testing
 
-/// Status read from `claude agents --json` for panes Claude Code can't
-/// report to (tmux): parsing, the state each session becomes, and which pane
-/// it belongs to.
+/// Status read from `claude agents --json` for panes running tmux, which
+/// Claude Code can't report through: parsing, the state each session
+/// becomes, and which pane it belongs to (through the tmux panes' shells).
 @Suite struct ClaudeAgentsTests {
     @Test func parsesLiveSessionsAndSkipsBackgroundOnes() {
         let json = """
@@ -40,7 +40,7 @@ import Testing
         let parents: [Int32: [Int32]] = [500: [500, 400, 300], 600: [600, 410, 300], 700: [700, 1]]
         let byPane = ClaudeAgents.assign(
             [.init(pid: 500, status: "busy"), .init(pid: 600, status: "idle"), .init(pid: 700, status: "busy")],
-            roots: [a: [400], b: [410, 411]], ancestors: { parents[$0] ?? [$0] })
+            roots: [a: [400], b: [410, 411]], ancestors: { parents[$0] ?? [$0] })  // roots: tmux panes' shells
         #expect(byPane[a]?.map(\.pid) == [500])
         #expect(byPane[b]?.map(\.pid) == [600])
         #expect(byPane.values.flatMap { $0 }.contains { $0.pid == 700 } == false)  // not under any pane

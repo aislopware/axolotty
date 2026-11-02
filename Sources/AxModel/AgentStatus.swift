@@ -24,7 +24,7 @@ public enum Activity: String, Codable, Sendable, CaseIterable, Comparable {
     public static func < (a: Activity, b: Activity) -> Bool { a.rank < b.rank }
 }
 
-/// One OSC 7501 program-status record (or an equivalent hook report).
+/// One OSC 7501 program-status record.
 public struct StatusRecord: Hashable, Codable, Sendable {
     public enum State: String, Codable, Sendable { case idle, working, done, blocked, error }
     /// What a blocked program waits for, when it says (OSC 7501 `kind=`).

@@ -63,26 +63,13 @@ int ax_pty_reads_secret(int master_fd);
 /// Returns bytes written (possibly short), or -errno.
 ssize_t ax_write_some(int fd, const void *buf, size_t len);
 
-/// Non-blocking reap. Returns 1 and fills `status` (a wait(2) status) if the
-/// child exited, 0 if it is still running, -errno on error.
-int ax_reap(pid_t pid, int *status);
-
 #pragma mark - Process inspection (libproc)
 
 /// Short process name (p_comm, at most 16 bytes + NUL). Returns length or -1.
 int ax_proc_name(pid_t pid, char *buf, size_t cap);
 
-/// Absolute executable path. Returns length or -1.
-int ax_proc_path(pid_t pid, char *buf, size_t cap);
-
 /// Current working directory. Returns length or -1.
 int ax_proc_cwd(pid_t pid, char *buf, size_t cap);
-
-/// Direct children of `pid`. Returns how many were written (≤ cap), or -1.
-int ax_proc_children(pid_t pid, pid_t *out, int cap);
-
-/// Process group id of `pid`, or -1.
-pid_t ax_proc_pgid(pid_t pid);
 
 /// Parent process id of `pid`, or -1.
 pid_t ax_proc_ppid(pid_t pid);

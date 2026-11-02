@@ -9,17 +9,12 @@ public struct ServerConfig: Sendable {
     public var paths: RuntimePaths
     /// The holder binary to launch when none is running (nil: never launch).
     public var holderExecutable: URL?
-    /// The `axolotty` CLI: linked onto every pane's PATH and called by agent hooks.
+    /// The `axolotty` CLI: linked onto every pane's PATH.
     public var cliExecutable: URL?
     public var name: String
     public var limits = PaneLimits()
     /// How often to look up each pane's foreground process.
     public var foregroundPoll: Duration = .seconds(1)
-    /// A shell command at least this long (seconds) that finishes becomes
-    /// done/error until seen, so a build that ends while you look away tells you.
-    public var longCommand: Double = 10
-    /// Close a pane whose program exits with status 0.
-    public var closeOnCleanExit = true
     /// A plain shell instead of the person's login shell (tests, safe mode):
     /// interactive panes run it bare, commands run as `shell -c line`.
     public var shellOverride: String?
@@ -75,7 +70,7 @@ public actor Server {
     private var saveTask: Task<Void, Never>?
     private var running = false
 
-    // Claude Code status from outside the pane (`ClaudeAgents.swift`).
+    // Claude Code status from outside, for panes running tmux (`ClaudeAgents.swift`).
     var agentTargets: [PaneID: ClaudeAgents.Target] = [:]
     var agentRoots: [PaneID: Set<Int32>] = [:]
     /// What the host last showed for each watched session, by pid.
@@ -391,16 +386,8 @@ public actor Server {
             panes[id]?.clear()
         case let .seen(id):
             markSeen(id)
-        case let .capture(token, id, .commands, _):
-            let json = panes[id] == nil ? nil
-                : (try? JSONEncoder().encode(commandHistory[id] ?? [])).map { String(decoding: $0, as: UTF8.self) }
-            link.conn.send(HostMessage.captured(token, json))
-        case let .capture(token, id, format, scrollback):
-            link.conn.send(HostMessage.captured(token, panes[id]?.capture(format, scrollback: scrollback)))
-        case let .report(id, rid, st, app, message):
-            updateStatus(id, live: true) { $0.report(id: rid, state: st, app: app, message: message) }
-        case let .notify(id, title, body):
-            broadcastEvent(.notification(id ?? PaneID(raw: UUID(uuid: UUID_NULL)), title: title, body: body))
+        case let .capture(token, id, scrollback):
+            link.conn.send(HostMessage.captured(token, panes[id]?.capture(scrollback: scrollback)))
         case let .ping(n):
             link.conn.send(HostMessage.pong(n))
         }
@@ -638,7 +625,6 @@ public actor Server {
         focused[id] = nil
         forgetAgents(id)
         commandStarts[id] = nil
-        commandHistory[id] = nil
         for link in links.values where link.attached.remove(id) != nil { link.conn.send(HostMessage.detached(id)) }
         try? await custody?.close(id: id)
     }
@@ -646,7 +632,8 @@ public actor Server {
     private func paneExited(_ id: PaneID, _ status: ChildStatus) {
         guard var info = state.panes[id] else { return }
         let code = status.exitCode ?? 0
-        if code == 0, config.closeOnCleanExit {
+        // A clean exit closes the pane; a failed one stays to show why.
+        if code == 0 {
             Task { await closePane(id) }
             return
         }
@@ -688,71 +675,17 @@ public actor Server {
                 claudeNative.remove(id)
             }
             if info != state.panes[id] { commit([.pane(info)]) }
-            retargetAgents(id, program: program, agent: agent, leader: leader, argv: argv)
+            retargetAgents(id, program: program, leader: leader, argv: argv)
         case let .readsSecret(id, on):
             guard var info = state.panes[id] else { return }
             info.readsSecret = on ? true : nil
             if info != state.panes[id] { commit([.pane(info)]) }
-        case let .ended(id):
-            // The terminal closed; the exit status follows from the holder.
-            _ = id
         }
     }
 
     private var hasOSC7: Set<PaneID> = []
     /// When each pane's running command started, and its command line.
     private var commandStarts: [PaneID: (Double, String)] = [:]
-    /// Each pane's finished commands this host has seen, oldest first
-    /// (`axolotty commands`). Kept in memory only.
-    private var commandHistory: [PaneID: [CommandRecord]] = [:]
-    static let historyLimit = 200
-    static let commandRecordID = "axolotty.command"
-
-    /// Programs a person sits in rather than waits for: their end is no news.
-    static func isInteractive(_ command: String) -> Bool {
-        let words = command.split(whereSeparator: { $0 == " " || $0 == "\t" })
-        guard var first = words.first.map(String.init) else { return true }
-        var rest = words.dropFirst()
-        while first == "sudo" || first == "exec" || first == "command" || first == "nocorrect", let n = rest.first {
-            first = String(n)
-            rest = rest.dropFirst()
-        }
-        first = String(first.split(separator: "/").last ?? Substring(first))
-        let args = rest.map(String.init)
-        if AgentKind.identify(processName: first, argv: [first] + args) != nil { return true }
-        let operand = args.contains { !$0.hasPrefix("-") }
-        let tty = args.contains { $0 == "-it" || $0 == "-ti" || $0 == "-i" || $0 == "--interactive" || $0 == "-t" }
-        switch first {
-        case "python", "python3", "node", "bun", "deno", "irb", "ghci", "lua", "julia", "R":
-            return !operand  // the REPL, not a script
-        case "docker", "podman", "kubectl", "oc":
-            return tty || args.contains("port-forward") || args.contains("-f") && args.contains("logs")
-        case "tail", "journalctl":
-            return args.contains { $0 == "-f" || $0 == "-F" || $0 == "--follow" }
-        default:
-            return interactive.contains(first)
-        }
-    }
-
-    private static let interactive: Set<String> = [
-        "vi", "vim", "nvim", "nano", "emacs", "hx", "helix", "micro", "kak", "less", "more", "man", "most",
-        "ssh", "mosh", "et", "telnet", "tmux", "screen", "zellij", "top", "htop", "btop", "btm", "glances",
-        "psql", "mysql", "sqlite3", "redis-cli", "mongosh", "lazygit", "lazydocker", "tig", "gitui", "yazi",
-        "ranger", "nnn", "lf", "fzf", "watch", "zsh", "bash", "fish", "sh", "su", "login", "k9s", "ncdu",
-    ]
-
-    static func firstLine(_ s: String) -> String {
-        let line = s.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? s
-        return line.count > 80 ? String(line.prefix(79)) + "…" : line
-    }
-
-    /// "12s", "4m 12s", "1h 24m".
-    static func duration(_ s: Double) -> String {
-        let t = max(0, Int(s.rounded()))
-        if t < 60 { return "\(t)s" }
-        if t < 3600 { return t % 60 == 0 ? "\(t / 60)m" : "\(t / 60)m \(t % 60)s" }
-        return "\(t / 3600)h \(t / 60 % 60)m"
-    }
 
     private func apply(_ events: [VTEvent], to id: PaneID, live: Bool) {
         guard var info = state.panes[id] else { return }
@@ -782,7 +715,6 @@ public actor Server {
                     claudeNative.insert(id)
                     info.status.clearAgents()
                     agentShown[id] = nil
-                    if case .direct = agentTargets[id] { agentTargets[id] = nil }
                 }
                 if ps.state == .clear {
                     info.status.clear(ps.id)
@@ -808,23 +740,10 @@ public actor Server {
                 claudeNative.remove(id)
             case let .prompt(.commandStart(command)):
                 commandStarts[id] = (Date().timeIntervalSince1970, command)
-                // A new command supersedes the last one's receipt.
-                info.status.clear(Self.commandRecordID)
             case let .prompt(.commandEnd(code)):
                 guard let (start, command) = commandStarts.removeValue(forKey: id) else { break }
                 let now = Date().timeIntervalSince1970
-                let record = CommandRecord(command: command, exitCode: code, duration: now - start, endedAt: now)
-                info.lastCommand = record
-                if live {
-                    commandHistory[id, default: []].append(record)
-                    if commandHistory[id]!.count > Self.historyLimit { commandHistory[id]!.removeFirst() }
-                }
-                if live, record.duration >= config.longCommand, !Self.isInteractive(command) {
-                    let took = Self.duration(record.duration)
-                    info.status.report(id: Self.commandRecordID, state: record.failed ? .error : .done, app: "",
-                                       title: Self.firstLine(command),
-                                       message: record.failed ? "Exit \(code ?? 1) after \(took)" : "Finished in \(took)")
-                }
+                info.lastCommand = CommandRecord(command: command, exitCode: code, duration: now - start, endedAt: now)
             case .prompt:
                 break
             case let .clipboardWrite(text):

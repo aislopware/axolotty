@@ -33,7 +33,7 @@ struct HostTests {
         a.send(.text(p, "printf 'late-%s\\n' joiner\n"))
         #expect(await waitScreen(ma, contains: "late-joiner"))
 
-        let b = try await fx.client("b", platform: .iOS)
+        let b = try await fx.client("b")
         let mb = b.attach(p)
         #expect(await waitScreen(mb, contains: "late-joiner"), "snapshot carries the screen")
         b.send(.text(p, "echo from-b\n"))
@@ -216,15 +216,36 @@ struct HostTests {
         await fx.tearDown()
     }
 
-    @Test func hookReportsUseTheSameRules() async throws {
+    /// `wait --for done` sees a finish the person saw (and so cleared) before
+    /// the waiter looked: by then the replica says idle, the changes say done.
+    @Test func aWaiterCatchesAFinishSeenBeforeItLooked() async throws {
         let fx = try await HostFixture()
-        let c = try await fx.client()
-        let (_, _, p) = try await makeSession(c)
-        c.send(.report(p, id: "hook", state: .working, app: "codex", message: "thinking"))
-        #expect(await until { c.replica?.panes[p]?.activity == .working })
-        #expect(c.replica?.panes[p]?.status.headline?.message == "thinking")
-        c.send(.report(p, id: "hook", state: nil, app: "", message: ""))
-        #expect(await until { c.replica?.panes[p]?.activity == .idle })
+        let app = try await fx.client("app")
+        let (_, _, p) = try await makeSession(app)
+        app.send(.text(p, "printf '\\033]7501;state=working:app=claude-code\\033\\\\'\n"))
+        #expect(await until { app.replica?.panes[p]?.activity == .working })
+
+        let waiter = try await fx.client("waiter")
+        let watch = PaneWait(goal: .done, panes: [p], state: try #require(waiter.replica))
+        #expect(watch.reachedNow().isEmpty)
+        app.send(.text(p, "printf '\\033]7501;state=done\\033\\\\'\n"))
+        #expect(await until { app.replica?.panes[p]?.activity == .done })
+        app.send(.seen(p))  // what the app does for a finish in front of the person
+        #expect(await until { waiter.replica?.panes[p]?.activity == .idle })
+
+        let reader = Task {
+            var watch = watch
+            for await e in waiter.events {
+                if case let .deltas(ds) = e, !watch.feed(ds).isEmpty { return true }
+            }
+            return false
+        }
+        let timer = Task {
+            try? await Task.sleep(for: .seconds(5))
+            reader.cancel()
+        }
+        #expect(await reader.value)
+        timer.cancel()
         await fx.tearDown()
     }
 
@@ -233,10 +254,10 @@ struct HostTests {
         let c = try await fx.client()
         let (_, _, p) = try await makeSession(c)
         #expect(await fx.host.holdsWake == false)
-        c.send(.report(p, id: "a", state: .working, app: "claude", message: ""))
+        c.send(.text(p, "printf '\\033]7501;state=working:app=claude-code\\033\\\\'\n"))
         #expect(await until { c.replica?.panes[p]?.activity == .working })
         #expect(await fx.host.holdsWake)
-        c.send(.report(p, id: "a", state: .done, app: "claude", message: ""))
+        c.send(.text(p, "printf '\\033]7501;state=done\\033\\\\'\n"))
         #expect(await until { c.replica?.panes[p]?.activity == .done })
         #expect(await fx.host.holdsWake == false)
         await fx.tearDown()
@@ -250,32 +271,6 @@ struct HostTests {
         #expect(await until { c.replica?.panes[p]?.readsSecret == true })
         c.send(.text(p, "hunter2\n"))
         #expect(await until { c.replica?.panes[p]?.readsSecret == nil })
-        await fx.tearDown()
-    }
-
-    @Test func aLongCommandLeavesAReceipt() async throws {
-        let fx = try await HostFixture { $0.longCommand = 0.2 }
-        let c = try await fx.client()
-        let (_, _, p) = try await makeSession(c)
-        func run(_ cmd: String, code: Int) {
-            c.send(.text(p, "printf '\\033]133;C;cmdline_url=%s\\007' '\(cmd)'; sleep 0.4; printf '\\033]133;D;\(code)\\007\\033]133;A\\007'\n"))
-        }
-        run("make%20test", code: 2)
-        #expect(await until { c.replica?.panes[p]?.lastCommand?.command == "make test" })
-        let info = try #require(c.replica?.panes[p])
-        #expect(info.lastCommand?.exitCode == 2)
-        #expect(info.activity == .error)
-        #expect(info.status.headline?.title == "make test")
-        #expect(info.status.headline?.message.hasPrefix("Exit 2 after") == true)
-        // The next command clears the receipt; an editor's end is no news.
-        run("vim%20notes.md", code: 0)
-        #expect(await until { c.replica?.panes[p]?.lastCommand?.command == "vim notes.md" })
-        #expect(c.replica?.panes[p]?.activity == .idle)
-        // Both stay in the pane's history, oldest first.
-        let json = try #require(await c.capture(p, format: .commands))
-        let history = try JSONDecoder().decode([CommandRecord].self, from: Data(json.utf8))
-        #expect(history.map(\.command) == ["make test", "vim notes.md"])
-        #expect(history.map(\.exitCode) == [2, 0])
         await fx.tearDown()
     }
 
@@ -328,7 +323,7 @@ struct HostTests {
         let a = try await fx.client("driver")
         let (_, _, p) = try await makeSession(a)
         let ma = a.attach(p)
-        let b = try await fx.client("watcher", platform: .iOS)
+        let b = try await fx.client("watcher")
         let mb = b.attach(p)
         #expect(await until { mb.isReady })
 

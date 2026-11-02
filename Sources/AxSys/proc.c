@@ -25,35 +25,12 @@ int ax_proc_name(pid_t pid, char *buf, size_t cap) {
   return copy_out(tmp, (size_t)n, buf, cap);
 }
 
-int ax_proc_path(pid_t pid, char *buf, size_t cap) {
-  char tmp[PROC_PIDPATHINFO_MAXSIZE];
-  int n = proc_pidpath(pid, tmp, sizeof(tmp));
-  if (n <= 0) return -1;
-  return copy_out(tmp, (size_t)n, buf, cap);
-}
-
 int ax_proc_cwd(pid_t pid, char *buf, size_t cap) {
   struct proc_vnodepathinfo info;
   int n = proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, sizeof(info));
   if (n != (int)sizeof(info)) return -1;
   return copy_out(info.pvi_cdir.vip_path, strnlen(info.pvi_cdir.vip_path, MAXPATHLEN), buf,
                   cap);
-}
-
-int ax_proc_children(pid_t pid, pid_t *out, int cap) {
-  if (!out || cap <= 0) return -1;
-  int n = proc_listchildpids(pid, out, cap * (int)sizeof(pid_t));
-  if (n < 0) return -1;
-  // proc_listchildpids returns a count on current kernels; older ones returned bytes.
-  if (n > cap) n /= (int)sizeof(pid_t);
-  return n > cap ? cap : n;
-}
-
-pid_t ax_proc_pgid(pid_t pid) {
-  struct proc_bsdshortinfo info;
-  int n = proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &info, sizeof(info));
-  if (n != (int)sizeof(info)) return -1;
-  return (pid_t)info.pbsi_pgid;
 }
 
 pid_t ax_proc_ppid(pid_t pid) {

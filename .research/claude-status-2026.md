@@ -41,7 +41,7 @@ The probe waits 2 s and loses to an earlier DA1 reply. It is turned off by `CLAU
 ## What Axolotty does (and why)
 
 1. **OSC 7501 is the one source.** It covers every field (state, kind, progress, msg, title, per-id records), keeps the lifetime rules of the spec, and keeps `done` and `error` until seen.
-2. **Inside tmux** (and for a Claude that hasn't reported for itself 5 s after starting), the host asks `claude agents --json`.
+2. **Inside tmux**, the host asks `claude agents --json` (a fallback for a Claude that stayed quiet outside tmux was built and dropped).
    - Never on a timer, since a call costs about 0.9 s. An FSEvents stream on `~/.claude/sessions` (names only) says when a session changed and which pid, and the host asks only when that pid is one of its panes'.
    - A session belongs to a pane by process ancestry: the pane's process, or, in tmux, the shell of a tmux pane in the session the client in our pane shows. Several Axolotty panes sharing one tmux server stay apart, which an inherited environment variable would not do.
    - Its records (`agents:<pid>`) give way the moment the pane's Claude speaks for itself, so nothing is reported twice.

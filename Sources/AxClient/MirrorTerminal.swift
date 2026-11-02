@@ -27,9 +27,6 @@ public final class MirrorTerminal: @unchecked Sendable {
     private var snapshotAt: UInt64 = 0
     private let changes = Atomic<UInt64>(0)
     private let observer = Mutex<(@Sendable () -> Void)?>(nil)
-    /// The raw output as it is applied (`axolotty attach`), under the lock,
-    /// so it is ordered with `withTerminal`. Nil for views.
-    private var tap: (@Sendable (UnsafeRawBufferPointer) -> Void)?
 
     init(pane: PaneID, appearance: Appearance?) {
         self.pane = pane
@@ -42,10 +39,6 @@ public final class MirrorTerminal: @unchecked Sendable {
     /// Called after every change, on whatever thread made it (usually the
     /// connection queue). Views use it to wake their display link; keep it cheap.
     public func onChange(_ body: (@Sendable () -> Void)?) { observer.withLock { $0 = body } }
-
-    /// Receives every output byte applied from now on, in order, while the
-    /// mirror's lock is held (keep it to a write).
-    public func onOutput(_ body: (@Sendable (UnsafeRawBufferPointer) -> Void)?) { lock.withLock { tap = body } }
 
     /// Marks a local change (selection, scrolling) so renderers pick it up.
     public func touch() { bump() }
@@ -141,11 +134,7 @@ public final class MirrorTerminal: @unchecked Sendable {
             if end <= applied { return .duplicate }
             if offset > applied { return .gap }
             let skip = Int(applied - offset)
-            bytes.withUnsafeBytes { raw in
-                let fresh = UnsafeRawBufferPointer(rebasing: raw[skip...])
-                _ = terminal.write(fresh)
-                tap?(fresh)
-            }
+            bytes.withUnsafeBytes { raw in _ = terminal.write(UnsafeRawBufferPointer(rebasing: raw[skip...])) }
             applied = end
             return .applied(bytes.count - skip)
         }

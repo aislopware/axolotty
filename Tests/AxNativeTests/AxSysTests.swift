@@ -30,7 +30,7 @@ import Testing
         }
         close(child.master_fd)
         var status: Int32 = 0
-        for _ in 0 ..< 500 where ax_reap(child.pid, &status) == 0 { usleep(2_000) }
+        for _ in 0 ..< 500 where waitpid(child.pid, &status, WNOHANG) == 0 { usleep(2_000) }
         return (String(decoding: out, as: UTF8.self), status)
     }
 
