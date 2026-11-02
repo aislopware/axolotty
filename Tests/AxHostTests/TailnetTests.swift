@@ -111,4 +111,34 @@ struct TailnetTests {
         await #expect(throws: ConnectionError.failed(.denied)) { try await d.connect(reconnect: true) }
         await other.tearDown()
     }
+
+    /// A Mac that answers but refuses at the port is up without Axolotty
+    /// running: said once, so the app can offer to set it up, and unsaid
+    /// once something listens there again.
+    @Test func aRefusedPortSaysNobodyListens() async throws {
+        let probe = try TCPSocket.listen(address: "127.0.0.1", port: 0)
+        var addr = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(probe, $0, &len) }
+        }
+        let port = UInt16(bigEndian: addr.sin_port)
+        close(probe)
+
+        let c = HostConnection(endpoint: .tcp(host: "127.0.0.1", port: port), hello: ClientHello(client: ClientID(), name: "laptop"))
+        let said = Mutex<[Bool]>([])
+        let watch = Task {
+            for await e in c.events { if case let .unanswered(closed) = e { said.withLock { $0.append(closed) } } }
+        }
+        defer { watch.cancel() }
+        for _ in 0 ..< 2 { _ = try? await c.connect(reconnect: false) }
+        #expect(await until { said.withLock { $0 } == [true] }, "said once, however often it is dialled")
+
+        let open = try TCPSocket.listen(address: "127.0.0.1", port: port)
+        defer { close(open) }
+        let dial = Task { try? await c.connect(reconnect: false) }
+        #expect(await until { said.withLock { $0 } == [true, false] })
+        c.disconnect()
+        dial.cancel()
+    }
 }

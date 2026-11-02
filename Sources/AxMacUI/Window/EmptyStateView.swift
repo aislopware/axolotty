@@ -3,7 +3,9 @@ import AxModel
 
 enum EmptyState: Equatable {
     case noSessions
-    case reconnecting(host: String)
+    /// The host of this window is out of reach: what is happening, one line
+    /// on what brings it back, and the one thing to do (nil: just wait).
+    case away(title: String, detail: String, retrying: Bool, action: String?)
 }
 
 /// The window with no session open: a sheet like any pane (the frame stays),
@@ -19,8 +21,9 @@ enum EmptyState: Equatable {
 /// their tiles, then Open Folder…); it defaults to the last one used. No copy
 /// paragraph and no shortcut hints: those live in tooltips.
 ///
-/// Reconnecting (a remote host dropped): a spinner in place of the mark, a
-/// title and one line saying sessions keep running; no actions.
+/// Away (a remote host dropped, or waits on the person): a spinner (or the
+/// error mark) in place of the mark, a title, one line on what brings it
+/// back, and at most one button for it.
 final class EmptyStateView: NSView {
     struct Project: Equatable {
         var id: WorkspaceID?
@@ -30,6 +33,8 @@ final class EmptyStateView: NSView {
 
     var onLaunch: ((AgentKind?, WorkspaceID?) -> Void)?
     var onOpenFolder: (() -> Void)?
+    /// The away sheet's button (set up, update, reconnect).
+    var onRemedy: (() -> Void)?
 
     private let mark = AxoMarkView(frame: .zero)
     private let spinner = StatusGlyphView(frame: .zero)
@@ -37,6 +42,7 @@ final class EmptyStateView: NSView {
     private let detail = Label("", font: Axo.Font.body, color: Axo.Color.textSecondary)
     private var tiles: [LaunchTile] = []
     private let pill = ProjectPill()
+    private let remedy = Button("", variant: .secondary, size: .regular)
     private var state = EmptyState.noSessions
     private var agents: [AgentKind] = []
     private var projects: [Project] = []
@@ -53,7 +59,9 @@ final class EmptyStateView: NSView {
         detail.maximumNumberOfLines = 3
         detail.usesSingleLineMode = false
         pill.onClick = { [weak self] in self?.showProjects() }
-        for v in [mark, spinner, title, detail, pill] as [NSView] { addSubview(v) }
+        remedy.target = self
+        remedy.action = #selector(runRemedy)
+        for v in [mark, spinner, title, detail, pill, remedy] as [NSView] { addSubview(v) }
         set(.noSessions)
     }
 
@@ -88,22 +96,29 @@ final class EmptyStateView: NSView {
     func set(_ s: EmptyState) {
         state = s
         let reconnecting = s != .noSessions
+        var waits = false
         switch s {
         case .noSessions:
             title.stringValue = "Start a session"
             detail.stringValue = ""
-        case let .reconnecting(host):
-            title.stringValue = "Reconnecting to \(host)"
-            detail.stringValue = "Your sessions keep running on the server. This window reattaches as soon as it answers."
+            remedy.isHidden = true
+        case let .away(t, d, retrying, action):
+            title.stringValue = t
+            detail.stringValue = d
+            waits = !retrying
+            remedy.isHidden = action == nil
+            if let action, remedy.title != action { remedy.title = action }
         }
         mark.isHidden = reconnecting
         spinner.isHidden = !reconnecting
-        spinner.activity = reconnecting ? .working : .idle
+        spinner.activity = !reconnecting ? .idle : waits ? .blocked : .working
         detail.isHidden = !reconnecting
         pill.isHidden = reconnecting
         tiles.forEach { $0.isHidden = reconnecting }
         needsLayout = true
     }
+
+    @objc private func runRemedy() { onRemedy?() }
 
     private func launch(_ agent: AgentKind?) {
         onLaunch?(agent, selected?.id)
@@ -144,8 +159,9 @@ final class EmptyStateView: NSView {
         detail.preferredMaxLayoutWidth = w
         let dh = reconnecting ? ceil(detail.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: w, height: 200)).height ?? 0) : 0
         let ps = pill.fittingSize
+        let bs = remedy.isHidden ? .zero : remedy.intrinsicContentSize
         let body = reconnecting
-            ? Axo.Space.sm + dh
+            ? Axo.Space.sm + dh + (remedy.isHidden ? 0 : Axo.Space.lg + bs.height)
             : 20 + tileH + 16 + ps.height
         let total = markH + 16 + ts.height + body
         // Optically a little above centre (the eye reads true centre as low).
@@ -159,6 +175,10 @@ final class EmptyStateView: NSView {
         if reconnecting {
             y += Axo.Space.sm
             detail.frame = NSRect(x: (bounds.midX - w / 2).rounded(), y: y, width: w, height: dh)
+            if !remedy.isHidden {
+                y += dh + Axo.Space.lg
+                remedy.frame = NSRect(x: (bounds.midX - bs.width / 2).rounded(), y: y, width: ceil(bs.width), height: bs.height)
+            }
             return
         }
         y += 20

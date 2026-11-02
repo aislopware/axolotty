@@ -40,6 +40,9 @@ final class HostSession: Identifiable {
     /// feels slow; Tailscale often finds a direct one a little later.
     private(set) var relay: String?
     /// The step of setting Axolotty up there over ssh (`AppModel.setUp`), nil when not.
+    /// The far Mac is up but refuses the link at its port: Axolotty isn't
+    /// running there (not installed, or its server stopped).
+    private(set) var nobodyListens = false
     var settingUp: HostSetup.Step? {
         didSet { if settingUp != oldValue { changes.emit(.setup) } }
     }
@@ -171,6 +174,10 @@ final class HostSession: Identifiable {
         case let .latency(d):
             rtt = d
             changes.emit(.latency)
+        case let .unanswered(closed):
+            guard closed != nobodyListens else { return }
+            nobodyListens = closed
+            if phase != .connected { changes.emit(.disconnected(nil)) }
         }
     }
 
@@ -258,12 +265,45 @@ final class HostSession: Identifiable {
         if settingUp != nil, phase != .connected { return ("Setting up Axolotty on \(name)", true) }
         return switch phase {
         case .connected: nil
-        case .connecting, .offline: ("Reconnecting to \(isLocal ? "This Mac" : name)", true)
+        case .connecting, .offline:
+            nobodyListens && !isLocal ? ("Axolotty isn't running on \(name)", false)
+                : ("Reconnecting to \(isLocal ? "This Mac" : name)", true)
         case .failed(.needsLogin(_)): ("\(name) needs you to sign in", false)
         case .failed(.notInstalled): ("Axolotty isn't set up on \(name)", false)
         case .failed(.incompatible(_)): ("\(name) runs another Axolotty version", false)
         case .failed(.denied): ("\(name) doesn't accept this Mac", false)
         }
+    }
+
+    /// The one line under the status while the link is down: what is
+    /// happening and what will bring it back.
+    var linkDetail: String {
+        if settingUp != nil { return "Copying Axolotty there and starting its server." }
+        switch phase {
+        case .connected: return ""
+        case .connecting, .offline:
+            if nobodyListens, !isLocal {
+                return "\(name) is reachable. Set Axolotty up there over SSH and this Mac connects by itself."
+            }
+            return "Your sessions keep running on the server. This window reattaches as soon as it answers."
+        case .failed(.needsLogin(_)): return "ssh wants a password or a host key decision. Sign in there once, then try again."
+        case .failed(.notInstalled): return "Set it up over SSH and this Mac connects by itself."
+        case .failed(.incompatible(_)):
+            return isBehind ? "Update it over SSH to the Axolotty on this Mac." : "Update Axolotty on this Mac to reach it."
+        case .failed(.denied): return "It serves only Macs signed in to the same Tailscale account."
+        }
+    }
+
+    /// The one thing to do while the link is down: set Axolotty up there or
+    /// update it when that is what keeps the link down, else reconnect.
+    /// Nil while it is being set up, or with the link up.
+    var linkRemedy: (title: String, setUp: AppModel.SavedHost?)? {
+        guard phase != .connected, settingUp == nil else { return nil }
+        if let target = setUpTarget {
+            if nobodyListens || phase == .failed(.notInstalled) { return ("Set Up over SSH", target) }
+            if isBehind { return ("Update There", target) }
+        }
+        return ("Reconnect Now", nil)
     }
 
     // MARK: Queries

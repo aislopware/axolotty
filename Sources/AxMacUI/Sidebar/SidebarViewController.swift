@@ -629,8 +629,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             guard !h.isLocal, let rtt = h.rtt else { return ("", false, false) }
             let ms = Double(rtt.components.attoseconds) / 1e15 + Double(rtt.components.seconds) * 1000
             return (ms < 1 ? "<1 ms" : "\(Int(ms.rounded())) ms", false, false)
-        case .connecting: return ("Connecting", true, false)
-        case .offline: return ("Reconnecting", true, false)
+        case .connecting, .offline:
+            if h.nobodyListens, !h.isLocal { return ("Not running", false, true) }
+            return h.phase == .connecting ? ("Connecting", true, false) : ("Reconnecting", true, false)
         case .failed(.needsLogin(_)): return ("Sign in", false, true)
         case .failed(.notInstalled): return ("Not set up", false, true)
         case .failed(.incompatible(_)): return ("Needs update", false, true)

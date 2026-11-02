@@ -181,13 +181,16 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         let v = veil ?? {
             let v = LinkVeil(frame: bounds)
             v.isHidden = true
-            v.onReconnect = { [weak self] in self?.host.retry() }
             veil = v
             return v
         }()
         if v.superview !== self || subviews.last !== v { addSubview(v, positioned: .above, relativeTo: nil) }
         v.frame = bounds
-        v.set(status.text, retrying: status.retrying)
+        let remedy = host.linkRemedy
+        v.set(status.text, retrying: status.retrying, action: remedy?.title) { [weak self] in
+            guard let self else { return }
+            if let target = remedy?.setUp { model.setUp(target) } else { host.retry() }
+        }
         v.show(animated: animated)
     }
 

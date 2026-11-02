@@ -53,6 +53,10 @@ public enum ConnectionEvent: Sendable {
     case failed(LinkFailure)
     /// A heartbeat's round trip (remote links, every few seconds).
     case latency(Duration)
+    /// The far Mac answers but turns the link away at its port (true), or
+    /// lets it in again (false): it is up and Axolotty isn't running there.
+    /// Redialling goes on; the person can set it up meanwhile.
+    case unanswered(Bool)
 }
 
 public enum ConnectionError: Error, Equatable, Sendable {
@@ -113,6 +117,8 @@ public final class HostConnection: @unchecked Sendable {
         var redialTicket = 0
         var heartbeat: Task<Void, Never>?
         var rtt: Duration?
+        /// The last TCP dial was refused at the port (see `unanswered`).
+        var portClosed = false
     }
 
     /// How a remote link is judged alive (`LinkLiveness.Timing.standard`
@@ -207,8 +213,10 @@ public final class HostConnection: @unchecked Sendable {
             do {
                 fd = try await Task.detached { try TCPSocket.connect(host: host, port: port, timeout: 6) }.value
             } catch {
+                notePort(closed: (error as? POSIXError)?.code == .ECONNREFUSED)
                 throw ConnectionError.refused("\(error)")
             }
+            notePort(closed: false)
             conn = FramedConnection(fd: fd, label: "host")
             // A file going to the host fills every buffer on the path unless
             // paced; keys and pings (lane 0) are never held.
@@ -418,6 +426,15 @@ public final class HostConnection: @unchecked Sendable {
             guard let self, redialStands(ticket) else { return }
             if (try? await open()) == nil, redialStands(ticket) { scheduleReconnect() }
         }
+    }
+
+    /// Says when a refused port starts or stops being the reason the link is down.
+    private func notePort(closed: Bool) {
+        let changed = state.withLock { s in
+            defer { s.portClosed = closed }
+            return s.portClosed != closed
+        }
+        if changed { sink.yield(.unanswered(closed)) }
     }
 
     /// Still wanted, still down, and no later redial scheduled.

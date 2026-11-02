@@ -11,6 +11,10 @@ import QuartzCore
 ///                 │ ◌  Reconnecting to MacBook Pro   Now │
 ///                 └──────────────────────────────────────┘
 ///
+/// The one thing to do follows what is wrong: reconnect a dropped link, set
+/// Axolotty up on a Mac that lacks it, update one that runs an older one;
+/// nothing while that setup runs (the capsule says so).
+///
 /// Typing is not queued (a `y⏎` held through the gap could answer another
 /// prompt); the capsule says so by being there, and clicks reach only it.
 final class LinkVeil: NSView, DesignRefreshable {
@@ -19,7 +23,7 @@ final class LinkVeil: NSView, DesignRefreshable {
     private let spinner = StatusGlyphView(frame: .zero)
     private let label = Label("", font: Axo.Font.smallStrong, color: Axo.Color.text)
     private let action = Button("Reconnect Now", variant: .ghost, size: .small)
-    var onReconnect: (() -> Void)?
+    private var onAction: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -31,7 +35,7 @@ final class LinkVeil: NSView, DesignRefreshable {
         capsule.addSubview(action)
         spinner.activity = .working
         action.target = self
-        action.action = #selector(reconnect)
+        action.action = #selector(act)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         designDidChange()
@@ -42,11 +46,16 @@ final class LinkVeil: NSView, DesignRefreshable {
 
     override var isFlipped: Bool { true }
 
-    /// What the capsule says: "Reconnecting to MacBook Pro", or why it waits.
-    func set(_ text: String, retrying: Bool) {
+    /// What the capsule says ("Reconnecting to MacBook Pro", or why it
+    /// waits) and the one thing it offers (nil: nothing to do but wait).
+    func set(_ text: String, retrying: Bool, action title: String?, _ handler: (() -> Void)?) {
         label.stringValue = text
-        spinner.activity = retrying ? .working : .error
+        // Amber, as in the sidebar: it waits on the person, nothing failed.
+        spinner.activity = retrying ? .working : .blocked
         setAccessibilityLabel(text)
+        action.isHidden = title == nil
+        if let title, action.title != title { action.title = title }
+        onAction = handler
         needsLayout = true
     }
 
@@ -69,8 +78,9 @@ final class LinkVeil: NSView, DesignRefreshable {
         let pad = Axo.Space.sm
         let glyph = Axo.Metric.statusSlot
         let text = ceil(label.intrinsicContentSize.width)
-        let button = ceil(action.intrinsicContentSize.width)
-        let w = pad + glyph + Axo.Space.xs + text + Axo.Space.sm + button + 4
+        let button = action.isHidden ? 0 : ceil(action.intrinsicContentSize.width)
+        let tail = action.isHidden ? pad + 2 : Axo.Space.sm + button + 4
+        let w = pad + glyph + Axo.Space.xs + text + tail
         // A third of the way down the stage: where the eye already is.
         let x = ((bounds.width - w) / 2).rounded()
         let y = max(Axo.Space.lg, (bounds.height * 0.32 - h / 2).rounded())
@@ -91,7 +101,7 @@ final class LinkVeil: NSView, DesignRefreshable {
     override func mouseDown(with event: NSEvent) {}
     override func scrollWheel(with event: NSEvent) {}
 
-    @objc private func reconnect() { onReconnect?() }
+    @objc private func act() { onAction?() }
 
     // MARK: Motion
 

@@ -81,6 +81,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             Task { await self.createSession(host, in: wid, cwd: nil, name: nil, launch: self.launchLine(agent, host)) }
         }
         content.emptyView.onOpenFolder = { [weak self] in self?.openFolder(nil) }
+        content.emptyView.onRemedy = { [weak self] in
+            guard let self, let host = awayHost, let remedy = host.linkRemedy else { return }
+            if let target = remedy.setUp { model.setUp(target) } else { host.retry() }
+        }
         sidebar.footer.onJump = { [weak self] activity in self?.jump(to: activity) }
         tokens.append(model.anyChange.observe { [weak self] host, change in self?.hostChanged(host, change) })
         tokens.append(model.hostsChanged.observe { [weak self] in self?.hostsChanged() })
@@ -158,7 +162,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             // worth reading. Only a window with nothing of it shown says so whole.
             content.linkChanged(host)
             if selection == nil || (selection?.host === host && content.current?.host !== host) {
-                content.showEmpty(.reconnecting(host: host.name))
+                showAway(host)
             }
         case .event:
             break
@@ -166,6 +170,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return
         case .setup:
             content.linkChanged(host)
+            if awayHost === host, content.current == nil { showAway(host) }
             return
         }
         refreshChrome()
@@ -220,6 +225,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
     }
 
+    /// The host whose away sheet is up (nil: none is).
+    private weak var awayHost: HostSession?
+
+    /// A whole window for a host out of reach: why, and the one thing to do.
+    private func showAway(_ host: HostSession) {
+        awayHost = host
+        let status = host.linkStatus ?? ("Reconnecting to \(host.name)", true)
+        content.showEmpty(.away(title: status.text, detail: host.linkDetail, retrying: status.retrying,
+                                action: host.linkRemedy?.title))
+    }
+
     /// The empty window: launch tiles for this host's agents, starting in the
     /// last project used (or the first).
     private func showLauncher() {
@@ -230,6 +246,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let last = UserDefaults.standard.string(forKey: "lastWorkspace").flatMap(UUID.init(uuidString:)).map(WorkspaceID.init(raw:))
         content.emptyView.configure(agents: AgentPresets.available(local: host?.isLocal ?? true), projects: projects,
                                     selected: projects.first { $0.id == last })
+        awayHost = nil
         content.showEmpty(.noSessions)
     }
 
