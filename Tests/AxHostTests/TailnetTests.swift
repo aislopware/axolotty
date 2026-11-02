@@ -9,6 +9,30 @@ import Testing
 /// The tailnet listener: who Tailscale says is calling decides who is served.
 @Suite("Tailnet", .timeLimit(.minutes(1)))
 struct TailnetTests {
+    /// Connect to Host lists the person's own Macs, online first: not this
+    /// Mac, not someone else's server, not a phone; direct or by which relay.
+    @Test func theDirectoryListsThePersonsOwnMacs() {
+        let status = Data("""
+        {"BackendState":"Running","Self":{"ID":"s","HostName":"Studio","OS":"macOS","UserID":2},
+         "Peer":{
+          "k1":{"ID":"n1","HostName":"MacBook Pro","DNSName":"mbp.ts.example.","OS":"macOS","Online":false,"UserID":2,
+                "Relay":"fra","CurAddr":"","TailscaleIPs":["100.64.0.2"]},
+          "k2":{"ID":"n2","HostName":"Mini","DNSName":"mini.ts.example.","OS":"macOS","Online":true,"UserID":2,
+                "Relay":"fra","CurAddr":"192.168.1.9:41641","TailscaleIPs":["100.64.0.9"]},
+          "k3":{"ID":"n3","HostName":"Air","DNSName":"air.ts.example.","OS":"macOS","Online":true,"UserID":2,
+                "Relay":"sin","CurAddr":"","TailscaleIPs":["100.64.0.10"]},
+          "k4":{"ID":"n4","HostName":"build","DNSName":"build.ts.example.","OS":"linux","Online":true,"UserID":2},
+          "k5":{"ID":"n5","HostName":"theirs","DNSName":"theirs.ts.example.","OS":"macOS","Online":true,"UserID":9},
+          "k6":{"ID":"n6","HostName":"localhost","DNSName":"phone.ts.example.","OS":"iOS","Online":true,"UserID":2}}}
+        """.utf8)
+        let peers = TailnetDirectory.parse(status)
+        #expect(peers.map(\.name) == ["Air", "Mini", "MacBook Pro"])
+        #expect(peers.map(\.dialName) == ["air.ts.example", "mini.ts.example", "mbp.ts.example"])
+        #expect(peers.map(\.relay) == ["sin", nil, "fra"])
+        #expect(peers.map(\.online) == [true, true, false])
+        #expect(TailnetDirectory.parse(Data(#"{"BackendState":"Stopped"}"#.utf8)) == [])
+    }
+
     @Test func tellsTailnetAddressesApart() {
         #expect(Tailnet.isTailnet("100.64.0.3"))
         #expect(Tailnet.isTailnet("100.127.255.1"))

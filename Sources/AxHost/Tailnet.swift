@@ -1,4 +1,5 @@
 #if os(macOS)
+import AxProtocol
 import Darwin
 public import Foundation
 import Synchronization
@@ -52,33 +53,7 @@ public enum Tailnet {
 
     // MARK: The Tailscale CLI
 
-    /// The CLI: on PATH for the standalone and Homebrew installs, inside the
-    /// app bundle for the App Store one.
-    static let cli: String? = {
-        let candidates = ["/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale",
-                          "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
-
-    /// Runs the CLI and returns its output, or nil when it fails or takes
-    /// longer than `timeout` seconds.
-    static func run(_ arguments: [String], timeout: Double = 3) -> Data? {
-        guard let cli else { return nil }
-        let p = Process()
-        p.executableURL = URL(filePath: cli)
-        p.arguments = arguments
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        killer.cancel()
-        return p.terminationStatus == 0 ? data : nil
-    }
+    static func run(_ arguments: [String], timeout: Double = 3) -> Data? { TailscaleCLI.run(arguments, timeout: timeout) }
 
     /// A tailnet user: the control plane's numeric id and login.
     public struct User: Equatable, Sendable {
