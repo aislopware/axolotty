@@ -26,6 +26,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     var onCreate: ((HostSession, WorkspaceID, AgentKind?) -> Void)?
     /// "New Worktree…" on a project, and "Remove Worktree…" on a worktree session.
     var onNewWorktree: ((HostSession, WorkspaceID) -> Void)?
+    var onCloseSession: ((HostSession, SessionID) -> Void)?
     var onRemoveWorktree: ((HostSession, SessionID) -> Void)?
     let footer = SidebarFooter()
 
@@ -457,7 +458,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             let number = sessionNumber(host: n.hostID, sid)
             c.shortcut.stringValue = number.map { "⌘\($0)" } ?? ""
             c.showShortcut = showKeycaps
-            c.onClose = { [weak host] in host?.perform(.closeSession(sid)) }
+            c.onClose = { [weak self, weak host] in if let host { self?.onCloseSession?(host, sid) } }
             var label = title
             if let phrase = StatusGlyphView.phrase(activity) { label += ", \(phrase)" }
             if c.unread { label += ", unread" }
@@ -675,7 +676,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             if st.sessions[sid]?.worktree != nil {
                 add("Remove Worktree…") { [weak self] in self?.onRemoveWorktree?(host, sid) }
             }
-            add("Close Session") { host.perform(.closeSession(sid)) }
+            add("Close Session") { [weak self] in self?.onCloseSession?(host, sid) }
         case let .workspace(_, wid):
             add("New Session") {
                 host.perform(.createSession(SessionID(), workspace: wid, pane: PaneID(), recipe: SpawnRecipe(), name: nil))

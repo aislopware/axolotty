@@ -149,7 +149,7 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
   - Geometry: width 600, 80 below the band, radius 14 with padding 6, so rows have radius 8 (concentric).
   - Field and type: field 48 tall with 17 pt text and a 16 pt lens; one rule under the field.
   - Rows: 34 tall. Section headers 11 semibold.
-  - Three scopes: ⌘⇧P commands and sessions; ⌘⇧O sessions, workspaces and recent folders; **⌘J Jump to Agent**. Jump to Agent lists every session with an agent in it or something happening, grouped Needs you (waiting and failed), Finished, Working, Idle, newest change first; the detail is the project and the time in that state. A leading `!`, `.` or `~` narrows to one group.
+  - Two scopes: ⇧⌘P commands; **⌘J Go to Session**, every session, grouped Needs you (waiting and failed), Finished, Working, Idle, newest change first; the detail is the project and the time in that state. A leading `!`, `.` or `~` narrows to one group.
   - Row content: a session shows its program icon, title and project; a command shows its SF Symbol and title. Shortcuts are menu-style text, not keycaps.
   - Height is fixed while typing. "No matches for “x”" sits in the list's place.
   - No hint footer: arrows, return and escape are what every list answers to.
@@ -201,17 +201,15 @@ A waiting program's ask is worded once (`StatusRecord.ask`) for the strip, the h
 - Pin: pinned sessions head their project in the order they were pinned. A drag can't move an unpinned session above them. At rest the row's trailing slot holds a pin (11 pt, tertiary ink), centred where the close button appears on hover.
 - Mark as Unread: an accent dot on the icon (the same 6 pt badge and moat as the status dots, shown only while no status claims the badge), and the title in full ink. The client clears it when the person switches to the session, as Mail does. The window regaining focus doesn't count.
 
-**Back and Forward** (⌥⌘[ ⌥⌘]): through sessions in the order they were shown, browser-style. A new visit drops the forward history, and closed sessions are skipped.
 
-**Reopen Closed Session** (⇧⌘T) brings a Claude Code session back in its conversation. At close, the app finds which conversation that session's Claude held: its `~/.claude/sessions/<pid>.json`, matched by the process's inherited `AXOLOTTY_PANE_ID`, read through `KERN_PROCARGS2`. Reopening runs `claude --resume <id>` while the transcript is still on disk. Anything else reopens as a shell in the same folder.
+**Reopen Closed Session** (⇧⌘T): the last closed session comes back in its project and folder, under its name, as a shell (`claude -c` continues its conversation). Every close records it: ⌥⌘W, the row's close button and its menu.
 
 **Worktree sessions** (⌥⌘T, "New Worktree…" at the foot of a project's "+", or `axolotty new --worktree BRANCH`): the palette in a third shape. Its field leads with the mark of what will start (the first installed agent; ⇥ / ⇧⇥ cycle through Shell and the agents) instead of the lens. Rows: the typed name as a new branch "from <HEAD>" (spaces become dashes, never highlighted), then existing worktrees, then local branches checked out nowhere. The host runs git: `<repo>/.worktrees/<branch with / → ->`, listed in `.git/info/exclude` (never the person's .gitignore); an existing worktree is reused. The session is named for the branch and remembers its folder. "Remove Worktree…" (Session menu, row menu) asks once, then again in stronger words if the tree has changes; it closes the session and deletes the folder, never the branch.
 
-**Resume Claude Session** (⇧⌘R, local host): the palette led by Claude's mark. Rows are past conversations titled by the first thing the person asked (pasted blocks, image tokens and fences dropped; a slash command is not a title), "This project" (its worktrees included) then "Recent"; the detail is the other project's name and "3h ago", and a long title gives way to it (detail keeps up to 40% of the row). Read-only from Claude Code's files: `history.jsonl` for prompts, a transcript must still exist, and a conversation a live process holds (`sessions/<pid>.json`) is left out. ↩ opens `claude --resume <id>` in the project's workspace (made if missing), named for the question.
 
 **Settings** (⌘,): three rows. Appearance is Match System / Always Dark / Always Light, between Axolotty Night and Day (the chrome derives from them, `DesignTokens.install`). Font lists SF Mono then every installed fixed-pitch family, each item set in its own face; a family without a bold face is emboldened by the renderer; ⌘+ ⌘− ⌘0 set and keep the size. Option key picks which Option is Alt. Everything else is one behaviour, not a setting: unfocused panes dim, a paste that could run commands asks first (bracketed paste is exempt), the cursor is a blinking bar unless the program asks for another (DECSCUSR), and Claude Code started from Axolotty gets its MCP tools.
 
-**Open in Editor** (⌥⌘O): the focused pane's repository root (else its folder) in the first installed of Cursor, VS Code, Zed, Windsurf; Finder when none. "Show in Finder" sits beside it in the Session menu.
+**Open in Editor** (⌥⌘O): the focused pane's repository root (else its folder) in the first installed of Cursor, VS Code, Zed, Windsurf; Finder when none.
 
 **Agents drive Axolotty** (`axolotty` CLI and `axolotty mcp`): one set of operations (`Sources/axolotty/Ops.swift`) behind both. MCP tools: `list_panes`, `new_session`, `split_pane`, `send_input`, `read_pane`, `wait_for`, `report_status`, `notify`, `close_pane`. Handing a prompt to another agent's TUI is a bracketed paste with Enter sent on its own ≥ 200 ms later (Ink reads an Enter inside the paste as text); keys go by name (`ctrl+c,enter`) and the host encodes them in the program's own keyboard mode. Input to a pane whose agent waits for its person is refused unless forced: an agent never answers another agent's permission prompt by accident. `wait --for command` returns the next shell command's end and exits with its status. Claude Code started from Axolotty gets the tools through `--mcp-config "$AXOLOTTY_MCP"`, a file Axolotty owns (Settings → Agents; on by default); the agent's own configuration is never written. Shell integration: zsh (ZDOTDIR), bash 3.2+ (`--rcfile` that reads the login files), fish ≥ 4 (marks itself; Axolotty only keeps its CLI first on PATH). CLI verbs beyond the tools: `commands` (a pane's finished shell commands with exit codes and durations, oldest first, kept in the host's memory; also the MCP tool `list_commands`), `events` (a line or JSON per activity change, finished command, exit, notification or bell), `attach` (a pane in this terminal: the screen drawn from the host's state, then raw output through and keystrokes back; this terminal drives the size; ^] detaches), and `new --worktree BRANCH`.
 
@@ -234,13 +232,13 @@ A waiting program's ask is worded once (`StatusRecord.ask`) for the strip, the h
 
 ## 8. Roadmap from the utility study
 
-Shipped: Jump to Agent (⌘J), agent presets on "+", Show on asking toasts. Next, in order of value, each kept off the row at rest:
+Shipped: Go to Session (⌘J), agent presets on "+", Show on asking toasts. Next, in order of value, each kept off the row at rest:
 
 1. ~~Inline Allow / Deny~~ **Dropped 2026-11-02.** The agent's own TUI answers its prompts: no key is safe across agents (Claude Code's "Yes" moves position; every key is rebindable), slopty built GUI approvals and deleted them, and a blocking permission hook would hide the TUI's dialog. Needing you means the strip floods and names the question; clicking takes you there.
-2. **Peek:** hold ⌥ over a row and the hover card becomes a live, read-only view of the pane's last dozen rows.
+2. ~~Peek~~ **Dropped 2026-11-02** (the owner: not useful enough; Amp's rule).
 3. ~~Two sounds~~ **Shipped as one:** blocked and error sound; done is silent and passive.
 4. ~~Worktree sessions~~ **Shipped** (see Agent status).
 5. **Facts in the hover card:** ahead/behind, diff ± and listening ports shipped; PR, CI and context % next.
-6. **Mark Unread / Mark Read**, **Pin** (floats within its project, no section), **multi-select** with plural menu items, **Recently Closed** with agent resume.
+6. ~~Mark Unread, Pin, multi-select, Recently Closed with agent resume~~ **Dropped 2026-11-02**: drag orders sessions, done-until-seen marks them, ⇧⌘T reopens.
 
 Not copied: second-line token rows, counts at rest, a second Agents panel, kanban lanes, prefix keys, rows that move on activity, auto-approve, screen-scraped state.

@@ -3,12 +3,12 @@ import AxModel
 import AxProtocol
 import QuartzCore
 
-/// The command palette (⌘⇧P), Open Quickly (⌘⇧O) and Jump to Agent (⌘J): one float surface drawn
+/// The command palette (⇧⌘P) and Go to Session (⌘J): one float surface drawn
 /// in the window's overlay layer (no child window, so its corners, ring and
 /// shadow all come from the one design-system shape). Fuzzy-matched sections,
 /// keyboard first. Selection is a neutral plate, never the accent.
 final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    enum Mode { case commands, sessions, agents, worktree, resume }
+    enum Mode { case commands, agents, worktree }
 
     private let model: AppModel
     private weak var owner: MainWindowController?
@@ -35,16 +35,10 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     }
     private var worktree: WorktreeTarget?
 
-    /// Resume Claude Session: past conversations, this project's first.
-    private var resumeTarget: (host: HostSession, root: String, past: [PastSession])?
-
     enum Item {
         case command(Command)
         case session(HostSession, SessionID)
-        case workspace(HostSession, WorkspaceID)
-        case directory(HostSession, String)
         case worktree(String)
-        case resume(HostSession, PastSession)
     }
 
     struct Entry {
@@ -111,21 +105,6 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         }
     }
 
-    /// Past Claude Code sessions on this Mac; ↩ resumes one in its folder.
-    func showResume(_ host: HostSession, root: String) {
-        Task { [weak self] in
-            let past = await ClaudeHistory.read()
-            guard let self else { return }
-            guard !past.isEmpty else {
-                self.model.notices.emit(("No sessions to resume", "Claude Code has no saved conversations that are not already open."))
-                return
-            }
-            self.resumeTarget = (host, root, past)
-            self.mode = .resume
-            self.show()
-        }
-    }
-
     func toggle(_ m: Mode) {
         if isVisible, mode == m {
             dismiss()
@@ -144,15 +123,12 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         Tooltip.shared.dismiss()
         field.stringValue = ""
         let prompt = switch mode {
-        case .commands: "Type a command or session…"
-        case .sessions: "Go to session, workspace or folder…"
-        case .agents: "Jump to agent…"
+        case .commands: "Type a command…"
+        case .agents: "Go to session…"
         case .worktree: "Branch for a new worktree…"
-        case .resume: "Resume a Claude Code conversation…"
         }
         let lead: ProgramIdentity? = switch mode {
         case .worktree: worktree.map { $0.chosen.map(ProgramIdentity.of) ?? .shell }
-        case .resume: ProgramIdentity.of(.claude)
         default: nil
         }
         surface.lead(lead)
@@ -213,59 +189,15 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     // MARK: Filtering
 
     private func candidates() -> [(String, [Entry])] {
-        var sessions: [Entry] = []
-        var workspaces: [Entry] = []
-        var dirs: [Entry] = []
-        var seenDirs = Set<String>()
-        let multi = model.hosts.count > 1
-        for h in model.hosts {
-            guard let st = h.state else { continue }
-            for w in st.workspaces {
-                workspaces.append(Entry(item: .workspace(h, w.id), title: w.name,
-                                        detail: (multi ? h.name + " · " : "") + BandView.abbreviate(w.root),
-                                        symbol: "folder", chord: ""))
-                for sid in w.sessions where st.sessions[sid] != nil {
-                    let number = owner?.sidebar.sessionNumber(host: h.id, sid).map { "⌘\($0)" } ?? ""
-                    sessions.append(sessionEntry(h, st, sid, detail: (multi ? h.name + " · " : "") + w.name, chord: number))
-                }
-            }
-            for p in st.panes.values.sorted(by: { $0.activitySince > $1.activitySince }) where !p.pwd.isEmpty {
-                guard seenDirs.insert(p.pwd).inserted else { continue }
-                dirs.append(Entry(item: .directory(h, p.pwd), title: BandView.abbreviate(p.pwd),
-                                  detail: multi ? h.name : "", symbol: "arrow.turn.down.right", chord: ""))
-            }
-        }
         let commands = Command.all.filter(\.inPalette).map {
             Entry(item: .command($0), title: $0.title.replacingOccurrences(of: "…", with: ""),
                   detail: "", symbol: symbol(for: $0), chord: $0.chord)
         }
         switch mode {
-        case .commands: return [("Sessions", sessions), ("Commands", commands)]
-        case .sessions: return [("Sessions", sessions), ("Workspaces", workspaces), ("Recent directories", dirs)]
+        case .commands: return [("Commands", commands)]
         case .agents: return agentSections()
         case .worktree: return worktreeSections()
-        case .resume: return resumeSections()
         }
-    }
-
-    /// This project's conversations (its worktrees included), then the
-    /// rest. A title is what the person first asked; the detail is the
-    /// project when it is another one, and how long ago it was last used.
-    private func resumeSections() -> [(String, [Entry])] {
-        guard let t = resumeTarget else { return [] }
-        let now = Date().timeIntervalSince1970
-        let claude = ProgramIdentity.of(.claude)
-        var here: [Entry] = [], other: [Entry] = []
-        for s in t.past {
-            let mine = !t.root.isEmpty && (s.project == t.root || s.project.hasPrefix(t.root + "/"))
-            let project = URL(filePath: s.project).lastPathComponent
-            let ago = SidebarViewController.elapsed(now - s.lastAt)
-            let e = Entry(item: .resume(t.host, s), title: s.title,
-                          detail: mine ? (ago == "now" ? "now" : ago + " ago") : project + " · " + (ago == "now" ? "now" : ago + " ago"),
-                          symbol: "clock.arrow.circlepath", chord: "", identity: claude, alias: project + " " + s.title)
-            if mine { here.append(e) } else { other.append(e) }
-        }
-        return [("This project", here), ("Recent", other)].filter { !$0.1.isEmpty }
     }
 
     /// A new branch named by what is typed (from the base), then existing
@@ -314,8 +246,8 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
                      activity: st.activity(of: sid), identity: identity, alias: shown == full ? nil : full)
     }
 
-    /// Jump to Agent: every session that has an agent in it or is doing
-    /// something, grouped by what it needs from you, newest change first. The
+    /// Go to Session: every session, grouped by what it needs from you,
+    /// newest change first. The
     /// one question with many agents running is "who needs me", and sidebar
     /// order (by project) does not answer it. Detail is the project and how
     /// long the session has been in its state; nothing else.
@@ -332,7 +264,6 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
                 for sid in w.sessions where st.sessions[sid] != nil {
                     let panes = st.panes(of: sid)
                     let a = st.activity(of: sid)
-                    guard a != .idle || panes.contains(where: { $0.agent != nil }) else { continue }
                     let since = panes.filter { $0.activity == a }.map(\.activitySince).max() ?? 0
                     var detail = (multi ? h.name + " · " : "") + w.name
                     if since > 0, a != .idle { detail += " · " + SidebarViewController.elapsed(now - since) }
@@ -356,17 +287,17 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
     /// One glyph per command (SF Symbols, one drawing language).
     private func symbol(for c: Command) -> String {
         let map: [String: String] = [
-            "palette": "command", "open-quickly": "magnifyingglass", "new-session": "plus.rectangle",
-            "new-worktree": "arrow.triangle.branch", "go-back": "chevron.backward", "pin-session": "pin", "mark-unread": "circlebadge.fill", "go-forward": "chevron.forward", "resume-claude": "clock.arrow.circlepath", "open-editor": "chevron.left.forwardslash.chevron.right",
-            "reveal-finder": "folder", "prev-prompt": "chevron.up.2", "next-prompt": "chevron.down.2",
-            "new-window": "macwindow.badge.plus", "new-workspace": "folder.badge.plus", "open-folder": "folder",
+            "palette": "command", "new-session": "plus.rectangle",
+            "new-worktree": "arrow.triangle.branch", "pin-session": "pin", "mark-unread": "circlebadge.fill", "open-editor": "chevron.left.forwardslash.chevron.right",
+            "prev-prompt": "chevron.up.2", "next-prompt": "chevron.down.2",
+            "new-window": "macwindow.badge.plus", "open-folder": "folder",
             "reopen": "arrow.uturn.backward", "close-pane": "xmark.rectangle", "close-session": "xmark.square",
             "close-window": "xmark", "clear": "eraser", "toggle-sidebar": "sidebar.left",
             "toggle-status": "rectangle.bottomthird.inset.filled", "font-bigger": "textformat.size.larger",
             "font-smaller": "textformat.size.smaller", "font-reset": "textformat.size", "top": "arrow.up.to.line",
             "bottom": "arrow.down.to.line", "fullscreen": "arrow.up.left.and.arrow.down.right",
             "prev-session": "chevron.up", "next-session": "chevron.down", "next-attention": "bell.badge",
-            "prev-attention": "bell", "rename-session": "pencil", "split-right": "rectangle.split.2x1",
+            "rename-session": "pencil", "split-right": "rectangle.split.2x1",
             "split-down": "rectangle.split.1x2", "prev-pane": "arrow.left.square", "next-pane": "arrow.right.square",
             "zoom": "arrow.up.left.and.arrow.down.right.square",
         ]
@@ -466,17 +397,6 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             NSApp.sendAction(c.action, to: nil, from: self)
         case let .session(h, sid):
             owner.show(h, sid)
-        case let .workspace(h, wid):
-            if let sid = h.state?.workspace(wid)?.sessions.first {
-                owner.show(h, sid)
-            } else {
-                Task { await owner.createSession(h, in: wid, cwd: nil, name: nil) }
-            }
-        case let .directory(h, path):
-            let ws = owner.selection.flatMap { h.session($0.session)?.workspace } ?? h.state?.workspaces.first?.id
-            Task { await owner.createSession(h, in: ws, cwd: path, name: nil) }
-        case let .resume(h, past):
-            owner.resume(past, on: h)
         case let .worktree(branch):
             guard let t = worktree else { return }
             Task { await owner.createSession(t.host, in: t.workspace, cwd: t.dir, name: branch, launch: owner.launchLine(t.chosen, t.host),

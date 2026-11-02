@@ -34,8 +34,6 @@ final class AppModel {
         var workspace: WorkspaceID
         var cwd: String
         var name: String?
-        /// The Claude Code conversation it held, resumed on reopening.
-        var claude: String?
     }
 
     var closed: [ClosedSession] = []

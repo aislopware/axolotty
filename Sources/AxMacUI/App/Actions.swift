@@ -6,7 +6,6 @@ import AppKit
 @objc protocol AxActions {
     // App
     @objc optional func showCommandPalette(_ sender: Any?)
-    @objc optional func showOpenQuickly(_ sender: Any?)
     @objc optional func showJumpToAgent(_ sender: Any?)
     @objc optional func showChanges(_ sender: Any?)
     @objc optional func showSettings(_ sender: Any?)
@@ -20,7 +19,6 @@ import AppKit
 
     // Workspace and session
     @objc optional func newSession(_ sender: Any?)
-    @objc optional func newWorkspace(_ sender: Any?)
     @objc optional func openFolder(_ sender: Any?)
     @objc optional func reopenClosedSession(_ sender: Any?)
     @objc optional func renameSession(_ sender: Any?)
@@ -30,10 +28,7 @@ import AppKit
     @objc optional func selectNextSession(_ sender: Any?)
     @objc optional func togglePinned(_ sender: Any?)
     @objc optional func toggleUnread(_ sender: Any?)
-    @objc optional func goBack(_ sender: Any?)
-    @objc optional func goForward(_ sender: Any?)
     @objc optional func selectNextAttention(_ sender: Any?)
-    @objc optional func selectPreviousAttention(_ sender: Any?)
 
     // Pane
     @objc optional func splitRight(_ sender: Any?)
@@ -52,9 +47,7 @@ import AppKit
     @objc optional func resetFontSize(_ sender: Any?)
     @objc optional func openInEditor(_ sender: Any?)
     @objc optional func newWorktreeSession(_ sender: Any?)
-    @objc optional func resumeClaudeSession(_ sender: Any?)
     @objc optional func removeWorktreeSession(_ sender: Any?)
-    @objc optional func revealInFinder(_ sender: Any?)
     @objc optional func previousPrompt(_ sender: Any?)
     @objc optional func nextPrompt(_ sender: Any?)
     @objc optional func showFind(_ sender: Any?)
@@ -117,20 +110,14 @@ struct Command: Identifiable {
         var list: [Command] = [
             Command(id: "palette", title: "Command Palette…", menu: .view, key: "p", modifiers: cs,
                     action: #selector((any AxActions).showCommandPalette(_:)), inPalette: false),
-            Command(id: "open-quickly", title: "Open Quickly…", menu: .view, key: "o", modifiers: cs,
-                    action: #selector((any AxActions).showOpenQuickly(_:)), inPalette: false),
 
             Command(id: "new-session", title: "New Session", menu: .file, key: "t", modifiers: cmd,
                     action: #selector((any AxActions).newSession(_:))),
             Command(id: "new-worktree", title: "New Session in Worktree…", menu: .file, key: "t", modifiers: co,
                     action: #selector((any AxActions).newWorktreeSession(_:))),
-            Command(id: "resume-claude", title: "Resume Claude Session…", menu: .file, key: "r", modifiers: cs,
-                    action: #selector((any AxActions).resumeClaudeSession(_:))),
             Command(id: "new-window", title: "New Window", menu: .file, key: "n", modifiers: cmd,
                     action: #selector((any AxActions).newWindow(_:))),
-            Command(id: "new-workspace", title: "New Workspace…", menu: .file, key: "n", modifiers: cs,
-                    action: #selector((any AxActions).newWorkspace(_:))),
-            Command(id: "open-folder", title: "Open Folder as Workspace…", menu: .file, key: "o", modifiers: cmd,
+            Command(id: "open-folder", title: "Open Folder…", menu: .file, key: "o", modifiers: cmd,
                     action: #selector((any AxActions).openFolder(_:))),
             Command(id: "reopen", title: "Reopen Closed Session", menu: .file, key: "t", modifiers: cs,
                     action: #selector((any AxActions).reopenClosedSession(_:))),
@@ -175,22 +162,14 @@ struct Command: Identifiable {
                     action: #selector((any AxActions).selectPreviousSession(_:))),
             Command(id: "next-session", title: "Next Session", menu: .session, key: "]", modifiers: cs,
                     action: #selector((any AxActions).selectNextSession(_:))),
-            Command(id: "go-back", title: "Back", menu: .session, key: "[", modifiers: co,
-                    action: #selector((any AxActions).goBack(_:))),
-            Command(id: "go-forward", title: "Forward", menu: .session, key: "]", modifiers: co,
-                    action: #selector((any AxActions).goForward(_:))),
-            Command(id: "jump-agent", title: "Jump to Agent…", menu: .session, key: "j", modifiers: cmd,
+            Command(id: "jump-agent", title: "Go to Session…", menu: .session, key: "j", modifiers: cmd,
                     action: #selector((any AxActions).showJumpToAgent(_:)), inPalette: false, separatorBefore: true),
             Command(id: "next-attention", title: "Next Waiting Agent", menu: .session, key: "u", modifiers: cs,
                     action: #selector((any AxActions).selectNextAttention(_:))),
-            Command(id: "prev-attention", title: "Previous Waiting Agent", menu: .session, key: "u",
-                    modifiers: [.command, .option, .shift], action: #selector((any AxActions).selectPreviousAttention(_:))),
             Command(id: "show-changes", title: "Show Changes", menu: .session, key: "c", modifiers: cs,
                     action: #selector((any AxActions).showChanges(_:))),
             Command(id: "open-editor", title: "Open in Editor", menu: .session, key: "o", modifiers: co,
                     action: #selector((any AxActions).openInEditor(_:)), separatorBefore: true),
-            Command(id: "reveal-finder", title: "Show in Finder", menu: .session, key: "", modifiers: [],
-                    action: #selector((any AxActions).revealInFinder(_:))),
             Command(id: "remove-worktree", title: "Remove Worktree…", menu: .session, key: "", modifiers: [],
                     action: #selector((any AxActions).removeWorktreeSession(_:))),
             Command(id: "rename-session", title: "Rename Session…", menu: .session, key: "", modifiers: [],

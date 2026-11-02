@@ -73,6 +73,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
         sidebar.onNewWorktree = { [weak self] host, wid in self?.palette.showWorktree(host, wid) }
         sidebar.onRemoveWorktree = { [weak self] host, sid in self?.removeWorktree(host, sid) }
+        sidebar.onCloseSession = { [weak self] host, sid in self?.close(host, sid) }
         content.band.chip.onClick = { [weak self] in self?.content.current?.restoreFocus() }
         content.emptyView.onLaunch = { [weak self] agent, wid in
             guard let self, let host = self.currentHost else { return }
@@ -125,12 +126,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Shows a session in this window and returns focus to its terminal.
     func show(_ host: HostSession, _ sid: SessionID, focus pane: PaneID? = nil) {
         guard let info = host.session(sid) else { return }
-        if !navigating, selection?.host !== host || selection?.session != sid {
-            visited.removeSubrange(min(visitedAt + 1, visited.count)...)
-            visited.append((host.id, sid))
-            if visited.count > 100 { visited.removeFirst(visited.count - 100) }
-            visitedAt = visited.count - 1
-        }
         // Switching to a session reads it (as in Mail): an unread mark goes.
         if info.isUnread, selection?.host !== host || selection?.session != sid { host.perform(.setUnread(sid, false)) }
         selection = (host, sid)
@@ -374,19 +369,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         show(host, sid)
     }
 
-    @objc func newWorkspace(_ sender: Any?) {
-        guard let window, let host = currentHost else { return }
-        TextPrompt.run(in: window, title: "New Workspace", value: "", placeholder: "Name") { [weak self] name in
-            let trimmed = name.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, let self else { return }
-            let wid = WorkspaceID()
-            Task {
-                guard await host.performAndWait(.createWorkspace(wid, name: trimmed, root: "")) else { return }
-                await self.createSession(host, in: wid, cwd: nil, name: nil)
-            }
-        }
-    }
-
     @objc func openFolder(_ sender: Any?) {
         guard let window, let host = currentHost else { return }
         guard host.isLocal else {
@@ -426,20 +408,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func closeSession(_ sender: Any?) {
-        guard let (host, sid) = selection, let s = host.session(sid) else { return }
-        // Read before the close ends it: which conversation its Claude held.
-        let claude = host.isLocal ? s.tree.panes.lazy.compactMap { ClaudeHistory.held(byPane: $0.raw.uuidString) }.first : nil
+        guard let (host, sid) = selection else { return }
+        close(host, sid)
+    }
+
+    /// Every way of closing a session comes here, so ⇧⌘T can bring it back.
+    func close(_ host: HostSession, _ sid: SessionID) {
+        guard let s = host.session(sid) else { return }
         model.closed.append(AppModel.ClosedSession(host: host.id, workspace: s.workspace,
-                                                   cwd: host.pane(s.focus)?.pwd ?? "", name: s.name, claude: claude))
+                                                   cwd: host.pane(s.focus)?.pwd ?? "", name: s.name))
         host.perform(.closeSession(sid))
     }
 
     @objc func reopenClosedSession(_ sender: Any?) {
         guard let c = model.closed.popLast(), let host = model.host(c.host) else { return }
         let ws = host.state?.workspace(c.workspace)?.id ?? host.state?.workspaces.first?.id
-        // Its Claude conversation comes back where it was; a plain session as a shell.
-        let launch = c.claude.flatMap { ClaudeHistory.hasTranscript($0) ? launchLine(.claude, host, args: "--resume \($0)") : nil }
-        Task { await createSession(host, in: ws, cwd: c.cwd.isEmpty ? nil : c.cwd, name: c.name, launch: launch) }
+        Task { await createSession(host, in: ws, cwd: c.cwd.isEmpty ? nil : c.cwd, name: c.name) }
     }
 
     @objc func togglePinned(_ sender: Any?) {
@@ -465,35 +449,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         if let (h, s) = pick { show(h, s) }
     }
 
-    // MARK: Back and Forward (⌥⌘[ ⌥⌘]), through sessions in the order seen
-
-    private var visited: [(host: UUID, session: SessionID)] = []
-    private var visitedAt = -1
-    private var navigating = false
-
-    @objc func goBack(_ sender: Any?) { travel(-1) }
-    @objc func goForward(_ sender: Any?) { travel(1) }
-
-    /// The nearest session that way that still exists; closed ones are dropped.
-    private func target(_ d: Int) -> Int? {
-        var i = visitedAt + d
-        while i >= 0, i < visited.count {
-            let v = visited[i]
-            if let h = model.host(v.host), h.session(v.session) != nil,
-               h !== selection?.host || v.session != selection?.session { return i }
-            i += d
-        }
-        return nil
-    }
-
-    private func travel(_ d: Int) {
-        guard let i = target(d), let host = model.host(visited[i].host) else { return NSSound.beep() }
-        visitedAt = i
-        navigating = true
-        show(host, visited[i].session)
-        navigating = false
-    }
-
     @objc func selectNextSession(_ sender: Any?) { step(1) }
     @objc func selectPreviousSession(_ sender: Any?) { step(-1) }
 
@@ -506,7 +461,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     @objc func selectNextAttention(_ sender: Any?) { jump(to: nil, forward: true) }
-    @objc func selectPreviousAttention(_ sender: Any?) { jump(to: nil, forward: false) }
 
     /// Cycles through panes that need the person (waiting first), or through
     /// panes of one activity when the status bar asks.
@@ -541,35 +495,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     @objc func toggleSessionSidebar(_ sender: Any?) { shell.toggleSidebar() }
 
     @objc func showCommandPalette(_ sender: Any?) { palette.toggle(.commands) }
-    @objc func showOpenQuickly(_ sender: Any?) { palette.toggle(.sessions) }
     @objc func showJumpToAgent(_ sender: Any?) { palette.toggle(.agents) }
-
-    /// ⇧⌘R: a past Claude Code conversation, resumed in its own folder.
-    @objc func resumeClaudeSession(_ sender: Any?) {
-        guard let host = currentHost, host.isLocal else { NSSound.beep(); return }
-        let root = selection.flatMap { host.session($0.session)?.workspace }.flatMap { host.state?.workspace($0)?.root } ?? ""
-        palette.showResume(host, root: root)
-    }
-
-    /// Opens `past` with `claude --resume` in its project's workspace (made
-    /// if there is none), named for what it was asked.
-    func resume(_ past: PastSession, on host: HostSession) {
-        let launch = launchLine(.claude, host, args: "--resume \(past.id)")
-        let name = past.title.count > 48 ? String(past.title.prefix(48)) + "…" : past.title
-        let workspaces = host.state?.workspaces ?? []
-        let owner = workspaces.filter { past.project == $0.root || past.project.hasPrefix($0.root + "/") }
-            .max { $0.root.count < $1.root.count }
-        Task {
-            var wid = owner?.id
-            if wid == nil {
-                let w = WorkspaceID()
-                guard await host.performAndWait(.createWorkspace(w, name: URL(filePath: past.project).lastPathComponent,
-                                                                 root: past.project)) else { return }
-                wid = w
-            }
-            await createSession(host, in: wid, cwd: past.project, name: name, launch: launch)
-        }
-    }
 
     /// ⌥⌘T: a session on its own branch, in a worktree of the current project.
     @objc func newWorktreeSession(_ sender: Any?) {
@@ -655,11 +581,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         LinkOpener.openFolder(LinkOpener.projectRoot(cwd))
     }
 
-    @objc func revealInFinder(_ sender: Any?) {
-        guard let cwd = currentCwd, !cwd.isEmpty else { NSSound.beep(); return }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: cwd, directoryHint: .isDirectory)])
-    }
-
     @objc func showChanges(_ sender: Any?) {
         guard let cwd = currentCwd, !cwd.isEmpty, let (host, sid) = selection else { return }
         let workspace = host.session(sid)?.workspace
@@ -714,15 +635,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             let s = selection.flatMap { $0.host.session($0.session) }
             item.title = s?.isUnread == true ? "Mark as Read" : "Mark as Unread"
             return s != nil
-        case #selector(goBack(_:)):
-            return target(-1) != nil
-        case #selector(goForward(_:)):
-            return target(1) != nil
-        case #selector(resumeClaudeSession(_:)):
-            return currentHost?.isLocal == true
         case #selector(removeWorktreeSession(_:)):
             return selection.flatMap { $0.host.session($0.session)?.worktree } != nil
-        case #selector(openInEditor(_:)), #selector(revealInFinder(_:)):
+        case #selector(openInEditor(_:)):
             return !(currentCwd ?? "").isEmpty
         case #selector(toggleSessionSidebar(_:)):
             item.title = shell.collapsed ? "Show Sidebar" : "Hide Sidebar"
@@ -730,9 +645,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         case #selector(toggleStatusBar(_:)):
             item.title = model.prefs.showStatusBar ? "Hide Status Bar" : "Show Status Bar"
             return true
-        case #selector(selectNextAttention(_:)), #selector(selectPreviousAttention(_:)):
+        case #selector(selectNextAttention(_:)):
             return !model.attentionPanes().isEmpty
-        case #selector(newSession(_:)), #selector(newWorkspace(_:)), #selector(openFolder(_:)):
+        case #selector(newSession(_:)), #selector(openFolder(_:)):
             return currentHost?.phase == .connected
         default:
             return true

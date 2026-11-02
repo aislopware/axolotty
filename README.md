@@ -7,14 +7,12 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
 ## What it does
 
 - **Agent status from the agent itself.** Claude Code reports over OSC 7501; other programs can use `axolotty status`. Rows, the band, the Dock badge, toasts and notifications all follow it. A notification goes away as soon as you've seen its pane.
-- **Find who needs you.** Jump to Agent (⌘J) lists sessions as needs-you, then finished, then working. Next waiting agent is ⇧⌘U.
+- **Find who needs you.** Go to Session (⌘J) lists sessions as needs-you, then finished, then working. Next waiting agent is ⇧⌘U.
 - **Worktree sessions.** ⌥⌘T, or "New Worktree…" on a project's "+", starts an agent on its own branch in `<repo>/.worktrees/<branch>`. "Remove Worktree…" deletes the folder and keeps the branch.
-- **Resume Claude Code conversations.** ⇧⌘R lists past conversations by what you first asked, this project's first.
 - **Keep your place.**
   - Pin sessions to the top of their project.
   - Mark a session unread for later.
-  - Go Back and Forward (⌥⌘[ ⌥⌘]) through the sessions you've looked at.
-  - Reopen a closed session (⇧⌘T) with its Claude conversation resumed.
+  - Reopen a closed session (⇧⌘T) in its folder.
   - Subagents at work show beside the agent's timer.
 - **Shell integration** for zsh, bash and fish:
   - prompt jumps (⌘↑ ⌘↓);
