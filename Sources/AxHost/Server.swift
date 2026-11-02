@@ -70,7 +70,7 @@ public actor Server {
     private var saveTask: Task<Void, Never>?
     private var running = false
 
-    // Claude Code status from outside the pane (`ClaudeAgents.swift`).
+    // Claude Code status from outside, for panes running tmux (`ClaudeAgents.swift`).
     var agentTargets: [PaneID: ClaudeAgents.Target] = [:]
     var agentRoots: [PaneID: Set<Int32>] = [:]
     /// What the host last showed for each watched session, by pid.
@@ -701,7 +701,7 @@ public actor Server {
                 claudeNative.remove(id)
             }
             if info != state.panes[id] { commit([.pane(info)]) }
-            retargetAgents(id, program: program, agent: agent, leader: leader, argv: argv)
+            retargetAgents(id, program: program, leader: leader, argv: argv)
         case let .readsSecret(id, on):
             guard var info = state.panes[id] else { return }
             info.readsSecret = on ? true : nil
@@ -755,7 +755,6 @@ public actor Server {
                     claudeNative.insert(id)
                     info.status.clearAgents()
                     agentShown[id] = nil
-                    if case .direct = agentTargets[id] { agentTargets[id] = nil }
                 }
                 if ps.state == .clear {
                     info.status.clear(ps.id)

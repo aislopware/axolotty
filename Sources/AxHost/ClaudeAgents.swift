@@ -2,8 +2,8 @@
 //
 // Claude Code reports itself over OSC 7501, but only once the terminal
 // answers its probe, and tmux doesn't pass that probe through (tmux #5713).
-// A Claude inside tmux in a pane, or one that never got the probe, would
-// show nothing. For those panes the host asks Claude Code itself: `claude
+// A Claude inside tmux in a pane would show nothing. For panes running
+// tmux the host asks Claude Code itself: `claude
 // agents --json` is its documented way to read session state from outside
 // (pid, `status` busy|waiting|idle, `waitingFor`). One call costs about
 // 0.9 s of a process, so it is never polled: Claude rewrites
@@ -11,11 +11,10 @@
 // and an FSEvents stream on that folder (names only, contents never read)
 // says when to ask, and about which pid.
 //
-// A session belongs to a pane when its parent chain reaches the pane's
-// process, or, in tmux, the shell of a tmux pane in the session a client in
-// our pane shows. Records go in under `StatusBook.agentsPrefix` ids, so
-// they never pass for subagents and are dropped the moment the pane's
-// Claude Code speaks for itself.
+// A session belongs to a pane when its parent chain reaches the shell of a
+// tmux pane in the session the pane's tmux client shows. Records go in
+// under `StatusBook.agentsPrefix` ids, so they never pass for subagents,
+// and are dropped the moment a Claude Code in the pane speaks for itself.
 import AxModel
 import AxSys
 import CoreServices
@@ -32,12 +31,10 @@ nonisolated enum ClaudeAgents {
         var name: String?
     }
 
-    /// Where a watched pane's Claude sessions live.
-    enum Target: Equatable, Sendable {
-        /// Claude runs under the pane's own process tree.
-        case direct(root: Int32)
-        /// A tmux client is the pane's foreground; `socket` is its -L/-S flags.
-        case tmux(client: Int32, socket: [String])
+    /// A watched pane's tmux client (its foreground) and the client's -L/-S flags.
+    struct Target: Equatable, Sendable {
+        var client: Int32
+        var socket: [String]
     }
 
     static func parse(_ data: Data) -> [Entry] {
@@ -93,20 +90,15 @@ nonisolated enum ClaudeAgents {
         return chain
     }
 
-    /// The processes whose descendants count as the target's: the pane's
-    /// root, or the shells of every tmux pane in the session the client shows.
+    /// The processes whose descendants count as the target's: the shells of
+    /// every tmux pane in the session the client shows.
     static func roots(_ t: Target) -> Set<Int32> {
-        switch t {
-        case let .direct(root):
-            return [root]
-        case let .tmux(client, socket):
-            guard let clients = run(tmux, socket + ["list-clients", "-F", "#{client_pid} #{session_id}"]),
-                  let line = clients.split(separator: "\n").first(where: { $0.hasPrefix("\(client) ") }),
-                  let session = line.split(separator: " ").dropFirst().first,
-                  let panes = run(tmux, socket + ["list-panes", "-s", "-t", String(session), "-F", "#{pane_pid}"])
-            else { return [] }
-            return Set(panes.split(separator: "\n").compactMap { Int32($0) })
-        }
+        guard let clients = run(tmux, t.socket + ["list-clients", "-F", "#{client_pid} #{session_id}"]),
+              let line = clients.split(separator: "\n").first(where: { $0.hasPrefix("\(t.client) ") }),
+              let session = line.split(separator: " ").dropFirst().first,
+              let panes = run(tmux, t.socket + ["list-panes", "-s", "-t", String(session), "-F", "#{pane_pid}"])
+        else { return [] }
+        return Set(panes.split(separator: "\n").compactMap { Int32($0) })
     }
 
     static func isTmux(_ pid: Int32) -> Bool {

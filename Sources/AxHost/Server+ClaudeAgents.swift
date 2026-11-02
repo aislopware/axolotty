@@ -1,36 +1,17 @@
-// The host's side of `ClaudeAgents`: which panes to watch, when to ask
-// Claude Code, and how its answer becomes status records.
+// The host's side of `ClaudeAgents`: which panes to watch (those running
+// tmux), when to ask Claude Code, and how its answer becomes status records.
 import AxModel
 import Foundation
 
 extension Server {
-    /// A pane is watched while a tmux client is its foreground, or while
-    /// Claude Code runs in it without reporting for itself.
-    func retargetAgents(_ id: PaneID, program: String, agent: AgentKind?, leader: Int32, argv: [String]) {
-        if agent == .claude, !claudeNative.contains(id), agentTargets[id] == nil {
-            // Claude Code answers the terminal's probe within 2 s and then
-            // speaks for itself; only one that hasn't by 5 s is asked about.
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(5))
-                await self?.watchSilentClaude(id, leader: leader)
-            }
-            return
-        }
-        let target: ClaudeAgents.Target? = program == "tmux"
-            ? .tmux(client: leader, socket: ClaudeAgents.socketFlags(argv)) : nil
-        if target == nil, case .direct = agentTargets[id], agent == .claude { return }  // still that Claude
+    /// A pane is watched while a tmux client is its foreground.
+    func retargetAgents(_ id: PaneID, program: String, leader: Int32, argv: [String]) {
+        let target = program == "tmux" ? ClaudeAgents.Target(client: leader, socket: ClaudeAgents.socketFlags(argv)) : nil
         guard agentTargets[id] != target else { return }
         agentTargets[id] = target
         if target == nil { clearAgents(id) }
         ensureSessionWatch()
         if target != nil { scheduleAgentsRefresh() }
-    }
-
-    private func watchSilentClaude(_ id: PaneID, leader: Int32) {
-        guard state.panes[id]?.agent == .claude, !claudeNative.contains(id), agentTargets[id] == nil else { return }
-        agentTargets[id] = .direct(root: leader)
-        ensureSessionWatch()
-        scheduleAgentsRefresh()
     }
 
     func forgetAgents(_ id: PaneID) {
@@ -65,13 +46,12 @@ extension Server {
         guard !agentTargets.isEmpty else { return }
         let shown = Set(agentShown.values.flatMap(\.keys))
         let roots = agentRoots.values.reduce(into: Set<Int32>()) { $0.formUnion($1) }
-        let tmux = agentTargets.values.contains { if case .tmux = $0 { true } else { false } }
         let ours = pids.contains { pid in
             if shown.contains(pid) { return true }
             let chain = ClaudeAgents.ancestors(pid)
             if !roots.isDisjoint(with: chain) { return true }
             // A session in a tmux window opened since roots were read.
-            return tmux && chain.contains { ClaudeAgents.isTmux($0) }
+            return chain.contains { ClaudeAgents.isTmux($0) }
         }
         if ours { scheduleAgentsRefresh() }
     }
@@ -107,8 +87,8 @@ extension Server {
 
     private func applyAgents(_ byPane: [PaneID: [ClaudeAgents.Entry]]) {
         let prefix = StatusBook.agentsPrefix
-        for (id, target) in agentTargets {
-            if case .direct = target, claudeNative.contains(id) { continue }
+        // A Claude Code that speaks for itself (OSC 7501) is not also read from outside.
+        for id in agentTargets.keys where !claudeNative.contains(id) {
             let entries = byPane[id] ?? []
             var shown = agentShown[id] ?? [:]
             updateStatus(id, live: true) { book in
