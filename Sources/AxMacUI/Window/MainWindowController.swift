@@ -116,6 +116,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Shows a session in this window and returns focus to its terminal.
     func show(_ host: HostSession, _ sid: SessionID, focus pane: PaneID? = nil) {
         guard let info = host.session(sid) else { return }
+        // Going somewhere else meanwhile means the person moved on.
+        if arriving !== host { arriving = nil }
         selection = (host, sid)
         sidebar.select(host: host.id, session: sid)
         content.show(host, info, animated: true)
@@ -141,7 +143,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         case .connected:
             content.sync(host)
             content.linkChanged(host)
-            if selection == nil || selection?.host === host { selectInitial(host) }
+            if arriving === host {
+                arrive(at: host)
+            } else if selection == nil || selection?.host === host {
+                selectInitial(host)
+            }
         case .deltas:
             content.sync(host)
             if let s = selection, s.host === host, host.session(s.session) == nil { selectNeighbor(host) }
@@ -170,6 +176,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             if let local = model.local { selectNeighbor(local) } else { showLauncher() }
         }
         refreshChrome()
+    }
+
+    /// The host the person asked to go to, until it answers.
+    private weak var arriving: HostSession?
+
+    /// The person chose this host (Connect to Host): go there as soon as it
+    /// answers, to its first session, or to a fresh shell in its home when
+    /// it has none, the way a first launch opens one on this Mac.
+    func arrive(at host: HostSession) {
+        guard let st = host.state, host.phase == .connected else {
+            arriving = host
+            return
+        }
+        arriving = nil
+        if let first = st.orderedSessions.first {
+            show(host, first)
+        } else {
+            Task { await createSession(host, in: st.workspaces.first?.id, cwd: nil, name: nil) }
+        }
     }
 
     private func selectInitial(_ host: HostSession) {

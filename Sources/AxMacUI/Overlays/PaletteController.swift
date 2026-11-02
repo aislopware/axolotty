@@ -510,9 +510,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         case let .session(h, sid):
             owner.show(h, sid)
         case let .host(name, dial):
-            let h = model.connect(to: AppModel.SavedHost(name: name, host: dial))
-            // Its sessions come in as it connects; the first is shown then.
-            if let first = h.state?.orderedSessions.first { owner.show(h, first) }
+            owner.arrive(at: model.connect(to: AppModel.SavedHost(name: name, host: dial)))
         case .note:
             break
         case let .worktree(branch):
