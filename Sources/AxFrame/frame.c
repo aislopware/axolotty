@@ -329,7 +329,15 @@ static void overlay_row(ax_frame *f, uint16_t y, ax_glyph_cache *cache, const ax
   row_data *rd = &f->row[y];
   for (size_t i = 0; i < f->ov_len; i++) {
     const ax_overlay_cell *o = &f->ov[i];
-    if (o->row != y || o->col >= f->cols || o->cp == ' ') continue;
+    if (o->row != y || o->col >= f->cols) continue;
+    // A guess replaces what the cell shows: an erased character goes, a
+    // retyped one takes its place.
+    ax_glyph_instance *all = (ax_glyph_instance *)rd->glyphs.ptr;
+    size_t kept = 0;
+    for (size_t k = 0; k < rd->glyphs.len; k++)
+      if (all[k].col != o->col) all[kept++] = all[k];
+    rd->glyphs.len = kept;
+    if (o->cp == ' ') continue;
     uint32_t fg = rgb(colors->foreground);
     for (size_t k = rd->glyphs.len; k-- > 0;) {
       const ax_glyph_instance *gi = (const ax_glyph_instance *)rd->glyphs.ptr + k;

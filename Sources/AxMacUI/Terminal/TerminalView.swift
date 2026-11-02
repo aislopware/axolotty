@@ -532,11 +532,17 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if action != .release {
             snapToBottom()
             NSCursor.setHiddenUntilMouseMoves(true)
-            // Plain text is guessed at; anything else (Return, arrows, ⌃ and
-            // ⌥ chords) is the host's to answer before the next guess.
-            let plain = !optionAlt && !event.modifierFlags.contains(.control) && !text.isEmpty
-                && !text.unicodeScalars.contains { $0.properties.generalCategory == .control }
-            if plain { predict(text) } else { holdPrediction() }
+            // Plain text and a bare ⌫ are guessed at; anything else (Return,
+            // arrows, ⌃ and ⌥ chords) is the host's to answer before the next guess.
+            let chord = optionAlt || !event.modifierFlags.intersection([.control, .command]).isEmpty
+            let plain = !chord && !text.isEmpty && !text.unicodeScalars.contains { $0.properties.generalCategory == .control }
+            if plain {
+                predict(text)
+            } else if !chord, event.keyCode == 51 {  // ⌫ (kVK_Delete): its text is the encoder's, not ours
+                predictErase()
+            } else {
+                holdPrediction()
+            }
         }
         connection.send(.key(pane, input))
     }
@@ -551,7 +557,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         return EchoPredictor.Screen(cursorX: Int(c.x), cursorY: Int(c.y), cols: Int(t.cols), cursorVisible: c.visible,
                                     primary: t.activeScreen == .primary, atPrompt: t.cursorAtPrompt,
                                     // A scrolled-back view has no cursor line to draw guesses on.
-                                    mouseTracking: t.mouseTracking, secret: readsSecret || t.isScrolledBack) { x, y in
+                                    mouseTracking: t.mouseTracking, secret: readsSecret || t.isScrolledBack,
+                                    suggested: { x, y in t.looksSuggested(atActiveX: x, y: y) }) { x, y in
             t.character(atActiveX: x, y: y)
         }
     }
@@ -562,6 +569,13 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         guard (predictor.rtt ?? .zero) >= EchoPredictor.minimumRTT || !predictor.guesses.isEmpty else { return }
         let now = Self.clock()
         let changed = mirror.withTerminal { t in predictor.typed(text, on: echoScreen(t), at: now) } ?? false
+        if changed { showPrediction(now) }
+    }
+
+    private func predictErase() {
+        predictor.rtt = connection.rtt
+        let now = Self.clock()
+        let changed = mirror.withTerminal { t in predictor.erased(on: echoScreen(t), at: now) } ?? false
         if changed { showPrediction(now) }
     }
 

@@ -7,12 +7,23 @@
 ///   link faster than that the real echo is already in the next frame;
 /// - the cursor is visible, in a shell's input line (OSC 133), on the
 ///   primary screen; no mouse tracking, no hidden prompt;
-/// - each guessed cell is blank, or already shows that very character (a
-///   shell's suggestion for the rest of the line); never the last column,
-///   where the line would wrap. An echo counts once the host's cursor has
-///   moved past its cell with the character in it.
+/// - each typed character lands on a blank cell, one already showing that
+///   very character, or one of a shell's suggestion for the rest of the line
+///   (zsh-autosuggestions, fish); never the last column, where the line
+///   would wrap. A suggestion typed against is veiled: it no longer fits,
+///   and the shell will clear or replace it;
+/// - ⌫ only takes back what was typed in this run on this line, never the
+///   prompt or text the host put there.
 ///
-/// After a key that isn't plain text (Return, arrows, ⌃ chords), nothing is
+/// Guesses are steps in the order typed (put a character, take one back),
+/// as the host will apply them. A frame from the host shows a run of them
+/// done when the cursor is where they leave it and every character they put
+/// is there. Screens repeat (after "a" is the same as after "a", "b", ⌫), so
+/// a frame confirms the shortest run it fits, and later frames the rest; one
+/// that fits none contradicts the guesses. Guesses still waiting when their
+/// time is up, on a screen that already fits all of them, are confirmed.
+///
+/// After a key that isn't predicted (Return, arrows, ⌃ chords), nothing is
 /// guessed until the host has answered it: until then, where the next
 /// character lands is the host's to say. A guess the host contradicts, or
 /// leaves unconfirmed too long, clears every guess and mutes prediction for a
@@ -36,9 +47,13 @@ public struct EchoPredictor {
         public var secret: Bool
         /// The character in a cell of the active screen, " " for a blank one.
         public var cell: (_ x: Int, _ y: Int) -> Character?
+        /// The cell is drawn as a shell's suggestion of the rest of the line
+        /// (faint, or grey): the line editor's to redraw, not text in the way.
+        public var suggested: (_ x: Int, _ y: Int) -> Bool
 
         public init(cursorX: Int, cursorY: Int, cols: Int, cursorVisible: Bool, primary: Bool, atPrompt: Bool,
-                    mouseTracking: Bool, secret: Bool, cell: @escaping (_ x: Int, _ y: Int) -> Character?) {
+                    mouseTracking: Bool, secret: Bool, suggested: @escaping (_ x: Int, _ y: Int) -> Bool = { _, _ in false },
+                    cell: @escaping (_ x: Int, _ y: Int) -> Character?) {
             self.cursorX = cursorX
             self.cursorY = cursorY
             self.cols = cols
@@ -47,18 +62,20 @@ public struct EchoPredictor {
             self.atPrompt = atPrompt
             self.mouseTracking = mouseTracking
             self.secret = secret
+            self.suggested = suggested
             self.cell = cell
         }
 
         var allowsGuessing: Bool { cursorVisible && primary && atPrompt && !mouseTracking && !secret }
     }
 
-    /// One guessed character, in active-screen cells.
+    /// One guessed cell, in active-screen cells: the character it will show,
+    /// " " for one ⌫ takes back.
     public struct Guess: Equatable, Sendable {
         public var x: Int
         public var y: Int
         public var character: Character
-        /// When it was typed.
+        /// When its latest key was typed.
         public var at: Duration
     }
 
@@ -86,10 +103,33 @@ public struct EchoPredictor {
     /// How long a miss keeps guesses marked once prediction comes back.
     public static let markedAfterMiss: Duration = .seconds(10)
 
-    public private(set) var guesses: [Guess] = []
+    /// One key the host hasn't answered yet: a character put at (x, y), or
+    /// the one at (x, y) taken back (`character` nil).
+    private struct Step: Equatable {
+        var x: Int
+        var y: Int
+        var character: Character?
+        var at: Duration
+        /// Where the cursor is once the host has applied it.
+        var after: (x: Int, y: Int) { character == nil ? (x, y) : (x + 1, y) }
+        static func == (a: Step, b: Step) -> Bool { a.x == b.x && a.y == b.y && a.character == b.character && a.at == b.at }
+    }
+
+    private var steps: [Step] = [] {
+        didSet { if steps.isEmpty { veiled = [] } }  // answered: the host's own redraw shows
+    }
+    /// The cursor before the first unanswered step.
+    private var origin: (x: Int, y: Int) = (0, 0)
+    /// Where this run of typing began on its line: ⌫ goes no further left.
+    private var runStart: (x: Int, y: Int)?
+    /// The latest screen already fits every step (its frames were ambiguous).
+    private var fitsAll = false
+    /// Cells of a suggestion typing went against, drawn blank until the
+    /// host has answered.
+    private var veiled: [(x: Int, y: Int)] = []
     /// The latest round trip; nil (a local link) never guesses.
     public var rtt: Duration?
-    /// A non-text key went out at this time and the host hasn't answered.
+    /// A key not predicted went out at this time and the host hasn't answered.
     private var heldSince: Duration?
     private var mutedUntil: Duration?
     private var missedAt: Duration?
@@ -106,25 +146,68 @@ public struct EchoPredictor {
         return max(.seconds(1), r * 3 + .milliseconds(250))
     }
 
+    /// The cells the guesses will leave, left to right.
+    public var guesses: [Guess] {
+        var cells: [Guess] = []
+        if let at = steps.last?.at {
+            for v in veiled { cells.append(Guess(x: v.x, y: v.y, character: " ", at: at)) }
+        }
+        for s in steps {
+            let g = Guess(x: s.x, y: s.y, character: s.character ?? " ", at: s.at)
+            if let i = cells.firstIndex(where: { $0.x == s.x && $0.y == s.y }) { cells[i] = g } else { cells.append(g) }
+        }
+        return cells.sorted { ($0.y, $0.x) < ($1.y, $1.x) }
+    }
+
+    private var cursor: (x: Int, y: Int) { steps.last?.after ?? origin }
+
+    /// What a cell will show once the guesses land, nil if no guess touches it.
+    private func predicted(_ x: Int, _ y: Int) -> Character?? {
+        if let s = steps.last(where: { $0.x == x && $0.y == y }) { return s.character ?? " " }
+        return veiled.contains { $0.x == x && $0.y == y } ? " " : nil
+    }
+
+    private func mayGuess(on screen: Screen, at now: Duration) -> Bool {
+        guessing && heldSince == nil && screen.allowsGuessing && (mutedUntil.map { now >= $0 } ?? true)
+    }
+
+    /// Holds guessing until the host has answered a key sent now.
+    private mutating func hold(at now: Duration) {
+        heldSince = now
+        runStart = nil
+    }
+
     // MARK: Input
 
     /// Plain text typed at `now`. Returns whether the overlay changed.
     @discardableResult
     public mutating func typed(_ text: String, on screen: Screen, at now: Duration) -> Bool {
-        let before = guesses.count
+        let before = steps.count
         var guessed = 0
-        if guessing, heldSince == nil, screen.allowsGuessing, mutedUntil.map({ now >= $0 }) ?? true {
+        if mayGuess(on: screen, at: now) {
             mutedUntil = nil
+            if steps.isEmpty { origin = (screen.cursorX, screen.cursorY) }
+            fitsAll = false
             for ch in text {
-                let y = guesses.last?.y ?? screen.cursorY
-                let x = guesses.last.map { $0.x + 1 } ?? screen.cursorX
-                // Its width is the host's to say, or its cell isn't free to guess in.
-                // A blank cell, or one already showing this very character (a
+                let (x, y) = cursor
+                // Its width is the host's to say, or its cell isn't free to guess in:
+                // a blank cell, or one already showing this very character (a
                 // shell's suggestion of the rest of the line, drawn faintly).
-                let under = screen.cell(x, y)
-                guard Self.predictable(ch), y == screen.cursorY, x >= screen.cursorX, x < screen.cols - 1,
-                      under == " " || under == ch else { break }
-                guesses.append(Guess(x: x, y: y, character: ch, at: now))
+                let ahead = predicted(x, y)
+                let under = ahead ?? screen.cell(x, y)
+                let suggestion = ahead == nil && screen.suggested(x, y)
+                guard Self.predictable(ch), y == screen.cursorY, x < screen.cols - 1,
+                      under == " " || under == ch || suggestion else { break }
+                if suggestion, under != ch {
+                    // Typed against the suggestion: the rest of it goes too.
+                    var i = x + 1
+                    while i < screen.cols, screen.suggested(i, y), screen.cell(i, y) != " " {
+                        veiled.append((i, y))
+                        i += 1
+                    }
+                }
+                if runStart == nil { runStart = (x, y) }
+                steps.append(Step(x: x, y: y, character: ch, at: now))
                 guessed += 1
             }
         }
@@ -132,62 +215,101 @@ public struct EchoPredictor {
         // the host decides, so a guess after it would sit in the wrong
         // place: hold until the host has answered it. The guesses before it
         // stand; their echoes come first.
-        if guessed < text.count { heldSince = now }
-        return guesses.count != before
+        if guessed < text.count { hold(at: now) }
+        return steps.count != before
     }
 
-    /// A key that isn't plain text went out (Return, an arrow, a ⌃ chord,
-    /// a paste): every guess is dropped until the host has answered.
+    /// ⌫ typed at `now`: the last character of this run is taken back, when
+    /// there is one; otherwise it is the host's to say. Returns whether the
+    /// overlay changed.
+    @discardableResult
+    public mutating func erased(on screen: Screen, at now: Duration) -> Bool {
+        if mayGuess(on: screen, at: now), let run = runStart {
+            if steps.isEmpty { origin = (screen.cursorX, screen.cursorY) }
+            let (x, y) = cursor
+            if y == run.y, x - 1 >= run.x {
+                steps.append(Step(x: x - 1, y: y, character: nil, at: now))
+                fitsAll = false
+                return true
+            }
+        }
+        return interrupted(at: now)
+    }
+
+    /// A key that isn't predicted went out (Return, an arrow, a ⌃ chord, a
+    /// paste): every guess is dropped until the host has answered.
     @discardableResult
     public mutating func interrupted(at now: Duration) -> Bool {
-        let had = !guesses.isEmpty
-        guesses.removeAll()
-        heldSince = now
+        let had = !steps.isEmpty
+        steps.removeAll()
+        hold(at: now)
         return had
     }
 
     // MARK: The host's answer
 
     /// The mirror applied output from the host. Confirms the guesses its
-    /// echo matches and takes back the ones it contradicts.
+    /// echo shows done and takes back the ones it contradicts.
     @discardableResult
     public mutating func observed(_ screen: Screen, at now: Duration) -> Bool {
         // Output from a full round trip after the held key is the host's
         // answer to it; anything sooner was already on its way before it.
         if let h = heldSince, now - h >= (rtt ?? .zero) { heldSince = nil }
-        guard !guesses.isEmpty else { return false }
         guard screen.allowsGuessing else {
-            guesses.removeAll()  // a program took over the screen: no guess means anything now
+            runStart = nil
+            guard !steps.isEmpty else { return false }
+            steps.removeAll()  // a program took over the screen: no guess means anything now
             return true
         }
-        var kept: [Guess] = []
-        for g in guesses {
-            // Its echo landed once the host's cursor has moved past it with
-            // the character in place. The cell alone can't say: a space looks
-            // the same before its echo, and a suggestion shows the rest of the
-            // line before it is typed.
-            let passed = screen.cursorY != g.y || screen.cursorX > g.x
-            if passed, screen.cell(g.x, g.y) == g.character { continue }
-            if passed || now - g.at >= patience { return miss(at: now) }
-            kept.append(g)
+        guard !steps.isEmpty else {
+            if let run = runStart, screen.cursorY != run.y { runStart = nil }
+            return false
         }
-        let changed = kept != guesses
-        guesses = kept
-        return changed
+        // The runs of steps the screen shows done. The cell alone can't say:
+        // a space looks the same before its echo, and a suggestion shows the
+        // rest of the line before it is typed; so the cursor must be where
+        // they leave it, too.
+        let at = (screen.cursorX, screen.cursorY)
+        var fits: [Int] = at == origin ? [0] : []
+        var shown: [Int: Character] = [:]  // x → what steps 0..<k put on the row
+        for (k, s) in steps.enumerated() {
+            shown[s.x] = s.character  // taken back: whatever is there now
+            guard s.after == at, s.y == screen.cursorY else { continue }
+            if shown.allSatisfy({ screen.cell($0.key, s.y) == $0.value }) { fits.append(k + 1) }
+        }
+        guard let k = fits.first(where: { $0 > 0 }) ?? fits.first else { return miss(at: now) }
+        fitsAll = fits.last == steps.count
+        if k > 0 {
+            origin = steps[k - 1].after
+            steps.removeFirst(k)
+            return true
+        }
+        if let first = steps.first, now - first.at >= patience { return settle(at: now) }
+        return false
+    }
+
+    /// Time is up for the oldest guess: confirmed if the screen already
+    /// shows them all, a miss otherwise.
+    private mutating func settle(at now: Duration) -> Bool {
+        guard fitsAll else { return miss(at: now) }
+        origin = cursor
+        steps.removeAll()
+        return true
     }
 
     /// No output came; a guess left waiting too long is a miss.
     @discardableResult
     public mutating func tick(at now: Duration) -> Bool {
-        guard let first = guesses.first, now - first.at >= patience else { return false }
-        return miss(at: now)
+        guard let first = steps.first, now - first.at >= patience else { return false }
+        return settle(at: now)
     }
 
     /// When `tick` next has something to decide, nil when nothing is waiting.
-    public var nextDeadline: Duration? { guesses.first.map { $0.at + patience } }
+    public var nextDeadline: Duration? { steps.first.map { $0.at + patience } }
 
     private mutating func miss(at now: Duration) -> Bool {
-        guesses.removeAll()
+        steps.removeAll()
+        runStart = nil
         misses += 1
         missedAt = now
         mutedUntil = now + max(.seconds(1), (rtt ?? .zero) * 4)
@@ -197,12 +319,12 @@ public struct EchoPredictor {
     // MARK: Drawing
 
     public func overlay(at now: Duration) -> Overlay {
-        guard let last = guesses.last else { return .none }
+        guard !steps.isEmpty else { return .none }
         let r = rtt ?? .zero
         let marked = r >= Self.markedRTT
-            || guesses.contains { now - $0.at >= Self.markedAge }
+            || steps.contains { now - $0.at >= Self.markedAge }
             || missedAt.map { now - $0 < Self.markedAfterMiss } ?? false
-        return Overlay(cells: guesses, cursor: (last.x + 1, last.y), marked: marked)
+        return Overlay(cells: guesses, cursor: cursor, marked: marked)
     }
 
     /// One narrow cell for sure: printable ASCII and Latin letters. Anything

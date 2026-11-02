@@ -394,6 +394,26 @@ public final class VTTerminal {
         return Character(u)
     }
 
+    /// Whether a cell of the active screen is drawn the way shells draw a
+    /// suggestion of the rest of the line: faint, or bright black / a mid
+    /// grey (zsh-autosuggestions' and fish's default `fg=8`).
+    public func looksSuggested(atActiveX x: Int, y: Int) -> Bool {
+        guard x >= 0, y >= 0, x < Int(cols), y < Int(rows) else { return false }
+        var ref = GhosttyGridRef()
+        ref.size = MemoryLayout<GhosttyGridRef>.size
+        var p = GhosttyPoint()
+        p.tag = GHOSTTY_POINT_TAG_ACTIVE
+        p.value.coordinate = GhosttyPointCoordinate(x: UInt16(x), y: UInt32(y))
+        guard ghostty_terminal_grid_ref(handle, p, &ref) == GHOSTTY_SUCCESS else { return false }
+        var st = GhosttyStyle()
+        st.size = MemoryLayout<GhosttyStyle>.size
+        guard ghostty_grid_ref_style(&ref, &st) == GHOSTTY_SUCCESS else { return false }
+        if st.faint { return true }
+        guard st.fg_color.tag == GHOSTTY_STYLE_COLOR_PALETTE else { return false }
+        let i = st.fg_color.value.palette
+        return i == 8 || (238 ... 248).contains(i)
+    }
+
     private func stringData(_ key: GhosttyTerminalData) -> String {
         var s = GhosttyString()
         guard ghostty_terminal_get(handle, key, &s) == GHOSTTY_SUCCESS else { return "" }

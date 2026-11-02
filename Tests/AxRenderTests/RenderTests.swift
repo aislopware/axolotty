@@ -85,6 +85,21 @@ import Testing
         #expect(rig.inked(px, col: 1, row: 0).isEmpty, "nothing bleeds into the next cell")
     }
 
+    /// A guess replaces what its cell shows: a character ⌫ takes back is
+    /// gone before the host's echo says so, and its neighbours stay.
+    @Test func aGuessedBlankHidesTheCharacterUnderIt() throws {
+        let rig = try Rig()
+        let before = rig.render("ab")
+        #expect(!rig.inked(before, col: 1, row: 0).isEmpty)
+        rig.frame.setOverlay([(row: 0, col: 1, character: " ")], marked: false, cursor: (x: 1, y: 0))
+        let after = rig.render("")
+        #expect(rig.inked(after, col: 1, row: 0).isEmpty, "b is taken back")
+        #expect(!rig.inked(after, col: 0, row: 0).isEmpty, "a stays")
+        rig.frame.setOverlay([(row: 0, col: 1, character: "_")], marked: false, cursor: (x: 2, y: 0))
+        let retyped = rig.inked(rig.render(""), col: 1, row: 0)
+        #expect(!retyped.isEmpty && retyped.count < rig.inked(before, col: 1, row: 0).count, "_ in place of b, not over it")
+    }
+
     @Test func paintsCellBackgrounds() throws {
         let rig = try Rig()
         let px = rig.render("\u{1B}[44m  \u{1B}[0m")

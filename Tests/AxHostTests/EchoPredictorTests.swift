@@ -16,6 +16,8 @@ struct EchoPredictorTests {
         var primary = true
         var secret = false
         var cursorVisible = true
+        /// Cells drawn as a suggestion (faint, grey).
+        var faint: Set<Int> = []
 
         init(cols: Int = 40, rows: Int = 8) {
             cells = Array(repeating: Array(repeating: " ", count: cols), count: rows)
@@ -25,9 +27,10 @@ struct EchoPredictorTests {
         var cols: Int { cells[0].count }
 
         func screen() -> EchoPredictor.Screen {
-            let c = cells
+            let c = cells, f = faint, row = y
             return EchoPredictor.Screen(cursorX: x, cursorY: y, cols: cols, cursorVisible: cursorVisible, primary: primary,
-                                        atPrompt: atPrompt, mouseTracking: false, secret: secret) { x, y in
+                                        atPrompt: atPrompt, mouseTracking: false, secret: secret,
+                                        suggested: { x, y in y == row && f.contains(x) }) { x, y in
                 y >= 0 && y < c.count && x >= 0 && x < c[y].count ? c[y][x] : nil
             }
         }
@@ -161,6 +164,35 @@ struct EchoPredictorTests {
         #expect(!off, "the suggestion says o here: x would collide with it")
     }
 
+    /// A suggestion that went another way is typed over, not stopped at:
+    /// the key takes its cell and the rest of it is veiled, since the shell
+    /// will clear or replace it. Text that isn't a suggestion still stops it.
+    @Test func typingAgainstASuggestionVeilsIt() {
+        var p = EchoPredictor(rtt: Self.ms(50))
+        var g = Grid()
+        for (i, ch) in "clear".enumerated() {
+            g.cells[0][2 + i] = ch
+            g.faint.insert(2 + i)
+        }
+        let over = p.typed("qz", on: g.screen(), at: .zero)
+        #expect(over)
+        let o = p.overlay(at: .zero)
+        #expect(o.cells.map(\.character) == ["q", "z", " ", " ", " "], "q and z in place of c and l; ear veiled")
+        #expect(o.cursor?.x == 4)
+        // The shell's answer: q, z, and no suggestion any more.
+        g.cells[0] = Array("$ qz" + String(repeating: " ", count: 36))
+        g.faint = []
+        g.x = 4
+        p.observed(g.screen(), at: Self.ms(50))
+        #expect(p.guesses.isEmpty && p.misses == 0, "confirmed; the veil goes with the guesses")
+
+        var q = EchoPredictor(rtt: Self.ms(50))
+        var h = Grid()
+        h.cells[0][2] = "x"  // real text, not a suggestion
+        let stopped = q.typed("a", on: h.screen(), at: .zero)
+        #expect(!stopped)
+    }
+
     @Test func aKeyLeftUnguessedHoldsLaterGuessesNotEarlierOnes() {
         var g = Grid(cols: 6)
         g.x = 4
@@ -171,6 +203,60 @@ struct EchoPredictorTests {
         g.x = 2
         let held = p.typed("d", on: Grid().screen(), at: Self.ms(1))
         #expect(!held, "b and c went out unguessed")
+    }
+
+    /// ⌫ takes back the last character typed, guessed or already echoed:
+    /// the cell goes blank and the cursor steps back at once, and the host's
+    /// own erase confirms it, however its frames fall.
+    @Test func aBackspaceTakesBackWhatWasTyped() {
+        var p = EchoPredictor(rtt: Self.ms(50))
+        var g = Grid()
+        p.typed("ab", on: g.screen(), at: .zero)
+        let back = p.erased(on: g.screen(), at: Self.ms(5))
+        #expect(back)
+        #expect(p.overlay(at: Self.ms(5)).cells.map(\.character) == ["a", " "], "b is taken back before its echo")
+        #expect(p.overlay(at: Self.ms(5)).cursor?.x == 3)
+        let again = p.typed("c", on: g.screen(), at: Self.ms(6))
+        #expect(again, "typed where b was")
+        #expect(p.overlay(at: Self.ms(6)).cells.map(\.character) == ["a", "c"])
+
+        // The host's frames, one per key: each confirms its step in turn.
+        for (i, step) in [{ (g: inout Grid) in g.put("a") }, { $0.put("b") },
+                          { $0.x -= 1; $0.cells[0][$0.x] = " " }, { $0.put("c") }].enumerated() {
+            step(&g)
+            p.observed(g.screen(), at: Self.ms(50 + i))
+        }
+        #expect(p.guesses.isEmpty && p.misses == 0)
+
+        // An echoed character goes the same way; all the host's answer in one frame.
+        let erased = p.erased(on: g.screen(), at: Self.ms(100))
+        #expect(erased)
+        #expect(p.overlay(at: Self.ms(100)).cells.map { [$0.x] } == [[3]] && p.overlay(at: Self.ms(100)).cursor?.x == 3)
+        g.x -= 1
+        g.cells[0][g.x] = " "
+        p.observed(g.screen(), at: Self.ms(150))
+        #expect(p.guesses.isEmpty && p.misses == 0)
+    }
+
+    /// Only what this run typed is taken back: ⌫ at the start of the line is
+    /// the host's (the prompt stays), and so is ⌫ after Return or an arrow.
+    @Test func aBackspaceNeverTakesBackThePrompt() {
+        var p = EchoPredictor(rtt: Self.ms(50))
+        var g = Grid()
+        let atPrompt = p.erased(on: g.screen(), at: .zero)
+        #expect(!atPrompt)
+        let held = p.typed("x", on: g.screen(), at: Self.ms(1))
+        #expect(!held, "held: the host says what that ⌫ did")
+        p.observed(g.screen(), at: Self.ms(60))
+        p.typed("a", on: g.screen(), at: Self.ms(61))
+        g.put("a")
+        p.observed(g.screen(), at: Self.ms(110))
+        let one = p.erased(on: g.screen(), at: Self.ms(120))
+        #expect(one, "a was typed in this run")
+        p.erased(on: g.screen(), at: Self.ms(121))  // the next would reach the prompt
+        #expect(p.guesses.isEmpty, "the host answers that ⌫ before anything more is guessed")
+        let after = p.typed("b", on: g.screen(), at: Self.ms(122))
+        #expect(!after)
     }
 
     @Test func farLinksMarkTheirGuesses() {
@@ -201,6 +287,8 @@ struct EchoPredictorTests {
         var predicted = 0, confirmed = 0, misses = 0
         /// Keys whose character was on screen before its echo came back.
         var early = 0, typed = 0
+        /// ⌫ presses, and those drawn before the host took the character back.
+        var erases = 0, erasedEarly = 0
         var broken: String?
     }
 
@@ -225,8 +313,11 @@ struct EchoPredictorTests {
                 let r = rng.unit()
                 let key: Character = r < 0.08 ? "\r" : r < 0.14 ? "\u{7f}" : letters[Int(rng.next() % UInt64(letters.count))]
                 if ProcessInfo.processInfo.environment["AXECHO_TRACE"] != nil { print("key \(key.debugDescription) at \(now)") }
-                if key == "\r" || key == "\u{7f}" {
+                if key == "\r" {
                     p.interrupted(at: t)
+                } else if key == "\u{7f}" {
+                    run.erases += 1
+                    if p.erased(on: mirror.screen(), at: t) { run.erasedEarly += 1 }
                 } else {
                     run.typed += 1
                     if p.typed(String(key), on: mirror.screen(), at: t) { run.predicted += 1 }
@@ -287,13 +378,32 @@ struct EchoPredictorTests {
                 if p.misses == missesBefore { run.confirmed += before - p.guesses.count }
             }
             p.tick(at: t)
-            // What is drawn: every guess sits on a cell the mirror still has blank,
-            // and none outlives the predictor's patience.
-            for g in p.guesses {
-                if mirror.cells[g.y][g.x] != " " {
-                    run.broken = "at \(now) ms a guess of \(g.character) covers \(mirror.cells[g.y][g.x]) at (\(g.x), \(g.y))"
+            // What is drawn: no guess outlives the predictor's patience; and
+            // with a faithful shell, every guessed cell and the cursor show what
+            // the host will once it has the keys in flight, and nothing is left
+            // guessed once it has answered them all.
+            let o = p.overlay(at: t)
+            if let g = p.guesses.first(where: { t - $0.at > p.patience }) {
+                run.broken = "at \(now) ms a guess of \(g.character.debugDescription) outlived its patience"
+            }
+            if faithful, !toHost.contains(where: { $0.key == "\r" }), pendingPrompt == nil, host.atPrompt {
+                var future = host
+                for k in toHost.map(\.key) {
+                    if k == "\u{7f}" {
+                        if future.x > 2 { future.x -= 1; future.cells[future.y][future.x] = " " }
+                    } else if future.x < future.cols - 1 {
+                        future.put(k)
+                    }
                 }
-                if t - g.at > p.patience { run.broken = "at \(now) ms a guess outlived its patience" }
+                for g in o.cells where future.cells[g.y][g.x] != g.character {
+                    run.broken = "at \(now) ms (\(g.x), \(g.y)) is drawn \(g.character.debugDescription), the host will show \(future.cells[g.y][g.x].debugDescription)"
+                }
+                if let c = o.cursor, c.x != future.x || c.y != future.y {
+                    run.broken = "at \(now) ms the cursor is drawn at \(c.x), the host's will be at \(future.x)"
+                }
+                if toHost.isEmpty, toClient.isEmpty, !p.guesses.isEmpty {
+                    run.broken = "at \(now) ms the host has answered every key, yet \(p.guesses.count) guesses remain"
+                }
             }
             if run.broken != nil { break }
         }
@@ -313,14 +423,17 @@ struct EchoPredictorTests {
     }
 
     @Test func mostKeysShowBeforeTheirEcho() {
-        var early = 0, typed = 0
+        var early = 0, typed = 0, erases = 0, erasedEarly = 0
         for seed in Self.seeds.prefix(50) {
             let r = Self.simulate(seed: seed, oneWay: 40, faithful: true)
             early += r.early
             typed += r.typed
+            erases += r.erases
+            erasedEarly += r.erasedEarly
         }
-        // Only the keys just after a Return or ⌫ wait for the host.
+        // Only the keys just after a Return (or a ⌫ into the prompt) wait for the host.
         #expect(typed > 0 && Double(early) / Double(typed) > 0.6, "\(early) of \(typed) keys were drawn before their echo")
+        #expect(erases > 0 && Double(erasedEarly) / Double(erases) > 0.5, "\(erasedEarly) of \(erases) ⌫ were drawn before the host's")
     }
 
     @Test func aShellThatSurprisesNeverLeavesAWrongGuessShowing() {
