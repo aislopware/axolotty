@@ -31,6 +31,7 @@ axolotty send --pane 1a2b "Run the tests and fix what fails"
 axolotty wait --pane 1a2b --for done
 axolotty wait --pane 1a2b,3c4d --for done    # whichever finishes first
 axolotty capture --pane 1a2b                 # the pane's screen as text
+axolotty attach --pane 1a2b                  # drive the pane from this terminal (ssh); ^] detaches
 axolotty mcp                                 # the same, as MCP tools over stdio
 ```
 

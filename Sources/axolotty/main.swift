@@ -33,6 +33,8 @@ let usage = """
                                           the next shell command to finish; prints it and
                                           exits with its status
       close [--pane P]                    end a pane's program and close it
+      attach [--pane P]                   use a pane from this terminal (over ssh, another
+                                          emulator); ^] detaches, the program keeps running
       mcp                                 serve these operations to an agent over MCP (stdio)
 
     P is a pane id or a unique prefix (≥ 4 characters); default $AXOLOTTY_PANE_ID.
@@ -176,6 +178,10 @@ case "wait":
         // The command's own status, kept clear of the CLI's 124 (timeout).
         if code != 0 { exit(Int32(min(max(Int(code), 1), 123))) }
     }
+
+case "attach":
+    let o = Options(argv, valued: ["pane"])
+    await run { try await Attach.run(pane: o.flags["pane"] ?? o.positional.first) }
 
 case "mcp":
     _ = Options(argv)
