@@ -110,7 +110,12 @@ final class PaneHost: @unchecked Sendable {
             checkpointOffset = ring.tail
         }
         input = VTInputEncoder(terminal: terminal)
-        if let appearance { Self.apply(appearance, to: terminal) }
+        if let appearance {
+            Self.apply(appearance, to: terminal)
+            _ = terminal.setColorScheme(dark: appearance.dark)
+        }
+        terminal.setVersion(ShellEnvironment.termProgramVersion)
+        terminal.setCellSize(width: cellWidth, height: cellHeight)
         // Replies only from now on: replayed queries were answered long ago.
         terminal.onReply = { [unowned self] bytes in writeToPTY(Array(bytes)) }
         if !replayEvents.isEmpty { signals.yield(.events(id, replayEvents, live: false)) }
@@ -392,6 +397,7 @@ final class PaneHost: @unchecked Sendable {
         queue.async { [self] in
             if cw > 0 { cellWidth = UInt32(cw) }
             if ch > 0 { cellHeight = UInt32(ch) }
+            terminal.setCellSize(width: cellWidth, height: cellHeight)
             guard cols >= 2, rows >= 1, cols != terminal.cols || rows != terminal.rows else { return }
             let ws = ax_winsize(cols: cols, rows: rows, width_px: cols &* UInt16(clamping: cellWidth),
                                 height_px: rows &* UInt16(clamping: cellHeight))
@@ -405,7 +411,10 @@ final class PaneHost: @unchecked Sendable {
     var size: (cols: UInt16, rows: UInt16) { queue.sync { (terminal.cols, terminal.rows) } }
 
     func setAppearance(_ a: Appearance) {
-        queue.async { [self] in Self.apply(a, to: terminal) }
+        queue.async { [self] in
+            Self.apply(a, to: terminal)
+            if let report = terminal.setColorScheme(dark: a.dark), !ended { writeToPTY(report) }
+        }
     }
 
     private static func apply(_ a: Appearance, to t: VTTerminal) {

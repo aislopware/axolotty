@@ -147,4 +147,41 @@ struct CorpusRelations {
         mirror.write("\u{1b}[c\u{1b}[6n")
         #expect(!heard)
     }
+
+    private func answer(_ query: String, setup: (VTTerminal) -> Void = { _ in }) throws -> String {
+        let box = Box()
+        let t = try VTTerminal(cols: 80, rows: 24, replies: true)
+        setup(t)
+        t.onReply = { box.bytes += $0 }
+        t.write(query)
+        return String(decoding: box.bytes, as: UTF8.self)
+    }
+
+    @Test("device attributes say VT220-level with colour and clipboard, like Ghostty")
+    func deviceAttributes() throws {
+        #expect(try answer("\u{1b}[c") == "\u{1b}[?62;22;52c")
+        #expect(try answer("\u{1b}[>c") == "\u{1b}[>1;10;0c")
+    }
+
+    @Test("XTVERSION names Axolotty and its version")
+    func xtversion() throws {
+        #expect(try answer("\u{1b}[>q") { $0.setVersion("0.1.0") } == "\u{1b}P>|Axolotty 0.1.0\u{1b}\\")
+    }
+
+    @Test("size reports use the size driver's cells")
+    func sizeReports() throws {
+        #expect(try answer("\u{1b}[18t") == "\u{1b}[8;24;80t")
+        #expect(try answer("\u{1b}[16t") { $0.setCellSize(width: 16, height: 34) } == "\u{1b}[6;34;16t")
+    }
+
+    @Test("the colour scheme answers, and a program that asked hears it change")
+    func colourScheme() throws {
+        #expect(try answer("\u{1b}[?996n") == "\u{1b}[?997;1n")
+        #expect(try answer("\u{1b}[?996n") { _ = $0.setColorScheme(dark: false) } == "\u{1b}[?997;2n")
+        let t = try VTTerminal(cols: 80, rows: 24, replies: true)
+        #expect(t.setColorScheme(dark: false) == nil)  // nobody asked
+        t.write("\u{1b}[?2031h")
+        #expect(t.setColorScheme(dark: true).map { String(decoding: $0, as: UTF8.self) } == "\u{1b}[?997;1n")
+        #expect(t.setColorScheme(dark: true) == nil)  // no change, no report
+    }
 }

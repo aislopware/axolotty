@@ -137,6 +137,7 @@ public final class VTTerminal {
                 EventSink.from(ud).reply?(UnsafeRawBufferPointer(start: data, count: len))
             }
             set(GHOSTTY_TERMINAL_OPT_WRITE_PTY, unsafeBitCast(writePty, to: UnsafeRawPointer.self))
+            installQueryAnswers()
         }
         let bell: GhosttyTerminalBellFn = { _, ud in EventSink.from(ud).events.append(.bell) }
         set(GHOSTTY_TERMINAL_OPT_BELL, unsafeBitCast(bell, to: UnsafeRawPointer.self))
@@ -224,6 +225,92 @@ public final class VTTerminal {
             EventSink.from(ud).events.append(.clipboardWrite(text))
         }
         set(GHOSTTY_TERMINAL_OPT_CLIPBOARD_WRITE, unsafeBitCast(clip, to: UnsafeRawPointer.self))
+    }
+
+    /// Answers for what programs ask the terminal (only the authoritative
+    /// terminal answers; a mirror stays silent):
+    /// - DA1 `?62;22;52c` (VT220-level, ANSI colour, clipboard writes), DA2
+    ///   `>1;10;0c` (what Ghostty answers, so programs that sniff it treat
+    ///   us alike), DA3 unanswered;
+    /// - XTVERSION "Axolotty <version>"; XTGETTCAP TN "xterm-256color";
+    /// - XTWINOPS 14/16/18/19 t and mode 2048 from the size driver's cells;
+    /// - CSI ?996n from the appearance (mode 2031 reports go out on change).
+    private func installQueryAnswers() {
+        let set = { (opt: GhosttyTerminalOption, fn: UnsafeRawPointer?) in
+            _ = ghostty_terminal_set(self.handle, opt, fn)
+        }
+        let da: GhosttyTerminalDeviceAttributesFn = { _, ud, out in
+            guard let out else { return false }
+            let sink = EventSink.from(ud)
+            var a = GhosttyDeviceAttributes()
+            a.primary.conformance_level = 62
+            a.primary.features.0 = 22
+            a.primary.num_features = 1
+            if sink.clipboardWrites {
+                a.primary.features.1 = 52
+                a.primary.num_features = 2
+            }
+            a.secondary.device_type = 1
+            a.secondary.firmware_version = 10
+            a.secondary.rom_cartridge = 0
+            a.tertiary.unit_id = 0
+            out.pointee = a
+            return true
+        }
+        set(GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES, unsafeBitCast(da, to: UnsafeRawPointer.self))
+
+        let version: GhosttyTerminalXtversionFn = { _, ud in
+            let sink = EventSink.from(ud)
+            return sink.version.withUnsafeBufferPointer { GhosttyString(ptr: $0.baseAddress, len: $0.count) }
+        }
+        set(GHOSTTY_TERMINAL_OPT_XTVERSION, unsafeBitCast(version, to: UnsafeRawPointer.self))
+
+        let size: GhosttyTerminalSizeFn = { term, ud, out in
+            guard let out else { return false }
+            let sink = EventSink.from(ud)
+            var c: UInt16 = 0, r: UInt16 = 0
+            _ = ghostty_terminal_get(term, GHOSTTY_TERMINAL_DATA_COLS, &c)
+            _ = ghostty_terminal_get(term, GHOSTTY_TERMINAL_DATA_ROWS, &r)
+            out.pointee = GhosttySizeReportSize(rows: r, columns: c, cell_width: max(1, sink.cellWidth),
+                                                cell_height: max(1, sink.cellHeight))
+            return true
+        }
+        set(GHOSTTY_TERMINAL_OPT_SIZE, unsafeBitCast(size, to: UnsafeRawPointer.self))
+
+        let scheme: GhosttyTerminalColorSchemeFn = { _, ud, out in
+            guard let out else { return false }
+            out.pointee = EventSink.from(ud).dark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+            return true
+        }
+        set(GHOSTTY_TERMINAL_OPT_COLOR_SCHEME, unsafeBitCast(scheme, to: UnsafeRawPointer.self))
+
+        var name = Array("xterm-256color".utf8)
+        name.withUnsafeMutableBufferPointer { b in
+            var str = GhosttyString(ptr: b.baseAddress, len: b.count)
+            _ = ghostty_terminal_set(handle, GHOSTTY_TERMINAL_OPT_TERMINFO_NAME, &str)
+        }
+    }
+
+    /// What XTVERSION reports after "Axolotty ".
+    public func setVersion(_ v: String) { sink.version = Array("Axolotty \(v)".utf8) }
+
+    /// The size driver's cell, in pixels (for XTWINOPS and mode 2048).
+    public func setCellSize(width: UInt32, height: UInt32) {
+        sink.cellWidth = width
+        sink.cellHeight = height
+    }
+
+    /// Records the appearance; returns the report to send the program when it
+    /// asked to hear about changes (mode 2031) and the scheme flipped.
+    public func setColorScheme(dark: Bool) -> [UInt8]? {
+        let changed = sink.dark != dark
+        sink.dark = dark
+        guard changed, mode(2031) else { return nil }
+        var buf = [CChar](repeating: 0, count: 16)
+        var n = 0
+        guard ghostty_color_scheme_report_encode(dark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT,
+                                                 &buf, buf.count, &n) == GHOSTTY_SUCCESS else { return nil }
+        return buf.prefix(n).map { UInt8(bitPattern: $0) }
     }
 
     // MARK: - Feeding
@@ -395,6 +482,13 @@ func check(_ r: GhosttyResult) throws(VTError) {
 final class EventSink {
     var events: [VTEvent] = []
     var reply: ((UnsafeRawBufferPointer) -> Void)?
+    /// What XTVERSION answers ("Axolotty 0.1.0"), kept alive for the C side.
+    var version: [UInt8] = Array("Axolotty".utf8)
+    var dark = true
+    var cellWidth: UInt32 = 0
+    var cellHeight: UInt32 = 0
+    /// OSC 52 writes are honoured (DA1 then advertises 52).
+    var clipboardWrites = true
 
     static func from(_ ud: UnsafeMutableRawPointer?) -> EventSink {
         Unmanaged<EventSink>.fromOpaque(ud!).takeUnretainedValue()
