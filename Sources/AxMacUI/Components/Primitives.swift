@@ -194,8 +194,9 @@ final class SearchField: NSTextField {
     }
 }
 
-/// A status chip: glyph + short text in a capsule (`◜ Claude · 2m`). Tinted
-/// for states that need attention, neutral otherwise.
+/// A status chip: glyph + short text in a capsule (`◜ Claude · 2m`). The
+/// plate is always neutral and the glyph carries the state: yellow or red
+/// washed over this dark frame comes out olive or brown, never as the colour.
 final class Chip: NSView {
     private let glyph = StatusGlyphView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
     private let label = Label("", font: Axo.Font.captionStrong, color: Axo.Color.text)
@@ -249,11 +250,10 @@ final class Chip: NSView {
     override func updateLayer() { restyle() }
 
     private func restyle() {
-        let attention = activity == .blocked || activity == .error
-        plate.rest = attention ? Axo.Color.statusWash(activity) : Axo.Color.hover
-        plate.hover = attention ? Axo.Color.status(activity).withAlphaComponent(0.24) : Axo.Color.selected
-        plate.pressed = attention ? Axo.Color.status(activity).withAlphaComponent(0.30) : Axo.Color.pressed
-        label.textColor = attention ? Axo.Color.status(activity) : Axo.Color.text
+        plate.rest = Axo.Color.hover
+        plate.hover = Axo.Color.selected
+        plate.pressed = Axo.Color.pressed
+        label.textColor = Axo.Color.text
         plate.refresh(effectiveAppearance)
     }
 

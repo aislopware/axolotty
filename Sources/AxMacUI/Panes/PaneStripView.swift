@@ -13,9 +13,10 @@ import AxModel
 /// - Trailing: elapsed m:ss while working; zoom and close on hover only.
 /// - Focus is ink, not a border: the focused strip's name is full ink, the
 ///   others tertiary.
-/// - Needs you: the strip floods with the state's wash and the name becomes
-///   the agent's own question. Area, not a stroke (it replaces the 1.5 pt
-///   inner line panes used to carry).
+/// - Needs you: a 2 pt line of the state's colour runs along the sheet's top
+///   edge (the sheet's corners curve it), and the name becomes the agent's
+///   own question in full ink. A wash of yellow or red over the dark sheet
+///   came out olive or brown, never as the colour itself.
 ///
 /// No rule under it: the terminal's rows start 6 pt below.
 final class PaneStripView: NSView {
@@ -27,7 +28,7 @@ final class PaneStripView: NSView {
     private let elapsed = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     private let zoom = IconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "Zoom Pane", size: .small)
     private let close = IconButton(symbol: "xmark", label: "Close Pane", size: .small)
-    private let wash = CALayer()
+    private let line = CALayer()
     var onZoom: (() -> Void)?
     var onClose: (() -> Void)?
     var onActivate: (() -> Void)?
@@ -49,8 +50,8 @@ final class PaneStripView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        wash.actions = ["bounds": NSNull(), "position": NSNull()]
-        layer?.addSublayer(wash)
+        line.actions = ["bounds": NSNull(), "position": NSNull()]
+        layer?.addSublayer(line)
         name.lineBreakMode = .byTruncatingTail
         path.lineBreakMode = .byTruncatingMiddle
         zoom.target = self
@@ -91,18 +92,18 @@ final class PaneStripView: NSView {
 
     func update(_ m: Model) {
         guard m != model else { return tickElapsed() }
-        let washChanged = model.map { needsYou($0) != needsYou(m) || $0.activity != m.activity } ?? true
+        let lineChanged = model.map { needsYou($0) != needsYou(m) || $0.activity != m.activity } ?? true
         model = m
         icon.identity = m.identity
         icon.activity = m.activity
         icon.lit = m.focused
         path.stringValue = m.path
         restyle()
-        if washChanged, needsYou(m), !Axo.Motion.reduced {
+        if lineChanged, needsYou(m), !Axo.Motion.reduced {
             let a = Axo.Motion.swift.animation("opacity")
             a.fromValue = 0
             a.toValue = 1
-            wash.add(a, forKey: "in")
+            line.add(a, forKey: "in")
         }
         tickElapsed()
         needsLayout = true
@@ -135,14 +136,14 @@ final class PaneStripView: NSView {
         zoom.isHidden = !hovering
         close.isHidden = !hovering
         Axo.Motion.still {
-            wash.isHidden = !urgent
-            if urgent { wash.backgroundColor = effectiveAppearance.resolve(Axo.Color.statusWash(m.activity)) }
+            line.isHidden = !urgent
+            if urgent { line.backgroundColor = effectiveAppearance.resolve(Axo.Color.status(m.activity)) }
         }
     }
 
     override func layout() {
         super.layout()
-        Axo.Motion.still { wash.frame = bounds }
+        Axo.Motion.still { line.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 2) }
         let mid = bounds.height / 2
         var right = bounds.width - 8
         let c = Axo.Metric.controlSmall
