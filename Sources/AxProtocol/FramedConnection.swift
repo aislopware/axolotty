@@ -14,7 +14,7 @@ import Synchronization
 ///   its own lane, so a pane pouring out a build log never holds back the
 ///   echo of a key typed into another (Slopty got the same from a QUIC
 ///   stream per session). Order holds within a lane, never across lanes.
-public final class FramedConnection: @unchecked Sendable {
+public final class FramedConnection: FrameLink, @unchecked Sendable {
     public let fd: Int32
     public let queue: DispatchQueue
     private let readSource: any DispatchSourceRead
@@ -74,7 +74,7 @@ public final class FramedConnection: @unchecked Sendable {
         readSource.resume()
     }
 
-    public func send(_ data: Data, lane: Int = 0) {
+    public func send(_ data: Data, lane: Int, priority _: Int32) {
         guard !data.isEmpty else { return }
         let kick = out.withLock { o -> Bool in
             guard !o.closed else { return false }
@@ -86,17 +86,7 @@ public final class FramedConnection: @unchecked Sendable {
         if kick { queue.async { [weak self] in self?.flush() } }
     }
 
-    public func send(_ frame: Frame, lane: Int = 0) { send(Wire.encode(frame), lane: lane) }
-
-    public func send(_ message: HostMessage, lane: Int = 0) {
-        if let d = try? MessageCodec.frame(message) { send(d, lane: lane) }
-    }
-
-    public func send(_ message: ClientMessage, lane: Int = 0) {
-        if let d = try? MessageCodec.frame(message) { send(d, lane: lane) }
-    }
-
-    public func close(_ error: (any Error)? = nil) {
+    public func close(_ error: (any Error)?) {
         guard !closedFlag.exchange(true, ordering: .acquiringAndReleasing) else { return }
         out.withLock { o in
             o.closed = true

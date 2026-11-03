@@ -38,6 +38,8 @@ let package = Package(
     targets: [
         // MARK: Native
         .binaryTarget(name: "GhosttyVT", path: "Vendor/GhosttyVT.xcframework"),
+        // Plaintext QUIC over the tailnet (Rust/axquic, built by scripts/build-axquic.sh).
+        .binaryTarget(name: "AxQuic", path: "Vendor/AxQuic.xcframework"),
         .target(name: "AxSys", cSettings: cStrict),  // macOS: pty spawn, libproc
         .target(name: "AxText", cSettings: cStrict),  // portable byte scanning
         .target(name: "AxFrame", dependencies: ["GhosttyVT"], cSettings: cStrict),  // render hot path
@@ -45,7 +47,8 @@ let package = Package(
         // MARK: Portable core (macOS + iOS, no AppKit/UIKit)
         .target(name: "AxModel", swiftSettings: strict),
         .target(name: "AxVT", dependencies: ["GhosttyVT"], swiftSettings: strict),
-        .target(name: "AxProtocol", dependencies: ["AxModel"], swiftSettings: strict),
+        .target(name: "AxProtocol", dependencies: ["AxModel", .target(name: "AxQuic", condition: macOnly)],
+                swiftSettings: strict),
         .target(name: "AxClient", dependencies: ["AxModel", "AxProtocol", "AxVT"], swiftSettings: strict),
         .target(name: "AxRender", dependencies: ["AxVT", "AxFrame", "AxModel", "GhosttyVT"], swiftSettings: strict),
 

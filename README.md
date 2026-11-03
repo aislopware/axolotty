@@ -47,7 +47,7 @@ axolotty mcp                                 # the same, as MCP tools over stdio
 
 ## Build
 
-Requirements: macOS 26 or later and the Swift toolchain named in `Package.swift`. `Vendor/GhosttyVT.xcframework` comes from `scripts/build-ghostty-vt.sh`, which needs Zig, and only has to run when the pinned commit changes.
+Requirements: macOS 26 or later and the Swift toolchain named in `Package.swift`. `Vendor/GhosttyVT.xcframework` comes from `scripts/build-ghostty-vt.sh`, which needs Zig, and only has to run when the pinned commit changes. `Vendor/AxQuic.xcframework`, the QUIC link, comes from `scripts/build-axquic.sh`, which needs Rust (rustup) and rebuilds only when `Rust/axquic` changes.
 
 ```
 swift build                                  # everything, debug
@@ -61,5 +61,8 @@ Set `SIGN_IDENTITY` to sign `dist/Axolotty.app` with a Developer ID instead. The
 Design notes live in `.research/design-system.md`.
 
 ## Third-party
+
+The QUIC link (`Rust/axquic`) runs n0's noq with Slopty's patches (`Rust/axquic/vendor/*/SLOPTY.md`) under MIT or Apache-2.0, and ports Slopty's null crypto provider and transport tuning (MIT).
+
 
 Geist Mono © 2023 Vercel, patched by Nerd Fonts v3.5.1, under the SIL Open Font License 1.1: `Sources/AxMacUI/Resources/Fonts/LICENSE-GeistMono.txt`, with the icon sets' licences in `README-NerdFonts.md` beside it.

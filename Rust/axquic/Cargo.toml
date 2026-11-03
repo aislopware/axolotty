@@ -1,0 +1,35 @@
+[package]
+name = "axquic"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Axolotty's link: plaintext QUIC over a tailnet, behind a C ABI for Swift"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+bytes = "1.12.1"
+libc = "0.2.191"
+noq = { version = "~1.4.0", default-features = false, features = ["runtime-tokio"] }
+noq-proto = { version = "1.4.0", default-features = false }
+socket2 = "0.6.5"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+debug = 0
+
+# The QUIC stack is n0's noq with Slopty's patches (vendor/*/SLOPTY.md lists them): streams
+# ahead of datagrams, an unpaced echo priority, BBR3 fixes, ACKs bundled into packets that leave
+# anyway. Taken from Slopty as it stood on 2026-11-03 (MIT).
+[patch.crates-io]
+noq-proto = { path = "vendor/noq-proto" }
+noq-udp = { path = "vendor/noq-udp" }
+
+# Its own workspace root, so cargo never looks for an enclosing one.
+[workspace]

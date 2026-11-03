@@ -14,3 +14,5 @@ dist/
 # The Impeccable launcher downloads its binary on first run.
 .claude/skills/impeccable/scripts/bin/
 .research/snapshots/
+Vendor/AxQuic.xcframework/
+Rust/axquic/target/
