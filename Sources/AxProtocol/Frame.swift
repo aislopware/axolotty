@@ -140,7 +140,9 @@ public enum WireError: Error, Equatable, Sendable {
 
 /// Incremental frame decoder: feed arbitrary chunks, take whole frames.
 public struct FrameDecoder: Sendable {
-    private var buffer = Data()
+    /// An array, not `Data`: emptying `Data` keeping its capacity still reallocates it, twice
+    /// a frame (`AllocationBudgetTests`).
+    private var buffer: [UInt8] = []
     private var start = 0
     public let limit: Int
 
@@ -156,9 +158,9 @@ public struct FrameDecoder: Sendable {
         guard len >= 2, len <= limit else { throw .frameTooLarge(len) }
         guard available >= 4 + len else { return nil }
         let body = start + 4
-        let typeByte = buffer[buffer.startIndex + body]
-        let flags = FrameFlags(rawValue: buffer[buffer.startIndex + body + 1])
-        let payload = (buffer.startIndex + body + 2) ..< (buffer.startIndex + body + len)
+        let typeByte = buffer[body]
+        let flags = FrameFlags(rawValue: buffer[body + 1])
+        let payload = (body + 2) ..< (body + len)
         start += 4 + len
         defer { compact() }
         guard let type = FrameType(rawValue: typeByte) else { throw .unknownType(typeByte) }
@@ -167,9 +169,9 @@ public struct FrameDecoder: Sendable {
             return .control(Data(buffer[payload]))
         case .output, .snapshot, .ack, .open, .stream, .streamAck, .reset:
             guard payload.count >= 24 else { throw .malformed("short data frame") }
-            let id = readID(at: payload.lowerBound - buffer.startIndex)
+            let id = readID(at: payload.lowerBound)
             let pane = PaneID(raw: id)
-            let offset = readLE(UInt64.self, at: payload.lowerBound - buffer.startIndex + 16)
+            let offset = readLE(UInt64.self, at: payload.lowerBound + 16)
             let bytes = Data(buffer[(payload.lowerBound + 24) ..< payload.upperBound])
             switch type {
             case .output: return .output(pane: pane, offset: offset, bytes: bytes)
@@ -194,7 +196,7 @@ public struct FrameDecoder: Sendable {
             buffer.removeAll(keepingCapacity: true)
             start = 0
         } else if start > 64 << 10, start > buffer.count / 2 {
-            buffer.removeSubrange(buffer.startIndex ..< buffer.startIndex + start)
+            buffer.removeSubrange(0 ..< start)
             start = 0
         }
     }
@@ -202,13 +204,13 @@ public struct FrameDecoder: Sendable {
     /// A bounds-checked load from the buffer's span (macOS 27's byte-order load): no pointer,
     /// no copy, and a bad offset traps instead of reading past the frame.
     private func readLE<T: FixedWidthInteger & ConvertibleFromBytes>(_: T.Type, at offset: Int) -> T {
-        buffer.bytes.load(fromByteOffset: offset, as: T.self, .littleEndian)
+        buffer.span.bytes.load(fromByteOffset: offset, as: T.self, .littleEndian)
     }
 
     private func readID(at offset: Int) -> UUID {
         var u = UUID().uuid
-        _ = withUnsafeMutableBytes(of: &u) { dst in
-            buffer.copyBytes(to: dst, from: (buffer.startIndex + offset) ..< (buffer.startIndex + offset + 16))
+        withUnsafeMutableBytes(of: &u) { dst in
+            dst.copyBytes(from: buffer[offset ..< offset + 16])
         }
         return UUID(uuid: u)
     }
