@@ -30,7 +30,7 @@ struct EchoBench {
                 let c = HostConnection(endpoint: endpoint, hello: ClientHello(client: ClientID(), name: "bench"))
                 try await c.connect(reconnect: false)
                 let r = try await Self.run(c, loaded: loaded)
-                print("ECHO \(name)\(loaded ? " +flood" : ""): \(r)")
+                print("ECHO \(name) \(c.transport ?? "local")\(loaded ? " +flood" : ""): \(r)")
                 c.disconnect()
             }
         }
