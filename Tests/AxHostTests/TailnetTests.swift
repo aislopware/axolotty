@@ -104,6 +104,7 @@ struct TailnetTests {
             if !connected { try await Task.sleep(for: .milliseconds(100)) }
         }
         #expect(connected)
+        #expect(c.transport == "QUIC", "the host answers QUIC, so the link is QUIC")
         let (_, _, p) = try await makeSession(c)
         let m = c.attach(p)
         c.send(.text(p, "echo over-the-tailnet\n"))
@@ -147,6 +148,7 @@ struct TailnetTests {
         defer { close(open) }
         let dial = Task { try? await c.connect(reconnect: false) }
         #expect(await until { said.withLock { $0 } == [true, false] })
+        #expect(c.transport == "TCP", "a host without QUIC is reached over TCP")
         c.disconnect()
         dial.cancel()
     }

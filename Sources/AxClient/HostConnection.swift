@@ -77,7 +77,7 @@ public final class HostConnection: @unchecked Sendable {
     private var hello: ClientHello
 
     private struct State {
-        var conn: FramedConnection?
+        var conn: any FrameLink?
         var replica: HostState?
         var epoch: UUID?
         var mirrors: [PaneID: MirrorTerminal] = [:]
@@ -168,6 +168,17 @@ public final class HostConnection: @unchecked Sendable {
     /// The last heartbeat's round trip (remote links).
     public var rtt: Duration? { state.withLock { $0.rtt } }
 
+    /// What the link runs over now: "QUIC", "TCP", or nil for a local socket, a command, or no link.
+    public var transport: String? {
+        state.withLock { s in
+            #if os(macOS)
+            if s.conn is QuicLink { return "QUIC" }
+            #endif
+            if case .tcp = endpoint, s.conn != nil { return "TCP" }
+            return nil
+        }
+    }
+
     /// Whether the open remote link is alive, quiet (a ping went
     /// unanswered) or dead; nil with no link or on a local one.
     public var linkState: LinkLiveness.State? {
@@ -185,7 +196,7 @@ public final class HostConnection: @unchecked Sendable {
     }
 
     public func disconnect() {
-        let (conn, forwards) = state.withLock { s -> (FramedConnection?, [Forward]) in
+        let (conn, forwards) = state.withLock { s -> (any FrameLink?, [Forward]) in
             s.wantConnected = false
             defer { s.forwards = [:] }
             return (s.conn, Array(s.forwards.values))
@@ -284,26 +295,123 @@ public final class HostConnection: @unchecked Sendable {
         return try await dial.value
     }
 
+    /// The link to a tailnet host over QUIC (`QuicLink`), or nil when the host doesn't answer
+    /// it (a host from before QUIC, or UDP blocked on the way).
+    /// `AXOLOTTY_TRANSPORT=tcp` skips QUIC, to measure against it.
+    static func dialQuic(host: String, port: UInt16) async -> (any FrameLink)? {
+        #if os(macOS)
+        guard ProcessInfo.processInfo.environment["AXOLOTTY_TRANSPORT"] != "tcp", let endpoint = quicEndpoint else { return nil }
+        // A tailnet round trip is milliseconds; a host silent for a second has no QUIC listener.
+        return try? await endpoint.connect(host: host, port: port, timeout: .seconds(1))
+        #else
+        return nil
+        #endif
+    }
+
+    /// The process's one client socket for every QUIC link (QUIC tells links apart by
+    /// connection ID, and one socket keeps one NAT binding).
+    #if os(macOS)
+    private static let quicEndpoint: QuicEndpoint? = try? QuicEndpoint(address: "::", port: 0, server: false)
+    #endif
+
+    /// One leg of a tailnet dial, as it comes back.
+    private enum Leg: Sendable {
+        case quic((any FrameLink)?)
+        case tcp(Result<Int32, POSIXError>, took: Duration)
+        case grace
+    }
+
+    /// QUIC and TCP dialled at once, QUIC taken when it answers. A host from before QUIC (or a
+    /// path that drops UDP) costs a couple of TCP connect times, never a fixed wait; a refused
+    /// TCP port is said at once, since a host listens on both or neither.
+    private func dialTailnet(host: String, port: UInt16) async throws -> any FrameLink {
+        let (legs, k) = AsyncStream<Leg>.makeStream()
+        Task { k.yield(.quic(await Self.dialQuic(host: host, port: port))) }
+        Task.detached {
+            let t0 = ContinuousClock.now
+            let r: Result<Int32, POSIXError>
+            do { r = .success(try TCPSocket.connect(host: host, port: port, timeout: 6)) } catch {
+                r = .failure(error as? POSIXError ?? POSIXError(.EHOSTUNREACH))
+            }
+            k.yield(.tcp(r, took: .now - t0))
+        }
+        let outcome = await withCheckedContinuation { (done: CheckedContinuation<Result<any FrameLink, POSIXError>, Never>) in
+            Task {
+                var done = Optional(done)
+                var quic: (any FrameLink)??  // nil until it is back; .some(nil) when it failed
+                var tcp: Result<Int32, POSIXError>?
+                var graceOver = false
+                var taken: (any FrameLink)?
+                var quicSettled = false, tcpSettled = false
+                for await leg in legs {
+                    switch leg {
+                    case let .quic(link): quic = .some(link)
+                    case let .tcp(r, took):
+                        tcp = r
+                        if case .success = r, quic == nil {
+                            // QUIC's handshake is a round trip, as TCP's is: it gets twice that.
+                            let grace = min(max(took * 2, .milliseconds(30)), .milliseconds(500))
+                            Task { try? await Task.sleep(for: grace); k.yield(.grace) }
+                        }
+                    case .grace: graceOver = true
+                    }
+                    if let d = done {
+                        var pick: Result<any FrameLink, POSIXError>?
+                        if case let .some(.some(link)) = quic {
+                            pick = .success(link)
+                        } else if case let .failure(e)? = tcp, e.code == .ECONNREFUSED || quic != nil {
+                            pick = .failure(e)
+                        } else if case let .success(fd)? = tcp, quic != nil || graceOver {
+                            pick = .success(Self.tcpLink(fd))
+                        }
+                        if let pick {
+                            if case let .success(link) = pick { taken = link }
+                            d.resume(returning: pick)
+                            done = nil
+                        }
+                    }
+                    // Once one is taken, the other leg's link or socket is closed as it comes.
+                    if done == nil {
+                        if !quicSettled, let q = quic {
+                            quicSettled = true
+                            if let q, q !== taken { q.close() }
+                        }
+                        if !tcpSettled, let t = tcp {
+                            tcpSettled = true
+                            if case let .success(fd) = t, (taken as? FramedConnection)?.fd != fd { Darwin.close(fd) }
+                        }
+                    }
+                    if quic != nil, tcp != nil, done == nil { k.finish() }
+                }
+            }
+        }
+        switch outcome {
+        case let .success(link):
+            notePort(closed: false)
+            return link
+        case let .failure(e):
+            notePort(closed: e.code == .ECONNREFUSED)
+            throw ConnectionError.refused("\(e)")
+        }
+    }
+
+    private static func tcpLink(_ fd: Int32) -> any FrameLink {
+        let tcp = FramedConnection(fd: fd, label: "host")
+        // A file going to the host fills every buffer on the path unless paced; keys and pings
+        // (lane 0) are never held.
+        tcp.pace()
+        return tcp
+    }
+
     private func dialOnce() async throws -> HostHello {
-        let conn: FramedConnection
+        let conn: any FrameLink
         switch endpoint {
         case let .unix(path):
             do { conn = FramedConnection(fd: try UnixSocket.connect(path: path), label: "host") } catch {
                 throw ConnectionError.refused("\(error)")
             }
         case let .tcp(host, port):
-            let fd: Int32
-            do {
-                fd = try await Task.detached { try TCPSocket.connect(host: host, port: port, timeout: 6) }.value
-            } catch {
-                notePort(closed: (error as? POSIXError)?.code == .ECONNREFUSED)
-                throw ConnectionError.refused("\(error)")
-            }
-            notePort(closed: false)
-            conn = FramedConnection(fd: fd, label: "host")
-            // A file going to the host fills every buffer on the path unless
-            // paced; keys and pings (lane 0) are never held.
-            conn.pace()
+            conn = try await dialTailnet(host: host, port: port)
         case let .command(argv, _):
             #if os(macOS)
             let child: CommandChild
@@ -341,7 +449,7 @@ public final class HostConnection: @unchecked Sendable {
         }
     }
 
-    private func closed(_ conn: FramedConnection, _ error: (any Error)?) {
+    private func closed(_ conn: any FrameLink, _ error: (any Error)?) {
         var taken = State()
         let mine = state.withLock { s -> Bool in
             guard s.conn === conn else { return false }
@@ -438,7 +546,7 @@ public final class HostConnection: @unchecked Sendable {
     public func kick() {
         let t = now
         let n = UInt64.random(in: 1 ..< 1 << 63)  // below the liveness pings' range
-        let (conn, asked, shaking, idle) = state.withLock { s -> (FramedConnection?, Bool, Bool, Bool) in
+        let (conn, asked, shaking, idle) = state.withLock { s -> (any FrameLink?, Bool, Bool, Bool) in
             s.redials = 0
             s.downSince = nil
             let shaking = s.welcome != nil && s.dialedAt.map { t - $0 >= timing.beat } ?? false
@@ -468,7 +576,7 @@ public final class HostConnection: @unchecked Sendable {
     /// Drives `LinkLiveness`: sleeps until it next has something to say,
     /// sends the pings it asks for, and closes the link (to be redialled)
     /// when it calls it dead.
-    private func startHeartbeat(_ conn: FramedConnection) {
+    private func startHeartbeat(_ conn: any FrameLink) {
         let (epoch, timing) = (epoch, timing)
         let task = Task { [weak self, weak conn] in
             while !Task.isCancelled {
@@ -532,7 +640,7 @@ public final class HostConnection: @unchecked Sendable {
 
     // MARK: Receiving (connection queue)
 
-    private func receive(_ frame: Frame, on conn: FramedConnection) {
+    private func receive(_ frame: Frame, on conn: any FrameLink) {
         let t = now
         let tunnels = state.withLock { s in
             s.liveness?.heard(at: t)
@@ -559,7 +667,7 @@ public final class HostConnection: @unchecked Sendable {
         }
     }
 
-    private func handle(_ msg: HostMessage, on conn: FramedConnection) {
+    private func handle(_ msg: HostMessage, on conn: any FrameLink) {
         switch msg {
         case let .welcome(h):
             let (c, mirrors, appearance) = state.withLock { s in
@@ -626,7 +734,7 @@ public final class HostConnection: @unchecked Sendable {
     }
 
     /// Acks after applying: at least every 32 KiB, otherwise within 50 ms.
-    private func noteApplied(_ pane: PaneID, _ n: Int, conn: FramedConnection) {
+    private func noteApplied(_ pane: PaneID, _ n: Int, conn: any FrameLink) {
         let (flushNow, schedule) = state.withLock { s -> (Bool, Bool) in
             s.unacked[pane, default: 0] += UInt64(n)
             if s.unacked[pane, default: 0] >= 32 << 10 { return (true, false) }
@@ -638,7 +746,7 @@ public final class HostConnection: @unchecked Sendable {
         if schedule { conn.queue.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in self?.flushAcks(conn) } }
     }
 
-    private func flushAcks(_ conn: FramedConnection) {
+    private func flushAcks(_ conn: any FrameLink) {
         let mirrors = state.withLock { s -> [MirrorTerminal] in
             defer {
                 s.unacked = [:]
@@ -659,7 +767,7 @@ public final class HostConnection: @unchecked Sendable {
     public func perform(_ intent: Intent) async throws(ConnectionError) {
         let token = UUID()
         let result: Result<Void, ConnectionError> = await withCheckedContinuation { c in
-            let conn = state.withLock { s -> FramedConnection? in
+            let conn = state.withLock { s -> any FrameLink? in
                 guard let conn = s.conn else { return nil }
                 s.intents[token] = c
                 return conn
@@ -672,7 +780,7 @@ public final class HostConnection: @unchecked Sendable {
     public func capture(_ pane: PaneID, scrollback: Bool = false) async -> String? {
         let token = UUID()
         return await withCheckedContinuation { c in
-            let conn = state.withLock { s -> FramedConnection? in
+            let conn = state.withLock { s -> any FrameLink? in
                 guard let conn = s.conn else { return nil }
                 s.captures[token] = c
                 return conn
@@ -690,7 +798,7 @@ public final class HostConnection: @unchecked Sendable {
     public func git(_ path: String) async -> GitReport? {
         let token = UUID()
         return await withCheckedContinuation { c in
-            let conn = state.withLock { s -> FramedConnection? in
+            let conn = state.withLock { s -> any FrameLink? in
                 guard let conn = s.conn, s.welcome == nil, s.hostFeatures.contains("git") else { return nil }
                 s.gits[token] = c
                 return conn
@@ -704,7 +812,7 @@ public final class HostConnection: @unchecked Sendable {
     public func paths(_ candidates: [String], cwd: String) async -> [HostPath?]? {
         let token = UUID()
         return await withCheckedContinuation { c in
-            let conn = state.withLock { s -> FramedConnection? in
+            let conn = state.withLock { s -> any FrameLink? in
                 guard let conn = s.conn, s.welcome == nil, s.hostFeatures.contains("paths") else { return nil }
                 s.finds[token] = c
                 return conn
@@ -757,7 +865,7 @@ public final class HostConnection: @unchecked Sendable {
     private func send(name: String, size: UInt64, pieces: Pieces, progress: @escaping @Sendable (Double) -> Void) async -> String? {
         let token = UUID()
         let lane = FramedConnection.lane(token)
-        let conn = state.withLock { s -> FramedConnection? in
+        let conn = state.withLock { s -> any FrameLink? in
             guard let conn = s.conn, s.welcome == nil, s.hostFeatures.contains("files") else { return nil }
             return conn
         }
@@ -801,7 +909,7 @@ public final class HostConnection: @unchecked Sendable {
     public func ping() async {
         let n = UInt64.random(in: 1 ... .max)
         await withCheckedContinuation { c in
-            let conn = state.withLock { s -> FramedConnection? in
+            let conn = state.withLock { s -> any FrameLink? in
                 guard let conn = s.conn else { return nil }
                 s.pongs[n] = c
                 return conn
@@ -824,7 +932,7 @@ public final class HostConnection: @unchecked Sendable {
     /// Starts mirroring `pane` (idempotent).
     @discardableResult
     public func attach(_ pane: PaneID) -> MirrorTerminal {
-        let (m, isNew, conn) = state.withLock { s -> (MirrorTerminal, Bool, FramedConnection?) in
+        let (m, isNew, conn) = state.withLock { s -> (MirrorTerminal, Bool, any FrameLink?) in
             if let m = s.mirrors[pane] { return (m, false, s.conn) }
             let m = MirrorTerminal(pane: pane, appearance: s.appearance)
             s.mirrors[pane] = m
@@ -835,7 +943,7 @@ public final class HostConnection: @unchecked Sendable {
     }
 
     public func detach(_ pane: PaneID) {
-        let conn = state.withLock { s -> FramedConnection? in
+        let conn = state.withLock { s -> any FrameLink? in
             s.mirrors[pane] = nil
             return s.conn
         }

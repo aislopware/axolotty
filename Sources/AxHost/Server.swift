@@ -79,6 +79,8 @@ public actor Server {
     private var acceptSource: (any DispatchSourceRead)?
     /// One listener per tailnet address, kept in step with the interfaces.
     private var tailnetSources: [String: any DispatchSourceRead] = [:]
+    /// The QUIC listener on each tailnet address (UDP, the same port as TCP's).
+    private var tailnetQuic: [String: QuicEndpoint] = [:]
     private var lockFD: Int32 = -1
     private var saveTask: Task<Void, Never>?
     private var drops: Drops
@@ -96,7 +98,7 @@ public actor Server {
     var agentsAgain = false
 
     enum Inbound: Sendable {
-        case accepted(FramedConnection)
+        case accepted(any FrameLink)
         case frame(ObjectIdentifier, Frame)
         case closed(ObjectIdentifier)
         case exited(PaneID, ChildStatus)
@@ -105,10 +107,10 @@ public actor Server {
 
     /// Actor-confined per-connection state.
     final class Link {
-        let conn: FramedConnection
+        let conn: any FrameLink
         var hello: ClientHello?
         var attached: Set<PaneID> = []
-        init(conn: FramedConnection) { self.conn = conn }
+        init(conn: any FrameLink) { self.conn = conn }
         var subscribed: Bool { hello?.subscribe ?? false }
     }
 
@@ -198,6 +200,8 @@ public actor Server {
         acceptSource = nil
         for src in tailnetSources.values { src.cancel() }
         tailnetSources.removeAll()
+        for q in tailnetQuic.values { q.close() }
+        tailnetQuic.removeAll()
         if listenFD >= 0 { unlink(config.paths.hostSocket.path(percentEncoded: false)) }
         for link in links.values { link.conn.close() }
         links.removeAll()
@@ -332,7 +336,7 @@ public actor Server {
         src.resume()
     }
 
-    private nonisolated static func serve(_ conn: FramedConnection, sink: AsyncStream<Inbound>.Continuation) {
+    private nonisolated static func serve(_ conn: any FrameLink, sink: AsyncStream<Inbound>.Continuation) {
         sink.yield(.accepted(conn))
         let key = ObjectIdentifier(conn)
         // Tunnelled streams (feature "tunnel") go straight to their sockets,
@@ -352,11 +356,39 @@ public actor Server {
     /// Listens on every tailnet address this Mac has now and stops on the
     /// ones it lost. A caller is served only when Tailscale says it is the
     /// same person (`TailnetGate`); anyone else hears "denied".
+    /// Serves a tailnet caller Tailscale says is the same person; tells anyone else "denied".
+    private nonisolated static func admit(_ conn: any FrameLink, peer: String, gate: TailnetGate,
+                                          sink: AsyncStream<Inbound>.Continuation) {
+        if gate.admits(peer) {
+            serve(conn, sink: sink)
+        } else {
+            conn.start(onFrame: { _ in }, onClose: { _ in })
+            conn.send(HostMessage.error("denied"))
+            conn.queue.asyncAfter(deadline: .now() + .milliseconds(200)) { conn.close() }
+        }
+    }
+
     private func listenOnTailnet(port: UInt16) {
         let now = Set(Tailnet.localAddresses())
         for (address, src) in tailnetSources where !now.contains(address) {
             src.cancel()
             tailnetSources[address] = nil
+        }
+        for (address, q) in tailnetQuic where !now.contains(address) {
+            q.close()
+            tailnetQuic[address] = nil
+        }
+        // QUIC first for every client that speaks it (`QuicLink`); TCP beside it for older
+        // clients and paths that drop UDP.
+        for address in now where tailnetQuic[address] == nil {
+            guard let q = try? QuicEndpoint(address: address, port: port, server: true) else { continue }
+            let sink = inboundSink
+            let gate = config.tailnetGate
+            let admission = DispatchQueue(label: "axolotty.admission.quic", attributes: .concurrent)
+            q.listen { link, peer in
+                admission.async { Self.admit(link, peer: peer, gate: gate, sink: sink) }
+            }
+            tailnetQuic[address] = q
         }
         for address in now where tailnetSources[address] == nil {
             guard let fd = try? TCPSocket.listen(address: address, port: port) else { continue }
@@ -376,13 +408,7 @@ public actor Server {
                     admission.async {
                         let conn = FramedConnection(fd: c, label: "tailnet \(peer)")
                         conn.pace()
-                        if gate.admits(peer) {
-                            Server.serve(conn, sink: sink)
-                        } else {
-                            conn.start(onFrame: { _ in }, onClose: { _ in })
-                            conn.send(HostMessage.error("denied"))
-                            conn.queue.asyncAfter(deadline: .now() + .milliseconds(200)) { conn.close() }
-                        }
+                        Server.admit(conn, peer: peer, gate: gate, sink: sink)
                     }
                 }
             }

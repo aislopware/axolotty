@@ -64,10 +64,10 @@ final class PaneHost: @unchecked Sendable {
     private var readsSecret = false
 
     private final class Subscriber {
-        let conn: FramedConnection
+        let conn: any FrameLink
         var acked: UInt64
         var resyncing = false
-        init(conn: FramedConnection, at: UInt64) {
+        init(conn: any FrameLink, at: UInt64) {
             self.conn = conn
             acked = at
         }
@@ -257,7 +257,7 @@ final class PaneHost: @unchecked Sendable {
 
     /// Starts streaming to `conn`: a byte-exact resume from `have` when the
     /// journal still holds it, otherwise a snapshot at the head.
-    func attach(_ conn: FramedConnection, have: UInt64?) {
+    func attach(_ conn: any FrameLink, have: UInt64?) {
         queue.async { [self] in
             let head = ring.head
             if let have, have >= ring.tail, have <= head, let tail = ring.read(from: have) {
@@ -270,17 +270,17 @@ final class PaneHost: @unchecked Sendable {
         }
     }
 
-    func detach(_ conn: FramedConnection) {
+    func detach(_ conn: any FrameLink) {
         queue.async { [self] in subscribers[ObjectIdentifier(conn)] = nil }
     }
 
-    func ack(_ conn: FramedConnection, offset: UInt64) {
+    func ack(_ conn: any FrameLink, offset: UInt64) {
         queue.async { [self] in
             if let s = subscribers[ObjectIdentifier(conn)], offset > s.acked { s.acked = offset }
         }
     }
 
-    private func sendSnapshot(to conn: FramedConnection) {
+    private func sendSnapshot(to conn: any FrameLink) {
         let head = ring.head
         guard let snap = try? terminal.snapshot() else {
             conn.send(HostMessage.error("snapshot failed for \(id)"), lane: lane)

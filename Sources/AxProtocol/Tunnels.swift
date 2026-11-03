@@ -27,7 +27,7 @@ public final class Tunnels: @unchecked Sendable {
     /// otherwise dial the client's own listener, and that one again.
     public static let maxStreams = 128
 
-    private let conn: FramedConnection
+    private let conn: any FrameLink
     private let dial: (@Sendable (UInt16) -> Int32?)?
     private let queue = DispatchQueue(label: "axolotty.tunnels", qos: .userInitiated)
     private var streams: [UUID: Stream] = [:]
@@ -36,7 +36,7 @@ public final class Tunnels: @unchecked Sendable {
 
     /// `dial`: the host's side, which connects a stream to its port (nil
     /// when nothing listens there); the client's side passes nil.
-    public init(conn: FramedConnection, dial: (@Sendable (UInt16) -> Int32?)? = nil) {
+    public init(conn: any FrameLink, dial: (@Sendable (UInt16) -> Int32?)? = nil) {
         self.conn = conn
         self.dial = dial
     }

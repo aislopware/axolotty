@@ -6,7 +6,7 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
 
 ## What it does
 
-- **Your other Macs, as if they were this one.** Connect to Host (⇧⌘K) lists your Macs on the tailnet; Tailscale carries the link. A Mac without Axolotty is set up over ssh from here (Set Up Axolotty over SSH, which also updates an older one), with nothing to install by hand. A Mac that answers without Axolotty running is said "Not running", and its window offers that set-up rather than reconnecting for ever. On a far Mac:
+- **Your other Macs, as if they were this one.** Connect to Host (⇧⌘K) lists your Macs on the tailnet; Tailscale carries the link, and Axolotty speaks plaintext QUIC over it (Tailscale already encrypts), one stream per pane so a lost packet holds back only its own pane, falling back to TCP for a Mac from before QUIC or a path that drops UDP. A Mac without Axolotty is set up over ssh from here (Set Up Axolotty over SSH, which also updates an older one), with nothing to install by hand. A Mac that answers without Axolotty running is said "Not running", and its window offers that set-up rather than reconnecting for ever. On a far Mac:
   - keys show at once, before their echo: typing, ⌫, and ← → to fix a typo;
   - ⌘-click opens a path on that Mac in VS Code, Cursor or Windsurf over Remote-SSH;
   - a file dropped on its pane, or a screenshot pasted with ⌘V, goes to that Mac and its path there is pasted, so an agent there can read it;
