@@ -28,7 +28,7 @@ final class PaneStripView: NSView {
     private let elapsed = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     private let zoom = IconButton(symbol: "arrow.up.left.and.arrow.down.right", label: "Zoom Pane", size: .small)
     private let close = IconButton(symbol: "xmark", label: "Close Pane", size: .small)
-    private let line = CALayer()
+    private let line = CAShapeLayer()
     var onZoom: (() -> Void)?
     var onClose: (() -> Void)?
     var onActivate: (() -> Void)?
@@ -50,7 +50,10 @@ final class PaneStripView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        line.actions = ["bounds": NSNull(), "position": NSNull()]
+        line.actions = ["bounds": NSNull(), "position": NSNull(), "path": NSNull()]
+        line.fillColor = nil
+        line.lineWidth = 2
+        line.lineCap = .round
         layer?.addSublayer(line)
         name.lineBreakMode = .byTruncatingTail
         path.lineBreakMode = .byTruncatingMiddle
@@ -137,13 +140,25 @@ final class PaneStripView: NSView {
         close.isHidden = !hovering
         Axo.Motion.still {
             line.isHidden = !urgent
-            if urgent { line.backgroundColor = effectiveAppearance.resolve(Axo.Color.status(m.activity)) }
+            if urgent { line.strokeColor = effectiveAppearance.resolve(Axo.Color.status(m.activity)) }
         }
     }
 
     override func layout() {
         super.layout()
-        Axo.Motion.still { line.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 2) }
+        Axo.Motion.still {
+            // The sheet's top edge, corners and all: in by half the stroke,
+            // down each corner to where it turns straight.
+            let r = Axo.Metric.sheetRadius, w = bounds.width, e: CGFloat = 1
+            let p = CGMutablePath()
+            p.move(to: CGPoint(x: e, y: r))
+            p.addArc(tangent1End: CGPoint(x: e, y: e), tangent2End: CGPoint(x: r, y: e), radius: r - e)
+            p.addLine(to: CGPoint(x: w - r, y: e))
+            p.addArc(tangent1End: CGPoint(x: w - e, y: e), tangent2End: CGPoint(x: w - e, y: r), radius: r - e)
+            p.addLine(to: CGPoint(x: w - e, y: r))
+            line.frame = bounds
+            line.path = p
+        }
         let mid = bounds.height / 2
         var right = bounds.width - 8
         let c = Axo.Metric.controlSmall

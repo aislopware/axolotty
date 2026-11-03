@@ -452,7 +452,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             c.alphaValue = host.phase == .connected || s.retrying || s.waiting ? 1 : 0.5
         case let .workspace(_, wid):
             guard let c = cell as? WorkspaceCell, let st = host.state, let w = st.workspace(wid) else { return }
-            c.set(name: w.name, key: w.root.isEmpty ? w.name : w.root)
+            c.title.stringValue = w.name
             c.expanded = outline.isItemExpanded(n)
             c.active = selected.flatMap { h.session($0.session)?.workspace } == wid && selected?.host == n.hostID
             c.rollup.activity = w.sessions.map { st.activity(of: $0) }.max() ?? .idle
@@ -657,8 +657,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     /// The kind of Mac, from its name: a laptop unless it says otherwise.
     static func hostSymbol(_ h: HostSession) -> String {
         let n = (h.isLocal ? (Host.current().localizedName ?? "") : h.name).lowercased()
-        if n.contains("mini") { return "macmini.fill" }
-        if n.contains("studio") { return "macstudio.fill" }
+        if n.contains("mini") { return "macmini" }
+        if n.contains("studio") { return "macstudio" }
         if n.contains("imac") { return "desktopcomputer" }
         if n.contains("mac pro") { return "macpro.gen3" }
         return "laptopcomputer"

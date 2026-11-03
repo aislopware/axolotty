@@ -101,6 +101,8 @@ enum Axo {
         static let meta = NSFont.monospacedDigitSystemFont(ofSize: Prim.Size.t2, weight: .regular)
         static let small = NSFont.systemFont(ofSize: Prim.Size.t3, weight: .regular)
         static let smallStrong = NSFont.systemFont(ofSize: Prim.Size.t3, weight: .medium)
+        /// A group's label in a list (a machine in the sidebar): 12 semibold.
+        static let smallTitle = NSFont.systemFont(ofSize: Prim.Size.t3, weight: .semibold)
         static let body = NSFont.systemFont(ofSize: Prim.Size.t4, weight: .regular)
         static let bodyStrong = NSFont.systemFont(ofSize: Prim.Size.t4, weight: .medium)
         static let title = NSFont.systemFont(ofSize: Prim.Size.t4, weight: .semibold)

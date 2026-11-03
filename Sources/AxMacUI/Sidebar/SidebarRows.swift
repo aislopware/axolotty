@@ -316,8 +316,8 @@ final class FadingLabel: NSView {
 ///   ⌨ MAC STUDIO                       ⋰ 84 ms   (through a relay)
 ///   ⌨ MAC MINI                     ◌ Reconnecting
 final class HostCell: NSTableCellView {
-    let glyph = Symbol("laptopcomputer", size: 13, weight: .regular, color: Axo.Color.textSecondary)
-    let title = Label("", font: Axo.Font.title, color: Axo.Color.text)
+    let glyph = Symbol("laptopcomputer", size: 12, weight: .regular, color: Axo.Color.textSecondary)
+    let title = Label("", font: Axo.Font.smallTitle, color: Axo.Color.textSecondary)
     let status = StatusGlyphView(frame: .zero)
     let meta = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     /// Beside the round trip when Tailscale relays the path: a mark, not a
@@ -384,7 +384,7 @@ final class HostCell: NSTableCellView {
 
 final class WorkspaceCell: NSTableCellView {
     let tile = ProjectTile()
-    let title = Label("", font: Axo.Font.bodyStrong, color: Axo.Color.text)
+    let title = Label("", font: Axo.Font.title, color: Axo.Color.text)
     let rollup = StatusGlyphView(frame: .zero)
     let add = IconButton(symbol: "plus", label: "New Session in Project", size: .small)
     let chevron = Symbol("chevron.down", size: 9, weight: .semibold, color: Axo.Color.textTertiary)
@@ -413,14 +413,9 @@ final class WorkspaceCell: NSTableCellView {
 
     @objc private func addClicked() { onAdd?(add) }
 
-    func set(name: String, key: String) {
-        title.stringValue = name
-        tile.set(name: name, key: key)
-    }
-
     private func restyle() {
-        // Between its machine and its sessions: medium weight, near-full ink.
-        title.textColor = Axo.Color.text.withAlphaComponent(0.86)
+        // Full ink, semibold: a project never reads quieter than its sessions.
+        title.textColor = Axo.Color.text
         add.isHidden = !hovering || !canAdd
         chevron.isHidden = !hovering
         chevron.frameCenterRotation = expanded ? 0 : 90
@@ -453,12 +448,14 @@ final class WorkspaceCell: NSTableCellView {
 /// A session row: program icon (carrying the state) and title (secondary ink
 /// at rest; full ink when selected, hovered, or when its agent wants a look).
 /// A row whose agent needs you (waiting or failed) carries a bar of that
-/// state's colour at its leading edge (as Conductor marks a row): a wash of
-/// yellow or red over this purple-grey frame only turns it olive or brown.
+/// state's colour on its leading edge, inside the plate's curve (as Conductor
+/// marks a row): a wash of yellow or red over this purple-grey frame only
+/// turns it olive or brown.
 /// Trailing slot: at rest, how long since it last changed (`4m`, as
 /// Conductor and Codex date their rows); hover → close; ⌘ held → `⌘n`.
 final class SessionCell: NSTableCellView {
     private let bar = CALayer()
+    private static let ageColumn = ceil(("88m" as NSString).size(withAttributes: [.font: Axo.Font.meta]).width)
     let icon = ProgramIcon(frame: .zero)
     let titleView = FadingLabel()
     var title: Label { titleView.label }
@@ -550,10 +547,8 @@ final class SessionCell: NSTableCellView {
         super.layout()
         let h = bounds.height
         let mid = h / 2
-        let b = SidebarMetric.slot - 2
-        // In the project's folder column, which a session row leaves empty.
-        bar.frame = CGRect(x: (SidebarMetric.textX + SidebarMetric.tile / 2 - 1.5).rounded(), y: ((h - b) / 2).rounded(),
-                           width: 3, height: b)
+        let b = h - 12
+        bar.frame = CGRect(x: SidebarMetric.listInset + 2, y: ((h - b) / 2).rounded(), width: 3, height: b)
         let s = SidebarMetric.slot
         icon.frame = NSRect(x: SidebarMetric.nameX, y: (mid - s / 2).rounded(), width: s, height: s)
         let right = SidebarMetric.slotRight(bounds.width)
@@ -561,10 +556,13 @@ final class SessionCell: NSTableCellView {
         close.frame = NSRect(x: right + 3 - c, y: (mid - c / 2).rounded(), width: c, height: c)
         let k = shortcut.intrinsicContentSize
         shortcut.frame = NSRect(x: right - k.width, y: (mid - k.height / 2).rounded(), width: k.width, height: k.height)
+        // One column for every row's age, as wide as the widest ("88m"), so
+        // titles end on one line whatever their age says.
         let a = age.intrinsicContentSize
-        age.frame = NSRect(x: right - a.width, y: (mid - a.height / 2).rounded(), width: a.width, height: a.height)
+        let column = max(a.width, Self.ageColumn)
+        age.frame = NSRect(x: right - column, y: (mid - a.height / 2).rounded(), width: column, height: a.height)
         var titleRight = right + 3
-        if !age.isHidden { titleRight = age.frame.minX - 4 }
+        if !age.isHidden { titleRight = age.frame.minX - 6 }
         if !close.isHidden { titleRight = close.frame.minX }
         if !shortcut.isHidden { titleRight = shortcut.frame.minX }
         let x = SidebarMetric.titleX

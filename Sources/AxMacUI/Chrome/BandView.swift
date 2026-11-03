@@ -81,7 +81,6 @@ final class BandView: NSView {
 
     struct Context {
         var project: String
-        var projectKey: String
         var session: String
         var identity: ProgramIdentity
         var activity: Activity
@@ -104,7 +103,6 @@ final class BandView: NSView {
             hostGlyph.image = NSImage(systemSymbolName: h.symbol, accessibilityDescription: nil)
             hostName.textColor = key ? Axo.Color.textSecondary : Axo.Color.textTertiary
         }
-        tile.set(name: c.project, key: c.projectKey)
         project.stringValue = c.project
         icon.identity = c.identity
         icon.activity = c.activity

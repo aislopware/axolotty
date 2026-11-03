@@ -159,7 +159,7 @@ final class EmptyStateView: NSView {
 
     private func showProjects() {
         var items: [PopMenu.Item?] = projects.map { p in
-            PopMenu.Item(title: p.name, image: ProjectTile.image(name: p.name, key: p.key), key: nil, checked: p == selected) {
+            PopMenu.Item(title: p.name, image: ProjectTile.menuImage, key: nil, checked: p == selected) {
                 [weak self] in
                 guard let self else { return }
                 self.selected = p
@@ -361,7 +361,6 @@ private final class ProjectPill: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
 
     func set(_ p: EmptyStateView.Project) {
-        tile.set(name: p.name, key: p.key)
         name.stringValue = p.name
         setAccessibilityLabel("Start in \(p.name)")
         toolTip = "Start in \(p.name)"

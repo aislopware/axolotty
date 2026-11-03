@@ -301,8 +301,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let since = st.panes(of: sid).filter { $0.activity == activity }.map(\.activitySince).max() ?? 0
         let ws = st.workspace(s.workspace)
         func band() -> BandView.Context {
-            BandView.Context(project: ws?.name ?? host.name, projectKey: ws.map { $0.root.isEmpty ? $0.name : $0.root } ?? host.name,
-                             session: identity.rowTitle(title), identity: identity, activity: activity, since: since,
+            BandView.Context(project: ws?.name ?? host.name, session: identity.rowTitle(title), identity: identity, activity: activity, since: since,
                              branch: branch, subagents: st.panes(of: sid).reduce(0) { $0 + $1.status.subagentsWorking },
                              host: host.isLocal ? nil : (host.name, SidebarViewController.hostSymbol(host)))
         }
