@@ -14,11 +14,11 @@ import AxModel
 ///   facts the row lacks: the git branch (12, tertiary) and the diff chip.
 /// - With it hidden, the identity comes back in front: the project's 16 pt
 ///   tile and name (13 semibold, full ink), a compact chevron, the program
-///   icon (carrying its state badge) and the session title (13, secondary).
+///   icon and the session title (13, secondary).
 ///   A session on another Mac starts with that Mac, as the sidebar's section
 ///   does: its kind of Mac and name (13, secondary), so the hidden sidebar
 ///   never leaves the person guessing where their keys go.
-/// - Trailing, the state: working shows a cyan spinner and the elapsed
+/// - Trailing, the state: working shows the dashed circle and the elapsed
 ///   time; waiting or failed show the chip with the agent's own words. One
 ///   cue per state.
 ///
@@ -35,7 +35,7 @@ final class BandView: NSView {
     private let branchGlyph = Symbol("arrow.triangle.branch", size: 10, weight: .medium, color: Axo.Color.textTertiary)
     private let branch = Label("", font: Axo.Font.small, color: Axo.Color.textTertiary)
     let diff = DiffChip()
-    private let spinner = StatusGlyphView(frame: .zero)
+    private let stateMark = StatusGlyphView(frame: .zero)
     private let elapsed = Label("", font: Axo.Font.meta, color: Axo.Color.textSecondary)
     let chip = Chip()
     var leadingInset: CGFloat = 12 { didSet { needsLayout = true } }
@@ -60,7 +60,7 @@ final class BandView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         diff.isHidden = true
-        for v in [hostGlyph, hostName, hostChevron, tile, project, chevron, icon, title, branchGlyph, branch, diff, spinner, elapsed, chip] as [NSView] {
+        for v in [hostGlyph, hostName, hostChevron, tile, project, chevron, icon, title, branchGlyph, branch, diff, stateMark, elapsed, chip] as [NSView] {
             addSubview(v)
         }
         chip.isHidden = true
@@ -105,7 +105,6 @@ final class BandView: NSView {
         }
         project.stringValue = c.project
         icon.identity = c.identity
-        icon.activity = c.activity
         icon.lit = key
         title.stringValue = c.session
         title.textColor = key ? Axo.Color.textSecondary : Axo.Color.textTertiary
@@ -115,9 +114,9 @@ final class BandView: NSView {
         activity = c.activity
         since = c.since
         subagents = c.subagents
-        spinner.activity = c.activity == .working ? .working : .idle
+        stateMark.activity = c.activity == .working ? .working : .idle
         let working = c.activity == .working
-        spinner.isHidden = !working
+        stateMark.isHidden = !working
         elapsed.isHidden = !working
         refreshElapsed()
         if working, tick == nil {
@@ -174,7 +173,7 @@ final class BandView: NSView {
         if !on {
             project.stringValue = "Axolotty"
             project.textColor = Axo.Color.textSecondary
-            for v in [branchGlyph, branch, diff, spinner, elapsed] as [NSView] { v.isHidden = true }
+            for v in [branchGlyph, branch, diff, stateMark, elapsed] as [NSView] { v.isHidden = true }
             tick?.invalidate()
             tick = nil
             needsLayout = true
@@ -228,8 +227,8 @@ final class BandView: NSView {
         } else if !elapsed.isHidden {
             let e = elapsed.intrinsicContentSize
             elapsed.frame = NSRect(x: right - ceil(e.width), y: (mid - e.height / 2).rounded(), width: ceil(e.width), height: e.height)
-            spinner.frame = NSRect(x: elapsed.frame.minX - Axo.Space.xs - 16, y: (mid - 8).rounded(), width: 16, height: 16)
-            right = spinner.frame.minX - Axo.Space.md
+            stateMark.frame = NSRect(x: elapsed.frame.minX - Axo.Space.xs - 16, y: (mid - 8).rounded(), width: 16, height: 16)
+            right = stateMark.frame.minX - Axo.Space.md
         }
 
         var x = leadingInset

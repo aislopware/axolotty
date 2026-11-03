@@ -24,11 +24,11 @@ enum EmptyState: Equatable {
 /// paragraph and no shortcut hints: those live in tooltips.
 ///
 /// Away (a remote host dropped, or waits on the person): that Mac's symbol in
-/// place of the mark, wearing its state as a badge (the spinner while
+/// place of the mark, wearing its state as a badge (the dashed circle while
 /// something is under way, amber while it waits on the person, nothing while
 /// it is only offline), a title, one line on what brings it back, and at most
-/// one button for it. No spinner floats alone in the middle: the state is
-/// the machine's, as a session's is its program icon's.
+/// one button for it. No status circle floats alone in the middle: the state
+/// is the machine's.
 final class EmptyStateView: NSView {
     struct Project: Equatable {
         var id: WorkspaceID?
@@ -42,7 +42,7 @@ final class EmptyStateView: NSView {
     var onRemedy: (() -> Void)?
 
     private let mark = AxoMarkView(frame: .zero)
-    private let spinner = StatusGlyphView(frame: .zero)
+    private let stateMark = StatusGlyphView(frame: .zero)
     private let machine = NSImageView()
     /// The ground behind the state badge, cut out of the machine's symbol.
     private let badgeBack = NSView()
@@ -75,7 +75,7 @@ final class EmptyStateView: NSView {
         remedy.action = #selector(runRemedy)
         machine.imageScaling = .scaleNone
         machine.contentTintColor = Axo.Color.textDisabled
-        for v in [mark, machine, badgeBack, spinner, title, detail, pill, remedy] as [NSView] { addSubview(v) }
+        for v in [mark, machine, badgeBack, stateMark, title, detail, pill, remedy] as [NSView] { addSubview(v) }
         set(.noSessions)
     }
 
@@ -134,9 +134,9 @@ final class EmptyStateView: NSView {
             .withSymbolConfiguration(.init(pointSize: 30, weight: .light))
         // Offline with nothing to do: no state glyph at all.
         let idle = waits && remedy.isHidden
-        spinner.isHidden = !reconnecting || idle || symbol == nil
-        badgeBack.isHidden = spinner.isHidden
-        spinner.activity = !reconnecting || idle ? .idle : waits ? .blocked : .working
+        stateMark.isHidden = !reconnecting || idle || symbol == nil
+        badgeBack.isHidden = stateMark.isHidden
+        stateMark.activity = !reconnecting || idle ? .idle : waits ? .blocked : .working
         detail.isHidden = !reconnecting
         pill.isHidden = reconnecting
         tiles.forEach { $0.isHidden = reconnecting }
@@ -220,7 +220,7 @@ final class EmptyStateView: NSView {
         let c = NSPoint(x: m.midX + 17, y: m.midY + 10)
         badgeBack.frame = NSRect(x: (c.x - disc / 2).rounded(), y: (c.y - disc / 2).rounded(), width: disc, height: disc)
         badgeBack.layer?.cornerRadius = disc / 2
-        spinner.frame = NSRect(x: (c.x - slot / 2).rounded(), y: (c.y - slot / 2).rounded(), width: slot, height: slot)
+        stateMark.frame = NSRect(x: (c.x - slot / 2).rounded(), y: (c.y - slot / 2).rounded(), width: slot, height: slot)
         title.frame = NSRect(x: (bounds.midX - ts.width / 2).rounded(), y: y, width: ts.width, height: ts.height)
         y += ts.height
         if reconnecting {

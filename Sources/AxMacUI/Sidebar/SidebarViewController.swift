@@ -475,23 +475,20 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             let identity = st.identity(of: sid)
             c.title.stringValue = identity.rowTitle(title)
             c.icon.identity = identity
-            // Indeterminate (-1) keeps the spinner; only a percentage draws an arc.
-            // OSC 9;4 first, else the agent's own OSC 7501 `progress=`.
             let panes = st.panes(of: sid)
-            c.icon.progress = (panes.compactMap(\.progress).first(where: { $0 >= 0 })
-                ?? panes.compactMap { $0.status.headline?.progress }.first).map { Double($0) / 100 }
+            c.state.progress = st.progress(of: sid)
             c.activity = activity
             c.selected = selected?.session == sid && selected?.host == n.hostID
             let number = sessionNumber(host: n.hostID, sid)
             c.shortcut.stringValue = number.map { "⌘\($0)" } ?? ""
             let changed = panes.map(\.activitySince).max() ?? 0
-            let need = Self.needWord(activity, panes.compactMap(\.status.headline).first(where: { $0.state == .blocked })?.need)
-            c.age.stringValue = need ?? (changed > 0 ? Self.elapsed(Date().timeIntervalSince1970 - changed) : "")
-            c.need = need ?? ""
+            let need = st.need(of: sid)
+            c.age.stringValue = changed > 0 ? Self.elapsed(Date().timeIntervalSince1970 - changed) : ""
+            c.need = need
             c.showShortcut = showKeycaps
             c.onClose = { [weak self, weak host] in if let host { self?.onCloseSession?(host, sid) } }
             var label = title
-            if let phrase = StatusGlyphView.phrase(activity) { label += ", \(phrase)" }
+            if let phrase = StatusGlyphView.phrase(activity, need) { label += ", \(phrase)" }
             c.setAccessibilityLabel(label)
             // Detail lives in the hover card, not on the row.
             if let pane = st.sessions[sid].flatMap({ st.panes[$0.focus] }) {
@@ -523,14 +520,15 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                            git: GitReport?) -> HoverCard
     {
         var card = HoverCard(title: title)
-        if let state = Self.stateLine(activity, since: since) { card.facts.append(.init(.dot(activity), state)) }
+        let need = activity == .blocked ? pane.status.headline?.need : nil
+        if let state = Self.stateLine(activity, need, since: since) { card.facts.append(.init(.state(activity, need), state)) }
         let subagents = pane.status.subagentsWorking
         if subagents > 0 {
             card.facts.append(.init(.symbol("person.2"), subagents == 1 ? "1 subagent working" : "\(subagents) subagents working"))
         }
         if let h = pane.status.headline {
             if h.state == .blocked {
-                card.facts.append(.init(.symbol("hand.raised"), h.ask))
+                card.facts.append(.init(.symbol("text.bubble"), h.ask))
             } else if !h.message.isEmpty {
                 card.facts.append(.init(.symbol("text.bubble"), h.message))
             }
@@ -550,33 +548,18 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         return since > 0 ? Date().timeIntervalSince1970 - since : nil
     }
 
-    static func stateLine(_ a: Activity, since: Double?) -> String? {
+    static func stateLine(_ a: Activity, _ need: StatusRecord.Need? = nil, since: Double?) -> String? {
         let word: String
         switch a {
         case .idle: return nil
         case .working: word = "Working"
-        case .blocked: word = "Waiting for input"
+        case .blocked: word = need?.words ?? "Waiting for input"
         case .done: word = "Finished"
         case .error: word = "Failed"
         }
         guard let since else { return word }
         let e = Self.elapsed(since)
         return e == "now" ? word : "\(word) · \(e)"
-    }
-
-    /// The one word a row says when its agent needs you: what to do.
-    static func needWord(_ a: Activity, _ need: StatusRecord.Need?) -> String? {
-        switch a {
-        case .blocked:
-            switch need {
-            case .permission?: "Approve"
-            case .question?: "Answer"
-            case .auth?: "Sign in"
-            case nil: "Waiting"
-            }
-        case .error: "Failed"
-        default: nil
-        }
     }
 
     static func elapsed(_ s: Double) -> String {

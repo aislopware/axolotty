@@ -53,6 +53,30 @@ enum JSONEncoderShim {
         #expect(s.attention.blocked == 1 && s.attention.working == 1)
     }
 
+    /// What the status circle holds: the blocked pane's own need, wherever
+    /// it sits in the split, and nothing once no pane waits.
+    @Test func aSessionWaitsForWhatItsBlockedPaneSays() {
+        var (s, _, sid, p1, p2) = sample()
+        s.panes[p1]!.status.report(id: "", state: .working)
+        s.panes[p2]!.status.report(id: "", state: .blocked, need: .permission)
+        #expect(s.need(of: sid) == .permission)
+        s.panes[p2]!.status.report(id: "", state: .working)
+        #expect(s.need(of: sid) == nil)
+    }
+
+    /// The wedge's number: the terminal's OSC 9;4 wins over the agent's
+    /// own, and indeterminate (-1) is no number.
+    @Test func progressPrefersTheTerminalsOwnNumber() {
+        var (s, _, sid, p1, p2) = sample()
+        #expect(s.progress(of: sid) == nil)
+        s.panes[p2]!.status.report(id: "", state: .working, progress: 40)
+        #expect(s.progress(of: sid) == 0.4)
+        s.panes[p1]!.progress = -1
+        #expect(s.progress(of: sid) == 0.4)
+        s.panes[p1]!.progress = 75
+        #expect(s.progress(of: sid) == 0.75)
+    }
+
     @Test func nonZeroExitWithoutReportsIsAnError() {
         var (s, _, _, p1, _) = sample()
         s.panes[p1]!.exitStatus = 1

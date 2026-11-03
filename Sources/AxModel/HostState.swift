@@ -136,6 +136,20 @@ public struct HostState: Hashable, Codable, Sendable {
         panes(of: session).map(\.activity).max() ?? .idle
     }
 
+    /// What a waiting session waits for, when its program says (the first
+    /// blocked pane's `kind=`).
+    public func need(of session: SessionID) -> StatusRecord.Need? {
+        panes(of: session).lazy.compactMap(\.status.headline).first(where: { $0.state == .blocked })?.need
+    }
+
+    /// A session's known progress, 0…1: OSC 9;4 first, else the agent's own
+    /// OSC 7501 `progress=`. Indeterminate (-1) is no number.
+    public func progress(of session: SessionID) -> Double? {
+        let panes = panes(of: session)
+        return (panes.compactMap(\.progress).first(where: { $0 >= 0 })
+            ?? panes.compactMap { $0.status.headline?.progress }.first).map { Double($0) / 100 }
+    }
+
     public func activity(ofWorkspace id: WorkspaceID) -> Activity {
         workspace(id)?.sessions.map { activity(of: $0) }.max() ?? .idle
     }

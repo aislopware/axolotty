@@ -77,21 +77,22 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
     private func handle(_ host: HostSession, _ e: HostEvent) {
         switch e {
         case let .attention(pane, activity, message):
-            let info = host.pane(pane)
-            let session = info.flatMap { host.state?.sessionTitle($0.session) } ?? "Session"
-            let title = switch activity {
-            case .blocked: "\(session) needs input"
-            case .done: "\(session) finished"
-            case .error: "\(session) failed"
-            default: session
-            }
             pending[pane]?.cancel()
             pending[pane] = Task { [weak self, weak host] in
                 try? await Task.sleep(for: Self.grace)
                 guard !Task.isCancelled, let self, let host else { return }
                 self.pending[pane] = nil
                 // Still in that state, and not seen meanwhile (seen turns done/error idle).
-                guard host.pane(pane)?.activity == activity else { return }
+                guard let info = host.pane(pane), info.activity == activity else { return }
+                let session = host.state?.sessionTitle(info.session) ?? "Session"
+                // Worded after the grace second, from the state as it stands:
+                // what it waits for ("needs approval") arrives with it.
+                let title = switch activity {
+                case .blocked: "\(session) \(info.status.headline?.need?.words.lowercased() ?? "needs input")"
+                case .done: "\(session) finished"
+                case .error: "\(session) failed"
+                default: session
+                }
                 self.deliver(host, pane, title: title, body: message, activity: activity)
             }
         case let .notification(pane, title, body):

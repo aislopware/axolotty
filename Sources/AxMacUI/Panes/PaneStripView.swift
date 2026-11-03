@@ -5,22 +5,23 @@ import AxModel
 /// when a session has two or more panes and none is zoomed (one pane is named
 /// by the header). It makes a split read as several agents, each with a face.
 ///
-///     [icon] name   cwd                         4:12   [zoom][close]
+///     [icon] name   cwd                      ◌ 4:12   [zoom][close]
 ///
-/// - Leading: the program icon (carrying its state badge) on the text column, the name
-///   (12 medium), then the cwd relative to the project (12, tertiary; hidden
-///   below 280 pt).
-/// - Trailing: elapsed m:ss while working; zoom and close on hover only.
+/// - Leading: the program icon on the text column, the name (12 medium),
+///   then the cwd relative to the project (12, tertiary; hidden below 280 pt).
+/// - Trailing: the state circle (`StatusGlyphView`), with elapsed m:ss
+///   while working; zoom and close on hover only.
 /// - Focus is ink, not a border: the focused strip's name is full ink, the
 ///   others tertiary.
 /// - Needs you: the name becomes the agent's own question in full ink; the
-///   program icon's badge carries the state's colour. No stripe or wash.
+///   circle carries the state's colour and what it waits for. No stripe or wash.
 ///
 /// No rule under it: the terminal's rows start 6 pt below.
 final class PaneStripView: NSView {
     static let height: CGFloat = 28
 
     private let icon = ProgramIcon(frame: .zero)
+    private let state = StatusGlyphView(frame: .zero)
     private let name = Label("", font: Axo.Font.smallStrong, color: Axo.Color.text)
     private let path = Label("", font: Axo.Font.small, color: Axo.Color.textTertiary)
     private let elapsed = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
@@ -38,6 +39,7 @@ final class PaneStripView: NSView {
         var since: Double
         /// The agent's question while it waits (or "Failed").
         var question: String?
+        var need: StatusRecord.Need?
         var focused: Bool
     }
 
@@ -53,7 +55,7 @@ final class PaneStripView: NSView {
         zoom.action = #selector(zoomClicked)
         close.target = self
         close.action = #selector(closeClicked)
-        for v in [icon, name, path, elapsed, zoom, close] as [NSView] { addSubview(v) }
+        for v in [icon, name, path, state, elapsed, zoom, close] as [NSView] { addSubview(v) }
     }
 
     @available(*, unavailable)
@@ -89,7 +91,8 @@ final class PaneStripView: NSView {
         guard m != model else { return tickElapsed() }
         model = m
         icon.identity = m.identity
-        icon.activity = m.activity
+        state.activity = m.activity
+        state.need = m.need
         icon.lit = m.focused
         path.stringValue = m.path
         restyle()
@@ -120,6 +123,7 @@ final class PaneStripView: NSView {
         name.textColor = urgent || m.focused ? Axo.Color.text : Axo.Color.textTertiary
         path.textColor = m.focused ? Axo.Color.textTertiary : Axo.Color.textDisabled
         elapsed.isHidden = urgent || hovering
+        state.isHidden = m.activity == .idle || hovering
         path.isHidden = urgent
         zoom.isHidden = !hovering
         close.isHidden = !hovering
@@ -140,7 +144,11 @@ final class PaneStripView: NSView {
         if !elapsed.isHidden, !elapsed.stringValue.isEmpty {
             let e = elapsed.intrinsicContentSize
             elapsed.frame = NSRect(x: right - ceil(e.width), y: (mid - e.height / 2).rounded(), width: ceil(e.width), height: e.height)
-            right = elapsed.frame.minX - Axo.Space.md
+            right = elapsed.frame.minX - Axo.Space.xs
+        }
+        if !state.isHidden {
+            state.frame = NSRect(x: right + 1.5 - 16, y: (mid - 8).rounded(), width: 16, height: 16)
+            right = state.frame.minX - Axo.Space.md
         }
         // The mark's ink (14 of the 16 pt slot) starts on the terminal's text column.
         icon.frame = NSRect(x: Axo.Metric.panePaddingX - 1, y: (mid - 8).rounded(), width: 16, height: 16)

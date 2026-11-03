@@ -25,7 +25,7 @@ final class LinkVeil: NSView, DesignRefreshable {
     private let scrim = CALayer()
     private let bar = Bar()
     private let rule = CALayer()
-    private let spinner = StatusGlyphView(frame: .zero)
+    private let stateMark = StatusGlyphView(frame: .zero)
     private let label = Label("", font: Axo.Font.smallStrong, color: Axo.Color.text)
     private let action = Button("Reconnect Now", variant: .secondary, size: .small)
     static let barHeight: CGFloat = 36
@@ -43,10 +43,10 @@ final class LinkVeil: NSView, DesignRefreshable {
         bar.layer?.cornerCurve = .continuous
         bar.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         bar.layer?.addSublayer(rule)
-        bar.addSubview(spinner)
+        bar.addSubview(stateMark)
         bar.addSubview(label)
         bar.addSubview(action)
-        spinner.activity = .working
+        stateMark.activity = .working
         action.target = self
         action.action = #selector(act)
         setAccessibilityElement(true)
@@ -66,8 +66,8 @@ final class LinkVeil: NSView, DesignRefreshable {
     func set(_ text: String, retrying: Bool, idle: Bool = false, action title: String?, _ handler: (() -> Void)?) {
         label.stringValue = text
         // Amber, as in the sidebar: it waits on the person, nothing failed.
-        spinner.activity = idle ? .idle : retrying ? .working : .blocked
-        spinner.isHidden = idle
+        stateMark.activity = idle ? .idle : retrying ? .working : .blocked
+        stateMark.isHidden = idle
         setAccessibilityLabel(text)
         action.isHidden = title == nil
         if let title, action.title != title { action.title = title }
@@ -100,9 +100,9 @@ final class LinkVeil: NSView, DesignRefreshable {
             rule.frame = NSRect(x: 0, y: h - hairline, width: bounds.width, height: hairline)
         }
         bar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: h)
-        let glyph = spinner.isHidden ? 0 : Axo.Metric.statusSlot
-        spinner.frame = NSRect(x: pad, y: ((h - glyph) / 2).rounded(), width: glyph, height: glyph)
-        let lead = spinner.isHidden ? pad : pad + glyph + Axo.Space.sm
+        let glyph = stateMark.isHidden ? 0 : Axo.Metric.statusSlot
+        stateMark.frame = NSRect(x: pad, y: ((h - glyph) / 2).rounded(), width: glyph, height: glyph)
+        let lead = stateMark.isHidden ? pad : pad + glyph + Axo.Space.sm
         let bw = action.isHidden ? 0 : ceil(action.intrinsicContentSize.width)
         let bh = Axo.Metric.controlSmall
         action.frame = NSRect(x: bounds.width - pad - bw, y: ((h - bh) / 2).rounded(), width: bw, height: bh)

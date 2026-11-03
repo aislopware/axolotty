@@ -105,17 +105,10 @@ extension HostState {
     }
 }
 
-/// A session's icon (16 pt slot): the program's glyph, with its state on it.
+/// A session's icon (16 pt slot): the program's glyph and nothing else.
 ///
-/// All state is a badge at the lower right (whole pixels at 1×), cut out of
-/// the glyph with a 1 pt moat so it reads on any plate, and the glyph itself
-/// never changes: the agent stays recognisable while it works. Dots are 6 pt
-/// so a 14 pt vendor mark keeps three quarters of itself.
-///
-/// - working: an 8 pt cyan spinner (2 pt arc over a 28 % track, 0.9 s a
-///   turn), or a determinate arc when the program reports progress
-/// - waiting: amber dot · failed: red dot · done-unseen: green dot
-/// - idle: the glyph alone
+/// It says who, never how it is doing: state is the status circle beside it
+/// (`StatusGlyphView`), so the agent stays recognisable whatever it does.
 ///
 /// SF Symbols draw in the row's ink; vendor marks (Claude, Codex, Gemini) draw
 /// from their own vectors and colours at 14/16 of the slot, the optical size
@@ -124,15 +117,8 @@ final class ProgramIcon: NSView {
     private let host = NSView()
     private let image = NSImageView()
     private let brand = CALayer()
-    private let badge = CALayer()
-    private let track = CAShapeLayer().crisp()
-    private let arc = CAShapeLayer().crisp()
-    private let cut = CAShapeLayer().crisp()
 
     var identity = ProgramIdentity.shell { didSet { if identity != oldValue { rebuildBrand(); restyle() } } }
-    var activity: Activity = .idle { didSet { if activity != oldValue { restyle() } } }
-    /// Determinate progress (0…1) turns the spinner into an arc.
-    var progress: Double? { didSet { if progress != oldValue { restyle() } } }
 
     /// Lit rows (selected, hovered) take full ink; rest rows the secondary ink.
     var lit = false { didSet { if lit != oldValue { restyle() } } }
@@ -146,14 +132,6 @@ final class ProgramIcon: NSView {
         host.addSubview(image)
         host.layer?.addSublayer(brand)
         addSubview(host)
-        layer?.addSublayer(badge)
-        for l in [track, arc] {
-            l.fillColor = nil
-            l.lineCap = .round
-            l.lineWidth = 2
-            layer?.addSublayer(l)
-        }
-        cut.fillRule = .evenOdd
         setAccessibilityElement(false)
         restyle()
     }
@@ -169,9 +147,6 @@ final class ProgramIcon: NSView {
         super.viewDidChangeEffectiveAppearance()
         restyle()
     }
-
-    private var badged: Bool { activity != .idle }
-    private var spinning: Bool { activity == .working }
 
     /// Rebuilds the vendor mark's layers (path + fills) for the current size.
     private func rebuildBrand() {
@@ -227,30 +202,6 @@ final class ProgramIcon: NSView {
         Axo.Motion.still {
             brand.isHidden = !isBrand
             brand.opacity = lit ? 1 : 0.92
-            badge.isHidden = !badged || spinning
-            if badged, !spinning {
-                badge.backgroundColor = effectiveAppearance.resolve(StatusGlyphView.dotColor(activity))
-            }
-            track.isHidden = !spinning
-            arc.isHidden = !spinning
-            track.strokeColor = effectiveAppearance.resolve(Axo.Color.status(.working).withAlphaComponent(0.28))
-            arc.strokeColor = effectiveAppearance.resolve(Axo.Color.status(.working))
-            arc.removeAnimation(forKey: "spin")
-            arc.strokeStart = 0
-            if let p = progress {
-                arc.strokeEnd = max(0.06, min(1, p))
-            } else {
-                arc.strokeEnd = 0.35
-                if spinning, !Axo.Motion.reduced {
-                    let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-                    spin.fromValue = 0
-                    spin.toValue = 2 * Double.pi
-                    spin.duration = Axo.Motion.spin
-                    spin.repeatCount = .infinity
-                    spin.isRemovedOnCompletion = false
-                    arc.add(spin, forKey: "spin")
-                }
-            }
         }
         needsLayout = true
     }
@@ -260,35 +211,10 @@ final class ProgramIcon: NSView {
         let b = bounds
         host.frame = b
         image.frame = host.bounds
-        // Whole pixels at the lower right corner of the 16 slot: dot 6, spinner 8.
-        let d: CGFloat = spinning ? 8 : 6
-        let f = CGRect(x: b.maxX - d, y: b.maxY - d, width: d, height: d)
         Axo.Motion.still {
             let side = brand.bounds.width
             // Centred, on whole points (host layer is y-up).
             brand.frame.origin = CGPoint(x: ((b.width - side) / 2).rounded(), y: ((b.height - side) / 2).rounded())
-            badge.frame = f
-            badge.cornerRadius = d / 2
-            // The spinner rings the same disc; it starts at 12 o'clock.
-            let ring = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: d, height: d).insetBy(dx: 1, dy: 1), transform: nil)
-            for l in [track, arc] {
-                l.bounds = CGRect(x: 0, y: 0, width: d, height: d)
-                l.position = CGPoint(x: f.midX, y: f.midY)
-                l.path = ring
-            }
-            arc.setAffineTransform(arc.animation(forKey: "spin") == nil ? CGAffineTransform(rotationAngle: -.pi / 2) : .identity)
-            if badged {
-                // Knock a 1 pt moat out of the mark around the badge.
-                let p = CGMutablePath()
-                p.addRect(host.bounds.insetBy(dx: -4, dy: -4))
-                let moat = f.insetBy(dx: -1, dy: -1)
-                p.addEllipse(in: CGRect(x: moat.minX, y: b.height - moat.maxY, width: moat.width, height: moat.height))
-                cut.path = p
-                cut.frame = host.bounds
-                host.layer?.mask = cut
-            } else {
-                host.layer?.mask = nil
-            }
         }
     }
 }

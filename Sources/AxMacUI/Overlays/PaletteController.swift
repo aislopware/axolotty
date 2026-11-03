@@ -61,7 +61,9 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         var symbol: String
         var chord: String
         var activity: Activity = .idle
-        /// Sessions: the program icon (carries the state).
+        var need: StatusRecord.Need?
+        var progress: Double?
+        /// Sessions: the program icon (who); the state circle trails the title.
         var identity: ProgramIdentity?
         /// Also matched when `title` is not (the full session title when the
         /// shown one drops what the icon says), without highlighting.
@@ -364,7 +366,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
         let full = st.sessionTitle(sid)
         let shown = identity.rowTitle(full)
         return Entry(item: .session(h, sid), title: shown, detail: detail, symbol: "terminal", chord: chord,
-                     activity: st.activity(of: sid), identity: identity, alias: shown == full ? nil : full)
+                     activity: st.activity(of: sid), need: st.need(of: sid), progress: st.progress(of: sid), identity: identity, alias: shown == full ? nil : full)
     }
 
     /// Go to Session: every session, grouped by what it needs from you,
@@ -734,12 +736,14 @@ final class PaletteHeader: NSView {
 final class PaletteCell: NSTableCellView {
     private let icon = NSImageView()
     private let program = ProgramIcon(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+    private let state = StatusGlyphView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
     private let title = Label("", font: Axo.Font.body, color: Axo.Color.text)
     private let detail = Label("", font: Axo.Font.small, color: Axo.Color.textTertiary)
     /// Menu-style shortcut text (`⌘1`), no key plates: a column of plates on
     /// every row is the loudest thing in a list that is about its titles.
     private let shortcut = Label("", font: Axo.Font.shortcut, color: Axo.Color.textTertiary)
     private var entry: PaletteController.Entry?
+    private static let chordColumn = ceil(("⌘8" as NSString).size(withAttributes: [.font: Axo.Font.shortcut]).width)
     var selected = false {
         didSet {
             guard selected != oldValue else { return }
@@ -754,7 +758,7 @@ final class PaletteCell: NSTableCellView {
         icon.contentTintColor = Axo.Color.textSecondary
         icon.imageScaling = .scaleNone
         detail.lineBreakMode = .byTruncatingMiddle
-        for v in [icon, program, title, detail, shortcut] as [NSView] { addSubview(v) }
+        for v in [icon, program, title, detail, state, shortcut] as [NSView] { addSubview(v) }
     }
 
     @available(*, unavailable)
@@ -774,6 +778,12 @@ final class PaletteCell: NSTableCellView {
             shortcut.frame = NSRect(x: right - k.width, y: ((h - k.height) / 2).rounded(), width: k.width, height: k.height)
             right = shortcut.frame.minX - Axo.Space.lg
         }
+        if !state.isHidden {
+            // One column for every session's circle, as if each had a ⌘n.
+            if shortcut.isHidden { right -= Self.chordColumn + Axo.Space.lg }
+            state.frame = NSRect(x: right + 1.5 - 16, y: ((h - 16) / 2).rounded(), width: 16, height: 16)
+            right = state.frame.minX - Axo.Space.md
+        }
         let tx = icon.frame.maxX + Axo.Space.md
         let ts = title.intrinsicContentSize
         let ds = detail.intrinsicContentSize
@@ -789,13 +799,16 @@ final class PaletteCell: NSTableCellView {
 
     func configure(_ e: PaletteController.Entry) {
         entry = e
-        // Sessions show what they run, with their state on the icon;
+        // Sessions show what they run, with their state circle trailing;
         // commands and places carry their one SF Symbol.
         program.isHidden = e.identity == nil
         icon.isHidden = e.identity != nil
+        state.activity = e.identity == nil ? .idle : e.activity
+        state.need = e.need
+        state.progress = e.progress
+        state.isHidden = state.activity == .idle
         if let id = e.identity {
             program.identity = id
-            program.activity = e.activity
             program.lit = selected
             program.glyphSize = 13
         }

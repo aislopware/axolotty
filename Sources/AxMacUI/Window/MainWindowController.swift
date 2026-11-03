@@ -354,7 +354,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             return
         }
         if p.activity == .blocked {
-            chip.update(.blocked, text: String((p.status.headline?.ask ?? "Needs input").prefix(48)))
+            chip.update(.blocked, need: p.status.headline?.need, text: String((p.status.headline?.ask ?? "Needs input").prefix(48)))
         } else {
             chip.update(.error, text: "Failed")
         }

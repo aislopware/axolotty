@@ -423,7 +423,8 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         }
         return PaneStripView.Model(identity: identity, name: identity.rowTitle(p.displayTitle),
                                    path: Self.relative(p.pwd, to: root), activity: p.activity,
-                                   since: p.activitySince, question: question, focused: focused)
+                                   since: p.activitySince, question: question,
+                                   need: p.activity == .blocked ? p.status.headline?.need : nil, focused: focused)
     }
 
     /// The cwd as the strip says it: relative to the project ("Sources/AxModel"),

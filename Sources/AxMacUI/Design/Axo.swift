@@ -305,8 +305,6 @@ enum Axo {
         static let glide = Beat(duration: 0.26, curve: easeOut)
         /// A surface the person summoned (palette, menu): in from 98 %, 4 pt off.
         static let rise = Beat(duration: 0.16, curve: easeOut)
-        /// One turn of a working spinner.
-        static let spin: CFTimeInterval = 0.9
 
         static let snap = Spring(response: 0.25, bounce: 0)
         static let standard = Spring(response: 0.35, bounce: 0)

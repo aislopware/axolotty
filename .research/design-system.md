@@ -84,12 +84,12 @@ Shortcuts and counts use monospaced digits (`Axo.Font.shortcut`, `.meta`). The t
 
 - **Band:** 40 tall (empty `.unifiedCompact` toolbar), painted in `frame`. Every point of it is a terminal row, so it is never taller.
   - The traffic lights, then our own sidebar toggle and "+" (28 targets, 14 glyphs), centred on the band.
-  - Header (`Chrome/BandView.swift`). Sidebar open: `arrow.triangle.branch` and the branch in 12 tertiary, then the diff chip, starting on the terminal's text column (14 inside the sheet). Sidebar hidden: 16 pt project tile, project name 13 semibold full ink, `chevron.compact.right` in tertiary, program icon with its badge, session title 13 secondary, then the branch (it gives way first when narrow), 20 pt after "+".
-  - Trailing state: working shows a cyan spinner and "Working m:ss" in tabular digits, ticking each second; waiting or failed show the chip with the agent's own question. Idle shows nothing.
+  - Header (`Chrome/BandView.swift`). Sidebar open: `arrow.triangle.branch` and the branch in 12 tertiary, then the diff chip, starting on the terminal's text column (14 inside the sheet). Sidebar hidden: 16 pt project tile, project name 13 semibold full ink, `chevron.compact.right` in tertiary, program icon, session title 13 secondary, then the branch (it gives way first when narrow), 20 pt after "+".
+  - Trailing state: working shows the dashed circle and "Working m:ss" in tabular digits, ticking each second; waiting or failed show the chip with the agent's own question. Idle shows nothing.
   - The band drags the window.
 - **Sheets:** stage inset 0 / 6 / 6 / 0 (top, right, bottom, left with the sidebar open; 6 on the left when it is hidden). The empty state is a sheet too.
 - **Pane strip** (`Panes/PaneStripView.swift`), only with two or more panes and none zoomed: 28 tall inside the top of the sheet, no rule; rows start 6 below it.
-  - Program icon with badge on the text column, name 12 medium (full ink focused, tertiary otherwise), cwd relative to the project in 12 tertiary (hidden under 280 pt), elapsed m:ss while working. Zoom and close on hover. Double-click zooms.
+  - Program icon on the text column, name 12 medium (full ink focused, tertiary otherwise), cwd relative to the project in 12 tertiary (hidden under 280 pt), the status circle and elapsed m:ss while working at the trailing edge. Zoom and close on hover. Double-click zooms.
   - Waiting or failed: the whole strip floods with that state's wash (0.16 dark, 0.12 light, 200 ms in) and the name becomes the agent's question. This replaced the 1.5 pt amber inner stroke.
 - **Sidebar:** 248 wide (200–360, persisted), with our own column and resize handle (double-click resets). ⌃⌘S toggles it (`toggleSessionSidebar:`, because NSWindow already owns `toggleSidebar:`).
 - **Terminal pane padding:** 14 left and right, 10 top, 8 bottom. Leftover rows fall to the bottom.
@@ -107,7 +107,7 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
 | Project header | 32 tall, 20 pt above every project but the first: projects are the objects of the list. 20 pt solid hue tile at x 16 with the initial knocked out in `frame` ink (12 bold, drawn by its ink bounds and cap height on whole pixels, not a centred line box; size and radius scale with the side). Name at x 44 in 13 semibold, always full ink. Hover shows the chevron and "+". When collapsed, a dot after the name if anything inside waits or failed. |
 | Project hue | One of 6 OKLCH hues: 62, 212, 236, 258, 322, 352 (amber, sky, azure, blue, orchid, rose). Red, yellow, green, cyan and the purple accent already mean something, so they are left out. Tiles are solid (dark L 0.72 C 0.12; light L 0.56 C 0.13), which puts the six 20+ RGB units apart; the old 22 % wash left them 8 apart, unreadable at 1×. Text in a hue uses L 0.78 C 0.09 dark, L 0.52 C 0.10 light. Chosen by an FNV-1a hash of the project root, so it is stable everywhere. |
 | Project "+" | A menu: Shell, then each agent installed on the host (local: found on PATH or the usual install directories; remote: Claude, Codex, Gemini), each with its icon; 1–9 pick from the open menu. The pick opens a shell in the project and types the agent's command, so integration and history stay and the shell outlives the agent. |
-| Session row | Icon at x 44 (under the project name), title at x 67 in 13 regular. A row whose agent waits or failed sits on a wash plate of that colour (selection-plate geometry): "who needs me" is answered by area, not a 6 px dot. Title ink is 0.72 at rest; full ink when selected, hovered, or when an agent in it is live (working, waiting, failed, finished-unseen). No weight changes. |
+| Session row | Icon at x 44 (under the project name), title at x 67 in 13 regular. A row whose agent waits or failed says what it needs with its trailing circle (no wash, no stripe: yellow or red over the dark frame turns olive or brown). Title ink is 0.72 at rest; full ink when selected, hovered, or when an agent in it is live (working, waiting, failed, finished-unseen). No weight changes. |
 | Row title | What the icon already says is not said again (`AgentTitle.trimmed`, tested): an agent's own status glyphs ("✳", braille spinner frames) and a leading vendor name followed by a separator ("Codex · Fix login" → "Fix login"; "Claude docs" stays). The same rule applies wherever the icon sits beside the title: row, band, toast, palette. The full title stays in the hover card and VoiceOver, and the palette still matches it. |
 | Trailing slot | Hover shows close. Holding ⌘ for 0.4 s shows `⌘n` in tabular digits: ⌘1–⌘8 by order, and ⌘9 only on the last row when it is not already one of those. |
 | Hover card | After 550 ms: title in semibold, then state with elapsed time, folder and message in secondary ink. |
@@ -132,14 +132,20 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
   | logs | doc.text |
 
 - **Agents:** Claude, Codex and Gemini draw from their vendors' own vectors (`AxRender/BrandMarks.swift`, LobeHub traces, MIT) at 14 in the 16 slot. `SVGPath` parses the geometry and is tested. Other agents use an SF Symbol.
-- **State:** a badge at the lower right, on whole pixels, cut out of the glyph with a 1 pt moat: 6 pt dots (a 14 pt vendor mark keeps three quarters of itself), an 8 pt spinner. The glyph itself never changes.
+- **The icon says who, never how it is doing.** State is the status circle (`Sidebar/StatusGlyphView.swift`) in the row's trailing slot, the strip's and the band's trailing edge, the palette's state column, and the toast's lead.
+- **State: one family of 13 pt circles** (SF Symbols, medium, one stroke), after T3 Code's lucide circles but native: open while it works, closed once it settles, and what it waits for drawn inside. Marks inside are the ones legible at 13 pt on a 1x screen (the raised hand and the key blur there, so they are not used).
 
-  | State | Badge |
+  | State | Circle |
   |---|---|
-  | working | 8 pt cyan spinner: a 2 pt arc over a 0.28 track of itself, 0.35 of the circle, 0.9 s a turn; or a determinate arc |
-  | waiting | amber dot |
-  | failed | red dot |
-  | done (unseen) | green dot |
+  | working | `circle.dashed`, cyan. Breathes (opacity 1 to 0.45, 2 s, every mark on one clock phase), never spins. A known percentage fills a wedge inside, clockwise from 12, 2.75 pt in from the dashes. |
+  | waiting: approve | `lock.circle`, amber (macOS's own mark for a permission) |
+  | waiting: answer | `questionmark.circle`, amber |
+  | waiting: sign in | `person.circle`, amber |
+  | waiting: unsaid | `pause.circle`, amber |
+  | failed | `exclamationmark.circle`, red |
+  | done (unseen) | `checkmark.circle`, green |
+
+  A change is one moment: Magic Replace swaps what is inside the circle, then a mark that wants you moves once (a lock shakes, a question bounces, a failure shakes its head) and stays still. A toast plays it as it lands. Reduce Motion swaps without moving. Idle rows show their age in the slot instead.
 
 ## 5. Surfaces (`Components/Surface.swift`)
 
@@ -158,7 +164,7 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
   - No hint footer: arrows, return and escape are what every list answers to.
 - **Toasts:**
   - Placement: top-right under the band, at most three. Not bottom-centre, because a terminal's bottom row is the live prompt.
-  - Look: radius 10, 340 wide; the program icon with its badge, a title, and up to three lines of body. A card that asks for you (waiting or failed) gets a small secondary **Show** button, trailing and centred on the title line: the whole card is a button, but nothing about a card says so.
+  - Look: radius 10, 340 wide; the status circle (it moves once as the card lands), a title, and up to three lines of body. A card that asks for you (waiting or failed) gets a small secondary **Show** button, trailing and centred on the title line: the whole card is a button, but nothing about a card says so.
   - Timing: 6 s if it asks for something (it is also a button), 4 s otherwise; hover pauses it.
 - **Tooltips:** 500 ms delay, instant while warm; 11 pt; padding 4×8; radius 6; 6 pt below the control. None while a menu is open.
 - **Menus** (`Overlays/PopMenu.swift`): our own, not NSMenu (the system menu is glass on macOS 26+). An opaque float surface in the window's overlay layer, radius 14 with padding 6, rows 28 with radius-8 neutral plates; 16 pt image, 13 pt title, trailing key (tabular, tertiary) or check; separators are a 1 px `borderSubtle` line. A button at a column's end opens it back into the column (trailing-aligned). Keys come through a local monitor so focus never moves: ↑↓, return, 1–9, esc; any ⌘/⌃/⌥ shortcut closes it and passes on. Motion is the palette's.
@@ -166,7 +172,7 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
 - **Diff chip** (`Chrome/GitChanges.swift`, `Chrome/DiffChip.swift`): the band's "+n −m" against HEAD (tracked edits plus untracked files as all-added), green and red meta type, no box; hidden when clean or outside a repo. A click opens the project in the editor (Open in Editor), where the diff is read. Git runs without taking the index lock and gives up after 2 s; at most 1000 files.
 - **Find** (`Terminal/FindCard.swift`, ⌘F, ⌘G, ⇧⌘G): a card in the pane's top-right (under the strip in splits), 304×34, radius 10: lens, field, "3 of 12" in tabular tertiary ("No matches" in secondary), up, down, close. Matches are painted by the frame builder as cell grounds under the text: every match the theme's yellow mixed 30 % into the ground, the current one 62 % (light: 38 / 80). Return and ↓ walk to older matches (up the screen), ⇧return and ↑ to newer; a fresh needle starts at the newest. A match that would land under the card is brought a third of the way down. Literal match, ASCII case-insensitive (libghostty's search: scrollback, both screens, soft wraps, live while open). A one-line selection seeds ⌘F; esc closes and hands focus back.
 - **Links:** hold ⌘ and the link under the pointer is underlined, 1 px in the terminal's own foreground (no new hue on the grid), with a hand cursor; ⌘-click opens it. OSC 8 hyperlinks first, then URLs and file paths read across soft wraps (`TerminalLinks`). A path counts only if it exists, resolved against the pane's directory on this Mac; with a `:line[:col]` it opens at that line in the first installed of Cursor, VS Code, Zed or Windsurf, otherwise in its default app.
-- **Hover card** (`Components/HoverCard.swift`, sidebar session rows, 550 ms): float surface, radius 8, at most 320 wide. Title in caption semibold, then one fact per line (16 tall, 2 apart), each led by a 10 pt mark in a 14 pt column: the state dot in its status colour ("Working · 4m"), `hand.raised` for what a waiting agent asks (`text.bubble` for what a working one says), `folder`, `arrow.triangle.branch` with "main  ↑2 ↓1   +120 −34" (counts tabular, the diff in the chip's colours), `network` with "localhost:5173 · 8080". Only facts that exist appear; git facts load on hover and slot into the open card without a fade.
+- **Hover card** (`Components/HoverCard.swift`, sidebar session rows, 550 ms): float surface, radius 8, at most 320 wide. Title in caption semibold, then one fact per line (16 tall, 2 apart), each led by a 10 pt mark in a 14 pt column: the state's own circle at 10 pt in its status colour, saying what it needs ("Needs approval · 3m", "Working · 4m"), `text.bubble` for what the agent asks or says, `folder`, `arrow.triangle.branch` with "main  ↑2 ↓1   +120 −34" (counts tabular, the diff in the chip's colours), `network` with "localhost:5173 · 8080". Only facts that exist appear; git facts load on hover and slot into the open card without a fade.
 - **Size badge** (`Terminal/SizeBadge.swift`): "120 × 40" centred on a pane while its grid changes (window resize, divider drag, zoom, font size), not on first layout. Float surface, radius 8, 28 tall, tabular meta; in on Tick, out 700 ms after the last change. Divider drags and window resizes show only this badge; double-clicking a divider equalizes the split.
 - **Ended bar** (`Terminal/EndedBar.swift`): a pane whose program ended with a non-zero code (a clean exit closes the pane) keeps its screen, loses its cursor, and shows a float bar 36 tall, radius 10, centred 12 above the bottom: error dot, "Exited with code 3" (caption, secondary), a small secondary "Restart" with `arrow.clockwise`, and the ↩ key. Return or the button starts the same command in the same directory in that slot (a new pane takes the old one's place in the split).
 - **Command blocks** (OSC 133, zsh integration): ⌘↑ / ⌘↓ jump the viewport to the previous / next prompt. The shell sends each command line (`133;C;cmdline_url=`), so the host records the last command, exit code and duration (for `wait --for command`). A command of 10 s or more (not an editor, REPL or agent) leaves a done/error record until seen, "Finished in 4m 12s" / "Exit 2 after 38s", cleared by the next command: a build that ends while you look away tells you like an agent does. A finish in front of the person (focused pane, key window, active app) is seen as it happens.
@@ -179,7 +185,7 @@ Measured from Codex, Linear, Zed, Conductor, Claude desktop, Raycast and Mail, a
   - 20 below: one launch tile per installed preset (Shell first): 88×72, radius 12, a resting card that lifts to a float on hover; the program's mark at 24, its short name in 12 medium, its key in the top-right. Keys 1–n launch.
   - 16 below: where it starts, a borderless pop-up of project tile + name + `chevron.up.chevron.down`, defaulting to the last project used; its menu lists projects with their tiles, then Open Folder….
   - No copy paragraph, no shortcut hints.
-  - Reconnecting: a spinner in place of the mark, the title, and one line that the sessions keep running. No actions.
+  - Reconnecting: the dashed circle in place of the mark, the title, and one line that the sessions keep running. No actions.
 
 ### Agent status
 
@@ -195,9 +201,9 @@ A waiting program's ask is worded once (`StatusRecord.ask`) for the strip, the h
 
 **A grace second:** a state change waits one second before it toasts or posts a banner, then re-checks the state, so a permission a rule grants at once never reaches the person. The row and the Dock badge change at once.
 
-**Progress:** OSC 7501 `progress=` (Claude Code reports the share of its todos done) turns the row's spinner into an arc, as OSC 9;4 does (the arc is the only progress display).
+**Progress:** OSC 7501 `progress=` (Claude Code reports the share of its todos done) fills the working circle's wedge, as OSC 9;4 does (the wedge is the only progress display).
 
-**Subagents:** Claude Code reports each subagent as a record of its own beside the main one (id "": flat agent ids such as `ab89c272635bed8ac`, observed live), and a subagent's record goes when it finishes. `StatusBook.subagentsWorking` counts them. The band's timer reads "Working 4:12 · 2 subagents", and the hover card adds a person.2 fact. The row does not change: the spinner already says working.
+**Subagents:** Claude Code reports each subagent as a record of its own beside the main one (id "": flat agent ids such as `ab89c272635bed8ac`, observed live), and a subagent's record goes when it finishes. `StatusBook.subagentsWorking` counts them. The band's timer reads "Working 4:12 · 2 subagents", and the hover card adds a person.2 fact. The row does not change: the dashed circle already says working.
 
 **Reopen Closed Session** (⇧⌘T): the last closed session comes back in its project and folder, under its name, with Claude Code resuming the conversation it had: as the session closes, the host asks `claude agents --json` (Claude's documented outside view, which lists a live process's `sessionId`) which conversation the pane's Claude holds, before its process goes. The row leaves at once; only the process waits for the answer (≤ 3 s). The UUID comes to the app as an event, and ⇧⌘T types `claude --resume <uuid> || claude`. A conversation never written to can't be resumed (exit 1; quitting Claude exits 0), so a fresh Claude follows. With no id, it's `claude --resume` (Claude's own picker), never `--continue`, because the latest conversation in a folder may belong to another session. Anything else comes back as a shell. Every close records it: ⌥⌘W, the row's close button and its menu.
 

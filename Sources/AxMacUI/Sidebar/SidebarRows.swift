@@ -12,9 +12,10 @@ import AxModel
 //   session: icon under the project's name (x 44), title at x 67 (Codex's
 //            indent: hierarchy from position, not from louder type)
 //
-// A session row is its program icon and title. State sits on the icon as a
-// badge (mini spinner while working, a dot when it wants a look), so the
-// agent's identity never disappears. Hover adds close; holding ⌘ shows ⌘n.
+// A session row is its program icon, title and one trailing slot: its state
+// circle (`StatusGlyphView`) while it works or wants a look, else how long
+// ago it last changed. The icon only ever says who. Hover puts close in the
+// slot; holding ⌘ shows ⌘n.
 
 enum SidebarMetric {
     static let listInset: CGFloat = 8
@@ -339,12 +340,12 @@ final class HostCell: NSTableCellView {
     override var isFlipped: Bool { true }
 
     /// `waiting`: the link needs the person (shown in the failure ink);
-    /// `retrying`: it is coming back by itself (a spinner).
+    /// `retrying`: it is coming back by itself (the dashed circle).
     /// `relay`: the path goes through a Tailscale relay (its tooltip).
     func set(name: String, symbol: String, meta text: String, retrying: Bool, waiting: Bool, relay: String? = nil) {
         title.stringValue = name
         glyph.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        // A spinner says "coming back" by itself; its words would only cost
+        // The dashed circle says "coming back" by itself; its words would only cost
         // the name its room, so they move to the tooltip.
         meta.stringValue = retrying ? "" : text
         meta.textColor = waiting ? Axo.Color.status(.blocked) : Axo.Color.textTertiary
@@ -460,8 +461,12 @@ final class SessionCell: NSTableCellView {
     var title: Label { titleView.label }
     let shortcut = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     let age = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
-    /// What a waiting or failed agent needs, said in the trailing slot.
-    var need = "" { didSet { if need != oldValue { restyle() } } }
+    /// The state, in the trailing slot: what it waits for is the mark inside.
+    let state = StatusGlyphView(frame: .zero)
+    var need: StatusRecord.Need? {
+        get { state.need }
+        set { state.need = newValue }
+    }
     let close = IconButton(symbol: "xmark", label: "Close Session", size: .small)
     var onClose: (() -> Void)?
     /// Shown in the hover card after 550 ms; replaced in place when it changes.
@@ -503,7 +508,7 @@ final class SessionCell: NSTableCellView {
             onClose()
             return true
         }])
-        for v in [icon, titleView, age, shortcut, close] as [NSView] { addSubview(v) }
+        for v in [icon, titleView, age, state, shortcut, close] as [NSView] { addSubview(v) }
         textField = title
         restyle()
     }
@@ -527,15 +532,13 @@ final class SessionCell: NSTableCellView {
         let lit = selected || hovering
         title.font = Axo.Font.body
         title.textColor = lit || wantsLook ? Axo.Color.text : Axo.Color.textSecondary
-        icon.activity = activity
+        state.activity = activity
         icon.lit = lit
         let keyOn = showShortcut && !shortcut.stringValue.isEmpty
         shortcut.isHidden = !keyOn
         close.isHidden = keyOn || !hovering
-        age.isHidden = keyOn || hovering || age.stringValue.isEmpty
-        let needsYou = (activity == .blocked || activity == .error) && !need.isEmpty
-        age.font = needsYou ? Axo.Font.captionStrong : Axo.Font.meta
-        age.textColor = needsYou ? Axo.Color.status(activity) : Axo.Color.textTertiary
+        state.isHidden = keyOn || hovering || activity == .idle
+        age.isHidden = keyOn || hovering || activity != .idle || age.stringValue.isEmpty
         needsLayout = true
     }
 
@@ -555,8 +558,11 @@ final class SessionCell: NSTableCellView {
         let a = age.intrinsicContentSize
         let column = max(a.width, Self.ageColumn)
         age.frame = NSRect(x: right - column, y: (mid - a.height / 2).rounded(), width: column, height: a.height)
+        // The circle's ink (13 of its 16 pt) ends where the ages' digits end.
+        state.frame = NSRect(x: right + 1.5 - s, y: (mid - s / 2).rounded(), width: s, height: s)
         var titleRight = right + 3
         if !age.isHidden { titleRight = age.frame.minX - 6 }
+        if !state.isHidden { titleRight = state.frame.minX - 4 }
         if !close.isHidden { titleRight = close.frame.minX }
         if !shortcut.isHidden { titleRight = shortcut.frame.minX }
         let x = SidebarMetric.titleX

@@ -11,14 +11,14 @@ import AxProtocol
 ///     ⑂  main  ↑2 ↓1   +120 −34
 ///     ◎  localhost:5173 · 8080
 ///
-/// Marks sit in a 14 pt column in tertiary ink (the state dot alone takes its
-/// status colour); facts are caption type in secondary ink, one line each.
+/// Marks sit in a 14 pt column in tertiary ink (the state's circle alone, the
+/// row's own mark at 10 pt, takes its status colour); facts are caption type in secondary ink, one line each.
 /// Only facts that exist are shown: a card for an idle shell can be a title,
 /// a folder and a branch.
 struct HoverCard: Equatable {
     enum Mark: Equatable {
         case symbol(String)
-        case dot(Activity)
+        case state(Activity, StatusRecord.Need?)
     }
 
     struct Fact: Equatable {
@@ -96,8 +96,8 @@ final class HoverCardView: Surface {
             switch f.mark {
             case let .symbol(name):
                 mark = Symbol(name, size: 10, weight: .medium, color: Axo.Color.textTertiary)
-            case let .dot(a):
-                mark = Dot(color: Axo.Color.status(a))
+            case let .state(a, need):
+                mark = Symbol(StatusGlyphView.symbol(a, need) ?? "circle", size: 10, weight: .medium, color: Axo.Color.status(a))
             }
             let l = Label("", font: Axo.Font.caption, color: Axo.Color.textSecondary)
             l.attributedStringValue = f.text
@@ -139,23 +139,4 @@ final class HoverCardView: Surface {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    /// A 6 pt status dot, centred in the mark column.
-    private final class Dot: NSView {
-        private let color: NSColor
-        init(color: NSColor) {
-            self.color = color
-            super.init(frame: .zero)
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError() }
-
-        override func draw(_ dirtyRect: NSRect) {
-            let d: CGFloat = 6
-            let r = NSRect(x: ((bounds.width - d) / 2).rounded(), y: ((bounds.height - d) / 2).rounded(), width: d, height: d)
-            color.setFill()
-            NSBezierPath(ovalIn: r).fill()
-        }
-    }
 }

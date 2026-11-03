@@ -219,9 +219,10 @@ final class Chip: NSView {
 
     override var isFlipped: Bool { true }
 
-    func update(_ a: Activity, text: String) {
+    func update(_ a: Activity, need: StatusRecord.Need? = nil, text: String) {
         activity = a
         glyph.activity = a
+        glyph.need = need
         label.stringValue = text
         setAccessibilityLabel(text)
         restyle()

@@ -51,6 +51,8 @@ final class ToastCenter {
         while toasts.count > Axo.Metric.toastMax, let last = toasts.last { remove(last, animated: true) }
         restack(animated: true, entering: t)
         t.startTimer()
+        // The mark moves once the card has landed, not while it slides in.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak t] in t?.landed() }
         NSAccessibility.post(element: t, notification: .announcementRequested,
                              userInfo: [.announcement: "\(c.title). \(c.body)", .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
@@ -125,8 +127,9 @@ final class ToastView: Surface {
     let info: ToastCenter.Content
     var onClick: (() -> Void)?
     var onExpire: (() -> Void)?
-    /// Who is speaking: the session's program icon with its state badge.
-    private let glyph = ProgramIcon(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+    /// What happened: the state circle (the hand that waves, the check), as
+    /// the row shows it. The title names who.
+    private let glyph = StatusGlyphView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
     private let title = Label("", font: Axo.Font.bodyStrong, color: Axo.Color.text)
     private let body = NSTextField(wrappingLabelWithString: "")
     /// Only on a card that asks for you (waiting or failed): the whole card is
@@ -152,17 +155,13 @@ final class ToastView: Surface {
         body.textColor = Axo.Color.textSecondary
         body.stringValue = c.body
         body.maximumNumberOfLines = 3
-        if let h = c.host, let pane = c.pane, let st = h.state, let sid = st.panes[pane]?.session {
-            let identity = st.identity(of: sid)
-            glyph.identity = identity
-            // Same rule as the row: the mark beside the title already names the agent.
-            title.stringValue = identity.rowTitle(c.title)
+        if let pane = c.pane, let p = c.host?.state?.panes[pane] {
+            glyph.need = c.activity == .blocked ? p.status.headline?.need : nil
             glyph.activity = c.activity == .idle ? .done : c.activity
         } else {
-            // App-level messages (a host error): a plain warning glyph.
-            glyph.identity = ProgramIdentity(symbol: "exclamationmark.triangle")
+            // App-level messages (a host error).
+            glyph.activity = .error
         }
-        glyph.lit = true
         show.target = self
         show.action = #selector(showPressed(_:))
         show.isHidden = !asks
@@ -180,6 +179,8 @@ final class ToastView: Surface {
     private var trailing: CGFloat { asks ? ceil(show.intrinsicContentSize.width) + Axo.Space.md : 0 }
 
     @objc private func showPressed(_ sender: Any?) { onClick?() }
+
+    func landed() { glyph.announce() }
 
     func height(for width: CGFloat) -> CGFloat {
         let textW = width - textX - Self.pad - trailing
