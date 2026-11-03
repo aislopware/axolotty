@@ -290,6 +290,17 @@ pub unsafe extern "C" fn axq_link_rtt_us(link: *const AxqLink) -> u32 {
     unsafe { &*link }.link.rtt().map_or(0, |d| u32::try_from(d.as_micros()).unwrap_or(u32::MAX))
 }
 
+/// The path's bandwidth as the congestion controller estimates it, bytes per second; 0 until
+/// the link has written enough to measure it.
+///
+/// # Safety
+/// `link` is live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn axq_link_bandwidth(link: *const AxqLink) -> u64 {
+    // SAFETY: per the contract above.
+    unsafe { &*link }.link.bandwidth().unwrap_or(0)
+}
+
 /// Ends the link (the sink hears `closed(NULL)`); it may still be freed only by `axq_link_free`.
 ///
 /// # Safety

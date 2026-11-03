@@ -201,16 +201,17 @@ async fn an_echo_beside_a_flood_waits_on_the_path_not_the_flood() {
             let start = Instant::now();
             let echoes = type_keys(&mut p, priority).await;
             let rate = flooded(&p.c) as f64 / 1e6 / (start.elapsed() + Duration::from_millis(500)).as_secs_f64();
+            let bandwidth = p.server.bandwidth();
             f.abort();
             p.client.close(0);
-            (echoes, rate, p.net.counts())
+            (echoes, rate, p.net.counts(), bandwidth)
         };
-        let (lifted, rate, counts) = run(ECHO_PRIORITY).await;
-        let (level, _, _) = run(0).await;
+        let (lifted, rate, counts, bandwidth) = run(ECHO_PRIORITY).await;
+        let (level, _, _, _) = run(0).await;
 
         let q = |v: &[Duration], f| ms(quantile(v, f));
         println!(
-            "seed {seed}: echo p50/p99/max ms idle {:.0}/{:.0}/{:.0}, flooded {:.0}/{:.0}/{:.0}, flooded level {:.0}/{:.0}/{:.0}; flood {rate:.2} MB/s, overflowed {} lost {} of {}",
+            "seed {seed}: echo p50/p99/max ms idle {:.0}/{:.0}/{:.0}, flooded {:.0}/{:.0}/{:.0}, flooded level {:.0}/{:.0}/{:.0}; flood {rate:.2} MB/s (BBR reads {:.2}), overflowed {} lost {} of {}",
             q(&alone, 0.5),
             q(&alone, 0.99),
             q(&alone, 1.0),
@@ -220,6 +221,7 @@ async fn an_echo_beside_a_flood_waits_on_the_path_not_the_flood() {
             q(&level, 0.5),
             q(&level, 0.99),
             q(&level, 1.0),
+            bandwidth.unwrap_or(0) as f64 / 1e6,
             counts.shaped.overflowed,
             counts.shaped.lost,
             counts.shaped.sent,
@@ -228,6 +230,11 @@ async fn an_echo_beside_a_flood_waits_on_the_path_not_the_flood() {
             continue;
         }
         assert!(rate > 4.0, "seed {seed}: the flood still has most of the 5 MB/s link ({rate:.2})");
+        // The app sizes how far a pane may fall behind by this, so it has to be near the truth.
+        // BBR's is a windowed maximum, and jitter bunches acknowledgements: it reads 5.3–6.1
+        // over 20 seeds, so a pane may fall 120 ms behind where the app allowed 100.
+        let bandwidth = bandwidth.expect("measured while flooding") as f64 / 1e6;
+        assert!((4.5..=7.0).contains(&bandwidth), "seed {seed}: BBR reads the 5 MB/s link as {bandwidth:.2} MB/s");
         // What the flood adds to an echo is the bottleneck's standing queue: BBR's bound on what
         // is in flight, about two round trips at this rate (15–17 ms over 30 seeds; before the
         // send window was fitted and an echo exempt from it, 100–450 ms in half of them).

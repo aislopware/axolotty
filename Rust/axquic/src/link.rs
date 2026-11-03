@@ -16,7 +16,7 @@
 //! and skips ahead (a snapshot) rather than streaming seconds of stale output after Ctrl-C.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -48,29 +48,39 @@ const SEND_WINDOW_EVERY: Duration = Duration::from_millis(20);
 /// window never holds back a byte the congestion controller would send.
 struct SendWindow {
     conn: Connection,
-    /// When it was last fitted; `None` once tuning is off.
-    at: Mutex<Option<Option<Instant>>>,
+    /// When it was last fitted.
+    at: Mutex<Option<Instant>>,
+    /// Off to measure against noq's default (`Link::keep_default_send_window`).
+    tune: AtomicBool,
+    /// BBR's estimate of the path's bandwidth, bytes per second, as of the last fit; 0 unknown.
+    bandwidth: AtomicU64,
 }
 
 impl SendWindow {
     fn new(conn: Connection) -> Self {
         conn.set_send_window(SEND_WINDOW_FLOOR);
-        Self { conn, at: Mutex::new(Some(None)) }
+        Self { conn, at: Mutex::new(None), tune: AtomicBool::new(true), bandwidth: AtomicU64::new(0) }
     }
 
     /// Called as a lane writes; fits the buffer at most every [`SEND_WINDOW_EVERY`], so an idle
     /// link wakes for nothing.
     fn fit(&self) {
         let now = Instant::now();
-        let mut at = lock(&self.at);
-        let Some(last) = at.as_mut() else { return };
-        if last.is_some_and(|t| now.duration_since(t) < SEND_WINDOW_EVERY) {
-            return;
+        {
+            let mut at = lock(&self.at);
+            if at.is_some_and(|t| now.duration_since(t) < SEND_WINDOW_EVERY) {
+                return;
+            }
+            *at = Some(now);
         }
-        *last = Some(now);
-        drop(at);
-        let cwnd = self.conn.congestion_state(PathId::ZERO).map_or(0, |c| c.window());
-        self.conn.set_send_window(cwnd.saturating_mul(2).max(SEND_WINDOW_FLOOR));
+        let Some(cc) = self.conn.congestion_state(PathId::ZERO) else { return };
+        let metrics = cc.metrics();
+        if let Some(bits) = metrics.bandwidth_estimate {
+            self.bandwidth.store(bits / 8, Ordering::Relaxed);
+        }
+        if self.tune.load(Ordering::Relaxed) {
+            self.conn.set_send_window(metrics.congestion_window.saturating_mul(2).max(SEND_WINDOW_FLOOR));
+        }
     }
 }
 
@@ -226,11 +236,17 @@ impl Link {
         Some(std::net::SocketAddr::new(a.ip().to_canonical(), a.port()))
     }
 
+    /// BBR's estimate of the path's bandwidth in bytes per second, as of the last write; `None`
+    /// until a write has measured it. The app sizes how far a pane may fall behind by it.
+    pub fn bandwidth(&self) -> Option<u64> {
+        Some(self.0.window.bandwidth.load(Ordering::Relaxed)).filter(|&b| b > 0)
+    }
+
     /// Leaves QUIC's send buffer at noq's default from now on, to measure against the fitted one.
     pub fn keep_default_send_window(&self) {
         // noq's default: eight times a stream's 1.25 MB receive window.
+        self.0.window.tune.store(false, Ordering::Relaxed);
         self.0.conn.set_send_window(10_000_000);
-        *lock(&self.0.window.at) = None;
     }
 
     /// Ends the link; the sink hears `closed(None)`. What is still queued is dropped.

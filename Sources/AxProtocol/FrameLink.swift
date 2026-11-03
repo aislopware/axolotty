@@ -23,6 +23,9 @@ public protocol FrameLink: AnyObject, Sendable {
     func close(_ error: (any Error)?)
     /// What a remote command printed before its preamble (ssh banners), for diagnostics.
     var bannerText: String { get }
+    /// The path's bandwidth in bytes per second, when the link measures it (QUIC's congestion
+    /// controller does); nil otherwise.
+    var bandwidth: Int? { get }
 }
 
 /// Send priorities on a link that orders lanes (QUIC); a byte stream ignores them.
@@ -80,6 +83,8 @@ extension FrameLink {
     }
 
     public func close() { close(nil) }
+
+    public var bandwidth: Int? { nil }
 }
 
 extension ClientMessage {

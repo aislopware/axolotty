@@ -36,6 +36,8 @@ size_t axq_link_pending(const AxqLink *link, uint32_t lane);
 size_t axq_link_pending_total(const AxqLink *link);
 /// Smoothed round trip in microseconds, 0 before the first sample.
 uint32_t axq_link_rtt_us(const AxqLink *link);
+/// The path's bandwidth as the congestion controller estimates it, bytes per second; 0 unknown.
+uint64_t axq_link_bandwidth(const AxqLink *link);
 void axq_link_close(const AxqLink *link, uint32_t code);
 void axq_link_free(AxqLink *link);
 

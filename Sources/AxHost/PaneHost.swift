@@ -19,8 +19,12 @@ enum PaneSignal: Sendable {
 public struct PaneLimits: Sendable {
     public var scrollbackBytes = 16 << 20
     public var continuationBytes = 64 << 10
-    /// Resync a subscriber whose transport backlog exceeds this.
+    /// Resync a subscriber whose transport backlog exceeds this, on a link that doesn't say its
+    /// bandwidth (TCP, the local socket) …
     public var lagBytes = 2 << 20
+    /// … or, on one that does (QUIC), whose backlog would take longer than this to send: Ctrl-C
+    /// on a flood then stops the screen about this long after, at any link rate.
+    public var lagTime: Duration = .milliseconds(100)
     /// … or whose acks trail the head by this much.
     public var ackLagBytes = 8 << 20
     /// Checkpoint after output goes quiet for this long …
@@ -30,6 +34,15 @@ public struct PaneLimits: Sendable {
     public var checkpointMinInterval: Duration = .seconds(2)
 
     public init() {}
+
+    /// The backlog a subscriber may have on a link of `bandwidth` bytes per second before it is
+    /// resynced: `lagTime` of it, never under twice the resync's own 64 KB drain mark, never over
+    /// `lagBytes`.
+    public func lagLimit(bandwidth: Int?) -> Int {
+        guard let bandwidth else { return lagBytes }
+        let seconds = Double(lagTime.components.seconds) + Double(lagTime.components.attoseconds) / 1e18
+        return min(max(Int(Double(bandwidth) * seconds), 128 << 10), lagBytes)
+    }
 }
 
 /// The authoritative terminal of one pane.
@@ -234,7 +247,9 @@ final class PaneHost: @unchecked Sendable {
         let frames = Self.outputFrames(id, bytes, at: offset)
         let head = offset + UInt64(bytes.count)
         for sub in subscribers.values where !sub.resyncing {
-            if sub.conn.pendingBytes(lane: lane) > limits.lagBytes || head &- sub.acked > UInt64(limits.ackLagBytes) {
+            if sub.conn.pendingBytes(lane: lane) > limits.lagLimit(bandwidth: sub.conn.bandwidth)
+                || head &- sub.acked > UInt64(limits.ackLagBytes)
+            {
                 sub.resyncing = true
                 armResync()
                 continue

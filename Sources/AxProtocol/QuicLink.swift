@@ -115,6 +115,11 @@ public final class QuicLink: FrameLink, @unchecked Sendable {
     public var pendingBytes: Int { axq_link_pending_total(ptr) }
     public func pendingBytes(lane: Int) -> Int { axq_link_pending(ptr, Self.wire(lane)) }
 
+    public var bandwidth: Int? {
+        let b = axq_link_bandwidth(ptr)
+        return b == 0 ? nil : Int(clamping: b)
+    }
+
     /// The path's smoothed round trip, once measured.
     public var roundTrip: Duration? {
         let us = axq_link_rtt_us(ptr)
