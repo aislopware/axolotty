@@ -5,8 +5,8 @@ enum EmptyState: Equatable {
     case noSessions
     /// The host of this window is out of reach: what is happening, one line
     /// on what brings it back, and the one thing to do (nil: just wait).
-    /// `machine`: an SF Symbol of the Mac, shown (quiet) in place of the
-    /// spinner when nothing is under way, only waited for (it is offline).
+    /// `machine`: an SF Symbol of that Mac, shown (quiet) where the brand mark
+    /// would be: the sheet is about a machine, so it shows which one.
     case away(title: String, detail: String, retrying: Bool, action: String?, machine: String? = nil)
 }
 
@@ -23,9 +23,12 @@ enum EmptyState: Equatable {
 /// their tiles, then Open Folder…); it defaults to the last one used. No copy
 /// paragraph and no shortcut hints: those live in tooltips.
 ///
-/// Away (a remote host dropped, or waits on the person): a spinner (or the
-/// error mark) in place of the mark, a title, one line on what brings it
-/// back, and at most one button for it.
+/// Away (a remote host dropped, or waits on the person): that Mac's symbol in
+/// place of the mark, wearing its state as a badge (the spinner while
+/// something is under way, amber while it waits on the person, nothing while
+/// it is only offline), a title, one line on what brings it back, and at most
+/// one button for it. No spinner floats alone in the middle: the state is
+/// the machine's, as a session's is its program icon's.
 final class EmptyStateView: NSView {
     struct Project: Equatable {
         var id: WorkspaceID?
@@ -41,6 +44,8 @@ final class EmptyStateView: NSView {
     private let mark = AxoMarkView(frame: .zero)
     private let spinner = StatusGlyphView(frame: .zero)
     private let machine = NSImageView()
+    /// The ground behind the state badge, cut out of the machine's symbol.
+    private let badgeBack = NSView()
     private let title = Label("", font: NSFont.systemFont(ofSize: Prim.Size.t7, weight: .semibold), color: Axo.Color.text)
     private let detail = Label("", font: Axo.Font.body, color: Axo.Color.textSecondary)
     private var tiles: [LaunchTile] = []
@@ -58,6 +63,10 @@ final class EmptyStateView: NSView {
         layer?.cornerCurve = .continuous
         title.alignment = .center
         detail.alignment = .center
+        title.lineBreakMode = .byWordWrapping
+        title.maximumNumberOfLines = 2
+        title.usesSingleLineMode = false
+        badgeBack.wantsLayer = true
         detail.lineBreakMode = .byWordWrapping
         detail.maximumNumberOfLines = 3
         detail.usesSingleLineMode = false
@@ -66,7 +75,7 @@ final class EmptyStateView: NSView {
         remedy.action = #selector(runRemedy)
         machine.imageScaling = .scaleNone
         machine.contentTintColor = Axo.Color.textDisabled
-        for v in [mark, spinner, machine, title, detail, pill, remedy] as [NSView] { addSubview(v) }
+        for v in [mark, machine, badgeBack, spinner, title, detail, pill, remedy] as [NSView] { addSubview(v) }
         set(.noSessions)
     }
 
@@ -75,7 +84,10 @@ final class EmptyStateView: NSView {
 
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() { layer?.backgroundColor = Axo.Color.ground.cgColor }
+    override func updateLayer() {
+        layer?.backgroundColor = Axo.Color.ground.cgColor
+        badgeBack.layer?.backgroundColor = Axo.Color.ground.cgColor
+    }
     override var acceptsFirstResponder: Bool { state == .noSessions }
 
     /// What can be launched, and where.
@@ -116,12 +128,15 @@ final class EmptyStateView: NSView {
             remedy.isHidden = action == nil
             if let action, remedy.title != action { remedy.title = action }
         }
-        mark.isHidden = reconnecting
-        machine.isHidden = symbol == nil
+        mark.isHidden = reconnecting && symbol != nil
+        machine.isHidden = !reconnecting || symbol == nil
         machine.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }?
             .withSymbolConfiguration(.init(pointSize: 30, weight: .light))
-        spinner.isHidden = !reconnecting || symbol != nil
-        spinner.activity = !reconnecting ? .idle : waits ? .blocked : .working
+        // Offline with nothing to do: no state glyph at all.
+        let idle = waits && remedy.isHidden
+        spinner.isHidden = !reconnecting || idle || symbol == nil
+        badgeBack.isHidden = spinner.isHidden
+        spinner.activity = !reconnecting || idle ? .idle : waits ? .blocked : .working
         detail.isHidden = !reconnecting
         pill.isHidden = reconnecting
         tiles.forEach { $0.isHidden = reconnecting }
@@ -159,15 +174,34 @@ final class EmptyStateView: NSView {
         PopMenu.show(items, from: pill)
     }
 
+    /// The size `label` takes within `width`, its lines evened out: text
+    /// that needs two lines gets two of a length, not a lone word under a
+    /// full one (the width is narrowed to about half, then a margin).
+    private static func balanced(_ label: NSTextField, within width: CGFloat) -> NSSize {
+        func size(_ w: CGFloat) -> NSSize {
+            label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: w, height: 400)) ?? .zero
+        }
+        let one = ceil(size(10_000).width)
+        let full = ceil(size(width).height)
+        var w = width
+        if one > width {
+            let lines = max(2, (one / width).rounded(.up))
+            let even = min(width, ceil(one / lines) + 24)
+            if ceil(size(even).height) <= full { w = even }
+        }
+        label.preferredMaxLayoutWidth = w
+        return NSSize(width: w, height: ceil(size(w).height))
+    }
+
     override func layout() {
         super.layout()
         let markH: CGFloat = 48
-        let ts = title.intrinsicContentSize
         let reconnecting = state != .noSessions
         let tileW: CGFloat = 88, tileH: CGFloat = 72, gap: CGFloat = 10
         let w = min(bounds.width - 48, 360)
-        detail.preferredMaxLayoutWidth = w
-        let dh = reconnecting ? ceil(detail.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: w, height: 200)).height ?? 0) : 0
+        let ts = Self.balanced(title, within: w)
+        let ds = reconnecting ? Self.balanced(detail, within: w) : .zero
+        let dh = ds.height
         let ps = pill.fittingSize
         let bs = remedy.isHidden ? .zero : remedy.intrinsicContentSize
         let body = reconnecting
@@ -178,14 +212,20 @@ final class EmptyStateView: NSView {
         var y = ((bounds.height - total) / 2 - bounds.height * 0.04).rounded()
         let m = NSRect(x: (bounds.midX - markH / 2).rounded(), y: y, width: markH, height: markH)
         mark.frame = m
-        spinner.frame = m.insetBy(dx: 16, dy: 16)
         machine.frame = m
         y += markH + 16
-        title.frame = NSRect(x: (bounds.midX - max(w, ts.width) / 2).rounded(), y: y, width: max(w, ts.width), height: ts.height)
+        // The badge sits on the machine's lower trailing corner, on a disc of
+        // ground that parts it from the symbol's strokes.
+        let slot = Axo.Metric.statusSlot, disc = slot + 4
+        let c = NSPoint(x: m.midX + 17, y: m.midY + 10)
+        badgeBack.frame = NSRect(x: (c.x - disc / 2).rounded(), y: (c.y - disc / 2).rounded(), width: disc, height: disc)
+        badgeBack.layer?.cornerRadius = disc / 2
+        spinner.frame = NSRect(x: (c.x - slot / 2).rounded(), y: (c.y - slot / 2).rounded(), width: slot, height: slot)
+        title.frame = NSRect(x: (bounds.midX - ts.width / 2).rounded(), y: y, width: ts.width, height: ts.height)
         y += ts.height
         if reconnecting {
             y += Axo.Space.sm
-            detail.frame = NSRect(x: (bounds.midX - w / 2).rounded(), y: y, width: w, height: dh)
+            detail.frame = NSRect(x: (bounds.midX - ds.width / 2).rounded(), y: y, width: ds.width, height: dh)
             if !remedy.isHidden {
                 y += dh + Axo.Space.lg
                 remedy.frame = NSRect(x: (bounds.midX - bs.width / 2).rounded(), y: y, width: ceil(bs.width), height: bs.height)
@@ -193,9 +233,11 @@ final class EmptyStateView: NSView {
             return
         }
         y += 20
-        // Tiles wrap only when the sheet is narrower than the row.
-        let perRow = max(1, min(tiles.count, Int((bounds.width - 48 + gap) / (tileW + gap))))
-        let rows = (tiles.count + perRow - 1) / max(1, perRow)
+        // Tiles wrap only when the sheet is narrower than the row, and then
+        // into rows as even as they go (2 + 2, never 3 + 1).
+        let fits = max(1, min(tiles.count, Int((bounds.width - 48 + gap) / (tileW + gap))))
+        let rows = (tiles.count + fits - 1) / fits
+        let perRow = (tiles.count + rows - 1) / max(1, rows)
         for (i, t) in tiles.enumerated() {
             let r = i / perRow, c = i % perRow
             let inRow = min(perRow, tiles.count - r * perRow)

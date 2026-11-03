@@ -242,7 +242,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let status = host.linkStatus ?? ("Reconnecting to \(host.name)", true)
         content.showEmpty(.away(title: status.text, detail: host.linkDetail, retrying: status.retrying,
                                 action: host.linkRemedy?.title,
-                                machine: host.waitsForTheMac ? SidebarViewController.hostSymbol(host) : nil))
+                                machine: SidebarViewController.hostSymbol(host)))
     }
 
     /// The empty window: launch tiles for this host's agents, starting in the
