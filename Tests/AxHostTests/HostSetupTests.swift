@@ -32,6 +32,14 @@ struct HostSetupTests {
         }
     }
 
+    @Test func aTailnetPeersFirstKeyIsTakenAndAChangedOneIsNot() {
+        let ssh = HostSetup(ssh: "mini", from: URL(filePath: "/")).remote
+        #expect(ssh.contains("BatchMode=yes"), "never waits on a prompt nobody sees")
+        #expect(ssh.contains("StrictHostKeyChecking=accept-new"))
+        #expect(HostSetup.failure(status: 255, stderr: "@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @")
+            == .signIn("@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @"))
+    }
+
     @Test func sshsWordsSayWhetherToSignIn() {
         #expect(HostSetup.failure(status: 255, stderr: "ada@mini: Permission denied (publickey,password).") == .signIn("ada@mini: Permission denied (publickey,password)."))
         #expect(HostSetup.failure(status: 255, stderr: "Host key verification failed.\n") == .signIn("Host key verification failed."))

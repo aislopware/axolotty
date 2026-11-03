@@ -62,8 +62,15 @@ public struct HostSetup: Sendable {
     }
 
     /// Over ssh to `host` (a tailnet name or address, or a `Host` in ~/.ssh/config).
+    ///
+    /// A host key ssh has never seen is taken on first use (`accept-new`):
+    /// the far Mac is a tailnet peer, already proven by its WireGuard key, so
+    /// asking the person to type "yes" in a terminal first proves nothing
+    /// more. Known under its address but dialled by its MagicDNS name is the
+    /// usual case. A key that *changed* is still refused, and said so.
     public init(ssh host: String, from: URL) {
-        self.init(remote: ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+        self.init(remote: ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+                           "-o", "ConnectTimeout=10",
                            "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3", "--", host],
                   from: from)
     }
