@@ -199,12 +199,10 @@ public struct FrameDecoder: Sendable {
         }
     }
 
-    private func readLE<T: FixedWidthInteger>(_: T.Type, at offset: Int) -> T {
-        var v: T = 0
-        _ = withUnsafeMutableBytes(of: &v) { dst in
-            buffer.copyBytes(to: dst, from: (buffer.startIndex + offset) ..< (buffer.startIndex + offset + MemoryLayout<T>.size))
-        }
-        return T(littleEndian: v)
+    /// A bounds-checked load from the buffer's span (macOS 27's byte-order load): no pointer,
+    /// no copy, and a bad offset traps instead of reading past the frame.
+    private func readLE<T: FixedWidthInteger & ConvertibleFromBytes>(_: T.Type, at offset: Int) -> T {
+        buffer.bytes.load(fromByteOffset: offset, as: T.self, .littleEndian)
     }
 
     private func readID(at offset: Int) -> UUID {
