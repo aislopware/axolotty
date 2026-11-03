@@ -9,31 +9,19 @@
     <linearGradient id="g1lo" x1="0" y1="300" x2="0" y2="450" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7a2ad8" stop-opacity="0"/><stop offset="1" stop-color="#7a2ad8" stop-opacity=".45"/></linearGradient>
     <mask id="g1c" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512"><g fill="#fff"><ellipse cx="256" cy="306" rx="166" ry="142"/><circle cx="161.7784" cy="208.872" r="30"/><circle cx="146.72951369367058" cy="167.52552468542004" r="30"/><polygon points="189.96917862357725,198.61139570022996 174.92029231724783,157.26492038565 118.53873507009334,177.7861289851901 133.58762137642276,219.13260429977007"/><circle cx="130.3712" cy="244.656" r="30"/><circle cx="97.67282767899465" cy="215.21425332021025" r="30"/><polygon points="150.44511819076573,222.36165523567817 117.74674586976039,192.9199085558884 77.59890948822891,237.50859808453208 110.29728180923425,266.9503447643218"/><circle cx="114.6676" cy="290.664" r="30"/><circle cx="71.97458804385616" cy="280.0194365936146" r="30"/><polygon points="121.92525686799003,261.5551282117201 79.2322449118462,250.91056480533473 64.71693117586612,309.1283083818945 107.40994313200996,319.7728717882799"/><circle cx="350.22159999999997" cy="208.872" r="30"/><circle cx="365.2704863063294" cy="167.52552468542004" r="30"/><polygon points="378.41237862357724,219.13260429977007 393.4612649299067,177.7861289851901 337.07970768275214,157.26492038565 322.0308213764227,198.61139570022996"/><circle cx="381.6288" cy="244.656" r="30"/><circle cx="414.3271723210054" cy="215.21425332021025" r="30"/><polygon points="401.7027181907658,266.9503447643218 434.40109051177114,237.50859808453208 394.2532541302396,192.9199085558884 361.55488180923425,222.36165523567817"/><circle cx="397.3324" cy="290.664" r="30"/><circle cx="440.02541195614384" cy="280.0194365936146" r="30"/><polygon points="404.59005686799003,319.7728717882799 447.28306882413386,309.1283083818945 432.7677550881538,250.91056480533473 390.07474313201,261.5551282117201"/></g></mask>
     <filter id="g1f" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dy="3" stdDeviation="5" flood-color="#3a2c55" flood-opacity="0.2" result="near"/><feDropShadow dy="9" stdDeviation="17.5" flood-color="#3a2c55" flood-opacity="0.1"/><feMerge result="body"><feMergeNode/></feMerge>
-    <feOffset in="SourceAlpha" dx="1.5" dy="0" result="e0o"/>
+    <feOffset in="SourceAlpha" dx="0" dy="-1.2" result="e0o"/>
     <feComposite in="SourceAlpha" in2="e0o" operator="out" result="e0a"/>
     <feGaussianBlur in="e0a" stdDeviation=".4" result="e0b"/>
     <feComposite in="e0b" in2="SourceAlpha" operator="in" result="e0m"/>
-    <feFlood flood-color="#2a0a5a" flood-opacity="0.4"/>
+    <feFlood flood-color="#ffffff" flood-opacity="0.12"/>
     <feComposite in2="e0m" operator="in" result="e0"/>
-    <feOffset in="SourceAlpha" dx="-1.5" dy="0" result="e1o"/>
+    <feOffset in="SourceAlpha" dx="0" dy="1.5" result="e1o"/>
     <feComposite in="SourceAlpha" in2="e1o" operator="out" result="e1a"/>
     <feGaussianBlur in="e1a" stdDeviation=".4" result="e1b"/>
     <feComposite in="e1b" in2="SourceAlpha" operator="in" result="e1m"/>
-    <feFlood flood-color="#2a0a5a" flood-opacity="0.4"/>
+    <feFlood flood-color="#ffffff" flood-opacity="0.4"/>
     <feComposite in2="e1m" operator="in" result="e1"/>
-    <feOffset in="SourceAlpha" dx="0" dy="-1.5" result="e2o"/>
-    <feComposite in="SourceAlpha" in2="e2o" operator="out" result="e2a"/>
-    <feGaussianBlur in="e2a" stdDeviation=".4" result="e2b"/>
-    <feComposite in="e2b" in2="SourceAlpha" operator="in" result="e2m"/>
-    <feFlood flood-color="#ffffff" flood-opacity="0.18"/>
-    <feComposite in2="e2m" operator="in" result="e2"/>
-    <feOffset in="SourceAlpha" dx="0" dy="1.8" result="e3o"/>
-    <feComposite in="SourceAlpha" in2="e3o" operator="out" result="e3a"/>
-    <feGaussianBlur in="e3a" stdDeviation=".4" result="e3b"/>
-    <feComposite in="e3b" in2="SourceAlpha" operator="in" result="e3m"/>
-    <feFlood flood-color="#ffffff" flood-opacity="0.45"/>
-    <feComposite in2="e3m" operator="in" result="e3"/>
-    <feMerge><feMergeNode in="body"/><feMergeNode in="e0"/><feMergeNode in="e1"/><feMergeNode in="e2"/><feMergeNode in="e3"/></feMerge></filter>
+    <feMerge><feMergeNode in="body"/><feMergeNode in="e0"/><feMergeNode in="e1"/></feMerge></filter>
     
     <radialGradient id="g1gl0"><stop offset="0" stop-color="#fbd3f6"/><stop offset=".45" stop-color="#fbd3f6" stop-opacity=".75"/><stop offset="1" stop-color="#fbd3f6" stop-opacity="0"/></radialGradient><radialGradient id="g1gl1"><stop offset="0" stop-color="#cff3f7"/><stop offset=".45" stop-color="#cff3f7" stop-opacity=".75"/><stop offset="1" stop-color="#cff3f7" stop-opacity="0"/></radialGradient>
     <linearGradient id="g1rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
