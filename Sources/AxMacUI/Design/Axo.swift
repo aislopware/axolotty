@@ -344,9 +344,14 @@ enum Axo {
         /// from 98 % about its top edge at `anchorX` (where it came from),
         /// settling the last 4 pt. Under Reduce Motion, the fade alone.
         static func rise(_ view: NSView, anchorX: CGFloat) {
-            view.alphaValue = 0
-            run(rise) { view.animator().alphaValue = 1 }
-            guard !reduced, let layer = view.layer else { return }
+            view.isHidden = false
+            view.alphaValue = 1
+            guard let layer = view.layer else { return }
+            let fade = rise.animation("opacity")
+            fade.fromValue = Float(0)
+            fade.toValue = Float(1)
+            layer.add(fade, forKey: "rise.fade")
+            guard !reduced else { return }
             let top = layer.bounds.minY
             var t = CATransform3DMakeTranslation(anchorX, top, 0)
             t = CATransform3DScale(t, 0.98, 0.98, 1)
