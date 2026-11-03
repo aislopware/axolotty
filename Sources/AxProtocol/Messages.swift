@@ -199,6 +199,10 @@ public enum ClientMessage: Codable, Sendable {
     /// token, in order, `last` on the final one; each is at most
     /// `HostFile.piece` bytes, sent on a lane of its own behind every key.
     case file(UUID, name: String, bytes: Data, last: Bool)
+    /// A person's input with its number on this connection, from 0 (feature "copies"): a key
+    /// may also come as a datagram copy, early or twice, and the host applies number `n` only
+    /// right after `n - 1`, from whichever came first.
+    indirect case numbered(UInt64, ClientMessage)
 }
 
 public enum HostEvent: Codable, Hashable, Sendable {

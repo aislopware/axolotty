@@ -109,6 +109,13 @@ struct TailnetTests {
         let m = c.attach(p)
         c.send(.text(p, "echo over-the-tailnet\n"))
         #expect(await waitScreen(m, contains: "over-the-tailnet"))
+        // Typed text goes numbered with a datagram copy beside it: it runs once.
+        // A second run would come before the line typed after it.
+        c.send(.text(p, "echo once-$((40+2))\n"))
+        c.send(.text(p, "echo after-$((1+1))\n"))
+        #expect(await waitScreen(m, contains: "after-2"))
+        let screen = await c.capture(p) ?? ""
+        #expect(screen.components(separatedBy: "once-42").count - 1 == 1, "\(screen)")
         c.disconnect()
         await fx.tearDown()
 

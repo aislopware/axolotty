@@ -255,8 +255,15 @@ final class PaneHost: @unchecked Sendable {
                 continue
             }
             for f in frames { sub.conn.send(f, lane: lane, priority: priority) }
+            // An echo also goes as a datagram copy: a lost packet then costs it nothing.
+            if priority == LanePriority.echo, frames.count == 1, frames[0].count <= Self.largestCopy {
+                sub.conn.sendCopy(frames[0], lane: lane)
+            }
         }
     }
+
+    /// The largest echo copied as a datagram: one fits a tailnet packet with room to spare.
+    static let largestCopy = 1_000
 
     private static func outputFrames(_ id: PaneID, _ bytes: Data, at offset: UInt64) -> [Data] {
         var out: [Data] = []

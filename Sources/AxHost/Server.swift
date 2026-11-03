@@ -100,6 +100,8 @@ public actor Server {
     enum Inbound: Sendable {
         case accepted(any FrameLink)
         case frame(ObjectIdentifier, Frame)
+        /// A datagram copy of a frame the peer also sent on its stream (feature "copies").
+        case copy(ObjectIdentifier, Frame)
         case closed(ObjectIdentifier)
         case exited(PaneID, ChildStatus)
         case holderLost
@@ -110,7 +112,17 @@ public actor Server {
         let conn: any FrameLink
         var hello: ClientHello?
         var attached: Set<PaneID> = []
+        /// The number of the next input to apply (`ClientMessage.numbered`).
+        var nextInput: UInt64 = 0
         init(conn: any FrameLink) { self.conn = conn }
+
+        /// Whether numbered input `seq` is applied: from the stream, unless its copy already
+        /// was; from a copy, only in its turn (an earlier one is still on its way).
+        func admits(_ seq: UInt64, copy: Bool) -> Bool {
+            guard copy ? seq == nextInput : seq >= nextInput else { return false }
+            nextInput = seq + 1
+            return true
+        }
         var subscribed: Bool { hello?.subscribe ?? false }
     }
 
@@ -342,6 +354,7 @@ public actor Server {
         // Tunnelled streams (feature "tunnel") go straight to their sockets,
         // never through the actor: a page loading must not wait on a pane.
         let tunnels = Tunnels(conn: conn) { port in try? TCPSocket.connect(host: "localhost", port: port, timeout: 2) }
+        conn.onCopies { frame in sink.yield(.copy(key, frame)) }
         conn.start(onFrame: { frame in
             switch frame {
             case .open, .stream, .streamAck, .reset: tunnels.receive(frame)
@@ -438,6 +451,13 @@ public actor Server {
             default:
                 link.conn.send(HostMessage.error("unexpected frame"))
             }
+        case let .copy(key, frame):
+            // A key's copy, applied if it is the next input; anything else a copy carries is
+            // left to the stream.
+            guard let link = links[key], case let .control(json) = frame,
+                  case let .numbered(seq, input) = try? MessageCodec.client(json), input.isInput,
+                  link.admits(seq, copy: true) else { return }
+            try? await handle(input, from: link)
         case let .closed(key):
             guard let link = links.removeValue(forKey: key) else { return }
             for p in link.attached { panes[p]?.detach(link.conn) }
@@ -472,6 +492,10 @@ public actor Server {
         }
         let key = ObjectIdentifier(link.conn)
         switch msg {
+        case let .numbered(seq, input):
+            // Input only, one level deep; skipped when its copy came first.
+            guard input.isInput, link.admits(seq, copy: false) else { return }
+            try await handle(input, from: link)
         case .hello:
             break
         case let .intent(token, intent):

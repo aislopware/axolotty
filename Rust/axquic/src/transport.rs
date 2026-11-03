@@ -28,7 +28,7 @@ const MIN_MTU: u16 = 1200;
 /// the endpoint's task is late.
 const RECEIVE_BUFFER: usize = 4 << 20;
 /// Datagram buffers (the echo copies are small; this bounds a burst of them).
-const DATAGRAM_BUFFER: usize = 1 << 20;
+pub const DATAGRAM_BUFFER: usize = 1 << 20;
 /// Initial congestion window in packets: a LAN or a tailnet affords Chromium's burst, and the
 /// first screenful of a pane is tens of kilobytes.
 const INITIAL_WINDOW_PACKETS: u64 = 32;

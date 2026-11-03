@@ -29,7 +29,10 @@ void axq_endpoint_connect(AxqEndpoint *ep, const char *host, uint16_t port, uint
 void axq_endpoint_close(AxqEndpoint *ep);
 
 /// Starts reading; `ctx` must stay valid until `closed` has been called.
-void axq_link_start(AxqLink *link, void *ctx, AxqDataFn data, AxqClosedFn closed);
+/// `copy` (may be NULL) hears datagram copies: whole frames, maybe early, twice, or never.
+void axq_link_start(AxqLink *link, void *ctx, AxqDataFn data, AxqDataFn copy, AxqClosedFn closed);
+/// Sends bytes already sent on `lane` again as a datagram a moment later (a key, an echo).
+void axq_link_copy(const AxqLink *link, uint32_t lane, const uint8_t *bytes, size_t len);
 /// Queues bytes on a lane at a send priority (1 echo, 0 control and panes, below 0 bulk).
 void axq_link_send(const AxqLink *link, uint32_t lane, int32_t priority, const uint8_t *bytes, size_t len);
 size_t axq_link_pending(const AxqLink *link, uint32_t lane);

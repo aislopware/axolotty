@@ -11,6 +11,11 @@
 //! raised to `transport::ECHO_PRIORITY` and leaves in the next packet, unpaced, and is never
 //! held for send-buffer room a flood has taken (noq-proto patch 23).
 //!
+//! A key and its echo also go as a datagram copy ([`Link::copy`]), a couple of milliseconds
+//! after the stream copy, in a packet of their own: when the stream's packet is lost, the copy
+//! arrives a round trip or two before the retransmission would. The receiver keeps whichever
+//! comes first (the app deduplicates by sequence or journal offset).
+//!
 //! QUIC's send buffer is held to twice the congestion window ([`SendWindow`]): what a flood
 //! queues past that waits here, where `pending` counts it, so the app sees a pane fall behind
 //! and skips ahead (a snapshot) rather than streaming seconds of stale output after Ctrl-C.
@@ -30,12 +35,22 @@ use tokio::time::Instant;
 /// order, never after `closed`.
 pub trait Sink: Send + Sync + 'static {
     fn data(&self, lane: u32, bytes: &[u8]);
+    /// A datagram copy of bytes sent on `lane` ([`Link::copy`]): whole, maybe early, maybe
+    /// twice, maybe never.
+    fn copy(&self, _lane: u32, _bytes: &[u8]) {}
     /// `None`: closed by either side on purpose; else what broke it.
     fn closed(&self, reason: Option<String>);
 }
 
 /// The largest read handed to the sink at once.
 const READ_CHUNK: usize = 64 << 10;
+
+/// How long a datagram copy waits after its stream copy: long enough that noq has written the
+/// stream's packet, so the two are never lost together (Slopty's `echo::COPY_DELAY`).
+pub const COPY_DELAY: Duration = Duration::from_millis(2);
+/// Datagram bytes that may be queued ahead of a copy: a copy behind more would arrive after
+/// the stream's own retransmission.
+const COPY_QUEUED_AHEAD: usize = 2 * 1200;
 
 /// The send buffer never shrinks below this: a few round trips of a fast tailnet path.
 pub const SEND_WINDOW_FLOOR: u64 = 256 << 10;
@@ -180,6 +195,18 @@ impl Link {
         }
         let inner = Arc::clone(&self.0);
         self.0.runtime.spawn(async move {
+            while let Ok(d) = inner.conn.read_datagram().await {
+                if d.len() < 4 {
+                    continue;
+                }
+                let lane = u32::from_be_bytes([d[0], d[1], d[2], d[3]]);
+                let sink = lock(&inner.sink);
+                let Some(sink) = sink.as_ref() else { return };
+                sink.copy(lane, &d[4..]);
+            }
+        });
+        let inner = Arc::clone(&self.0);
+        self.0.runtime.spawn(async move {
             while let Ok(mut recv) = inner.conn.accept_uni().await {
                 let inner = Arc::clone(&inner);
                 tokio::spawn(async move {
@@ -214,6 +241,27 @@ impl Link {
             l.pending.fetch_add(n, Ordering::Relaxed);
             self.0.total.fetch_add(n, Ordering::Relaxed);
         }
+    }
+
+    /// Sends `data`, already sent on `lane`, again as a datagram after [`COPY_DELAY`], if the
+    /// path takes a datagram that large and hardly any are queued; else not at all. For a key
+    /// and its echo: small, and worth a round trip.
+    pub fn copy(&self, lane: u32, data: &[u8]) {
+        let len = data.len() + 4;
+        if self.0.conn.max_datagram_size().is_none_or(|max| len > max) {
+            return;
+        }
+        let mut d = Vec::with_capacity(len);
+        d.extend_from_slice(&lane.to_be_bytes());
+        d.extend_from_slice(data);
+        let conn = self.0.conn.clone();
+        self.0.runtime.spawn(async move {
+            tokio::time::sleep(COPY_DELAY).await;
+            let queued = crate::transport::DATAGRAM_BUFFER.saturating_sub(conn.datagram_send_buffer_space());
+            if queued <= COPY_QUEUED_AHEAD {
+                let _ = conn.send_datagram(Bytes::from(d));
+            }
+        });
     }
 
     /// Bytes queued on `lane` and not yet taken by QUIC's send buffer.

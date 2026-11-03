@@ -90,6 +90,8 @@ public final class HostConnection: @unchecked Sendable {
         var saves: [UUID: CheckedContinuation<String?, Never>] = [:]
         /// What the host said it can do in its welcome.
         var hostFeatures: Set<String> = []
+        /// The number of the next input on this connection (`ClientMessage.numbered`).
+        var inputSeq: UInt64 = 0
         /// A kick's ping, until its pong comes.
         var kickPing: UInt64?
         var unacked: [PaneID: UInt64] = [:]
@@ -442,7 +444,9 @@ public final class HostConnection: @unchecked Sendable {
                 s.refusal = nil
                 s.liveness = nil
                 s.dialedAt = t
+                s.inputSeq = 0
             }
+            conn.onCopies { [weak self] in self?.receiveCopy($0, on: conn) }
             conn.start(onFrame: { [weak self] in self?.receive($0, on: conn) },
                        onClose: { [weak self] e in self?.closed(conn, e) })
             conn.send(ClientMessage.hello(hello))
@@ -640,6 +644,14 @@ public final class HostConnection: @unchecked Sendable {
 
     // MARK: Receiving (connection queue)
 
+    /// A datagram copy of an echo: applied when it is the mirror's next output, else left to the
+    /// stream (one past a gap is a byte still on its way there, not a loss).
+    private func receiveCopy(_ frame: Frame, on conn: any FrameLink) {
+        guard case let .output(pane, offset, bytes) = frame,
+              let m = state.withLock({ $0.conn === conn ? $0.mirrors[pane] : nil }) else { return }
+        if case let .applied(n) = m.output(at: offset, bytes) { noteApplied(pane, n, conn: conn) }
+    }
+
     private func receive(_ frame: Frame, on conn: any FrameLink) {
         let t = now
         let tunnels = state.withLock { s in
@@ -760,8 +772,24 @@ public final class HostConnection: @unchecked Sendable {
     // MARK: Sending
 
     public func send(_ message: ClientMessage) {
-        state.withLock { $0.conn }?.send(message)
+        // A person's input goes numbered to a host that takes copies, and a key or typed text
+        // also goes as a datagram copy: when its packet is lost, the copy arrives first.
+        let (conn, numbered) = state.withLock { s -> ((any FrameLink)?, ClientMessage?) in
+            guard let c = s.conn, message.isInput, s.hostFeatures.contains("copies") else { return (s.conn, nil) }
+            defer { s.inputSeq += 1 }
+            return (c, .numbered(s.inputSeq, message))
+        }
+        guard let conn else { return }
+        guard let numbered, let frame = try? MessageCodec.frame(numbered) else { return conn.send(message) }
+        conn.send(frame, lane: 0, priority: LanePriority.echo)
+        switch message {
+        case .key, .text: if frame.count <= Self.largestCopy { conn.sendCopy(frame, lane: 0) }
+        default: break
+        }
     }
+
+    /// The largest frame copied as a datagram: one fits a tailnet packet with room to spare.
+    static let largestCopy = 1_000
 
     /// Applies an intent on the host; returns when the host has (deltas arrive first).
     public func perform(_ intent: Intent) async throws(ConnectionError) {

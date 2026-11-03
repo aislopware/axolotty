@@ -216,12 +216,18 @@ pub unsafe extern "C" fn axq_endpoint_close(ep: *mut AxqEndpoint) {
 struct CSink {
     ctx: Ctx,
     data: AxqDataFn,
+    copy: Option<AxqDataFn>,
     closed: AxqClosedFn,
 }
 
 impl Sink for CSink {
     fn data(&self, lane: u32, bytes: &[u8]) {
         (self.data)(self.ctx.0, lane, bytes.as_ptr(), bytes.len());
+    }
+    fn copy(&self, lane: u32, bytes: &[u8]) {
+        if let Some(copy) = self.copy {
+            copy(self.ctx.0, lane, bytes.as_ptr(), bytes.len());
+        }
     }
     fn closed(&self, reason: Option<String>) {
         match reason {
@@ -231,17 +237,41 @@ impl Sink for CSink {
     }
 }
 
-/// Starts reading: `data(ctx, lane, bytes, len)` per chunk (in order within a lane), then
+/// Starts reading: `data(ctx, lane, bytes, len)` per chunk (in order within a lane),
+/// `copy(ctx, lane, bytes, len)` per datagram copy (if not NULL; whole frames, unordered), then
 /// `closed(ctx, reason or NULL)` once; nothing after it.
 ///
 /// # Safety
 /// `link` is live; `ctx` stays valid until `closed` is called.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn axq_link_start(link: *mut AxqLink, ctx: *mut c_void, data: AxqDataFn, closed: AxqClosedFn) {
+pub unsafe extern "C" fn axq_link_start(
+    link: *mut AxqLink,
+    ctx: *mut c_void,
+    data: AxqDataFn,
+    copy: Option<AxqDataFn>,
+    closed: AxqClosedFn,
+) {
     // SAFETY: per the contract above.
     let link = &unsafe { &*link }.link;
     let _guard = runtime().enter();
-    link.start(Arc::new(CSink { ctx: Ctx(ctx), data, closed }));
+    link.start(Arc::new(CSink { ctx: Ctx(ctx), data, copy, closed }));
+}
+
+/// Sends `len` bytes, already sent on `lane`, again as a datagram a moment later, when the path
+/// takes it and the datagram queue is nearly empty.
+///
+/// # Safety
+/// `link` is live; `bytes` has `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn axq_link_copy(link: *const AxqLink, lane: u32, bytes: *const u8, len: usize) {
+    if len == 0 {
+        return;
+    }
+    // SAFETY: per the contract above.
+    let data = unsafe { std::slice::from_raw_parts(bytes, len) };
+    let _guard = runtime().enter();
+    // SAFETY: per the contract above.
+    unsafe { &*link }.link.copy(lane, data);
 }
 
 /// Queues `len` bytes on `lane` at `priority`; never blocks.

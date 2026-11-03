@@ -42,9 +42,25 @@ fn wifi() -> shape::Link {
 #[derive(Default)]
 struct Got {
     lanes: Mutex<HashMap<u32, Vec<u8>>>,
-    /// When each 4-byte unit on a lane arrived, in order.
-    times: Mutex<HashMap<u32, Vec<Instant>>>,
+    /// Keys (lane 0) and echoes as the app applies them: key `n` only after key `n - 1`, from
+    /// the stream or a datagram copy, whichever comes first; a copy ahead of its turn is
+    /// dropped, as the app drops an output copy past its mirror's offset. When each was applied.
+    applied: Mutex<HashMap<u32, Vec<Instant>>>,
     closed: Mutex<Option<Option<String>>>,
+}
+
+impl Got {
+    fn arrive(&self, lane: u32, id: u32) {
+        let mut applied = self.applied.lock().unwrap();
+        let times = applied.entry(lane).or_default();
+        if id as usize == times.len() {
+            times.push(Instant::now());
+        }
+    }
+
+    fn applied(&self, lane: u32) -> Vec<Instant> {
+        self.applied.lock().unwrap().get(&lane).cloned().unwrap_or_default()
+    }
 }
 
 struct Collect(Arc<Got>, mpsc::UnboundedSender<u32>);
@@ -55,13 +71,19 @@ impl Sink for Collect {
         let buf = lanes.entry(lane).or_default();
         let before = buf.len() / 4;
         buf.extend_from_slice(bytes);
-        let after = buf.len() / 4;
         if lane < FLOOD_BASE {
-            let now = Instant::now();
-            self.0.times.lock().unwrap().entry(lane).or_default().extend((before..after).map(|_| now));
+            for unit in buf[before * 4..].as_chunks::<4>().0 {
+                self.0.arrive(lane, u32::from_be_bytes(*unit));
+            }
         }
         drop(lanes);
         let _ = self.1.send(lane);
+    }
+    fn copy(&self, lane: u32, bytes: &[u8]) {
+        if let Ok(id) = bytes.try_into() {
+            self.0.arrive(lane, u32::from_be_bytes(id));
+            let _ = self.1.send(lane);
+        }
     }
     fn closed(&self, reason: Option<String>) {
         *self.0.closed.lock().unwrap() = Some(reason);
@@ -117,45 +139,50 @@ fn flood(link: &Link, lanes: u32) -> tokio::task::JoinHandle<()> {
     })
 }
 
-/// A key every 30 ms, each echoed by the far side the moment it arrives, at `echo_priority`;
-/// returns each key's time to its echo.
-async fn type_keys(p: &mut Pair, echo_priority: i32) -> Vec<Duration> {
+/// A key every 30 ms, each echoed by the far side the moment it is applied, at
+/// `echo_priority`; with `copies`, each key and echo also goes as a datagram copy. Returns each
+/// key's time to its echo, as the app would apply it.
+async fn type_keys(p: &mut Pair, echo_priority: i32, copies: bool) -> Vec<Duration> {
     let server = p.server.clone();
     let s = Arc::clone(&p.s);
     let mut s_rx = std::mem::replace(&mut p.s_rx, mpsc::unbounded_channel().1);
-    // The far side: every whole key after the hello is echoed back on the pane's lane.
+    // The far side: every key applied is echoed back on the pane's lane, in order.
     let echoer = tokio::spawn(async move {
-        let mut echoed = 1; // the hello
+        let mut echoed = 0;
         while s_rx.recv().await.is_some() {
-            let lanes = s.lanes.lock().unwrap();
-            let got = lanes.get(&0).map_or(&[][..], Vec::as_slice);
-            while got.len() >= (echoed + 1) * 4 {
-                let key = Bytes::copy_from_slice(&got[echoed * 4..echoed * 4 + 4]);
-                server.send(ECHO_LANE, echo_priority, key);
-                echoed += 1;
+            let applied = s.applied(0).len();
+            for id in echoed..applied as u32 {
+                let echo = id.to_be_bytes();
+                server.send(ECHO_LANE, echo_priority, Bytes::copy_from_slice(&echo));
+                if copies {
+                    server.copy(ECHO_LANE, &echo);
+                }
             }
+            echoed = echoed.max(applied as u32);
         }
     });
     let mut sent = Vec::new();
     for k in 0..KEYS {
         sent.push(Instant::now());
         p.client.send(0, ECHO_PRIORITY, Bytes::copy_from_slice(&k.to_be_bytes()));
+        if copies {
+            p.client.copy(0, &k.to_be_bytes());
+        }
         tokio::time::sleep(KEY_EVERY).await;
     }
     let c = Arc::clone(&p.c);
     tokio::time::timeout(Duration::from_secs(30), async {
-        while c.times.lock().unwrap().get(&ECHO_LANE).map_or(0, Vec::len) < KEYS as usize {
+        while c.applied(ECHO_LANE).len() < KEYS as usize {
             p.c_rx.recv().await;
         }
     })
     .await
     .expect("every echo comes back");
     echoer.abort();
-    let times = p.c.times.lock().unwrap()[&ECHO_LANE].clone();
     let echoes = p.c.lanes.lock().unwrap()[&ECHO_LANE].clone();
     let order: Vec<u32> = echoes.chunks(4).map(|b| u32::from_be_bytes(b.try_into().unwrap())).collect();
-    assert_eq!(order, (0..KEYS).collect::<Vec<_>>(), "every key's echo, in order");
-    sent.iter().zip(times).map(|(s, t)| t - *s).collect()
+    assert_eq!(order, (0..KEYS).collect::<Vec<_>>(), "every key's echo on its stream, in order");
+    sent.iter().zip(p.c.applied(ECHO_LANE)).map(|(s, t)| t - *s).collect()
 }
 
 fn quantile(v: &[Duration], q: f64) -> Duration {
@@ -191,7 +218,7 @@ async fn an_echo_beside_a_flood_waits_on_the_path_not_the_flood() {
     let mut held = Vec::new();
     for seed in seeds(11) {
         let mut idle = pair(Faults::over(wifi()), seed).await;
-        let alone = type_keys(&mut idle, ECHO_PRIORITY).await;
+        let alone = type_keys(&mut idle, ECHO_PRIORITY, false).await;
         idle.client.close(0);
 
         let run = async |priority| {
@@ -199,7 +226,7 @@ async fn an_echo_beside_a_flood_waits_on_the_path_not_the_flood() {
             let f = flood(&p.server, PANES);
             tokio::time::sleep(Duration::from_millis(500)).await; // the flood fills the path first
             let start = Instant::now();
-            let echoes = type_keys(&mut p, priority).await;
+            let echoes = type_keys(&mut p, priority, false).await;
             let rate = flooded(&p.c) as f64 / 1e6 / (start.elapsed() + Duration::from_millis(500)).as_secs_f64();
             let bandwidth = p.server.bandwidth();
             f.abort();
@@ -373,7 +400,7 @@ async fn a_seed_repeats_its_run() {
     async fn run(seed: u64) -> (u64, Vec<Duration>) {
         let mut p = pair(Faults::over(shape::Link { loss: 0.01, ..wifi() }), seed).await;
         let f = flood(&p.server, 4);
-        let echoes = type_keys(&mut p, ECHO_PRIORITY).await;
+        let echoes = type_keys(&mut p, ECHO_PRIORITY, true).await;
         f.abort();
         p.client.close(0);
         (p.net.digest(), echoes)
@@ -385,3 +412,36 @@ async fn a_seed_repeats_its_run() {
     assert_ne!(a.0, c.0);
 }
 
+
+/// Wi-Fi loses a packet in a hundred, each way: a key or echo in that packet waits for QUIC to
+/// notice and resend it, three round trips or so. Its datagram copy, a couple of milliseconds
+/// behind it in a packet of its own, arrives instead. Without copies, the canary, the tail is
+/// the retransmission's.
+#[tokio::test(start_paused = true)]
+async fn a_lost_key_or_echo_is_carried_by_its_copy() {
+    let lossy = || Faults::over(shape::Link { loss: 0.01, ..wifi() });
+    let (mut copied, mut alone, mut clean) = (Vec::new(), Vec::new(), Vec::new());
+    for seed in seeds(1).into_iter().flat_map(|s| s * 10..s * 10 + 10) {
+        for (copies, out, faults) in [(true, &mut copied, lossy()), (false, &mut alone, lossy())] {
+            let mut p = pair(faults, seed).await;
+            out.extend(type_keys(&mut p, ECHO_PRIORITY, copies).await);
+            p.client.close(0);
+        }
+        let mut p = pair(Faults::over(wifi()), seed).await;
+        clean.extend(type_keys(&mut p, ECHO_PRIORITY, true).await);
+        p.client.close(0);
+    }
+    let q = |v: &[Duration], f| ms(quantile(v, f));
+    println!(
+        "1% loss each way, echo p50/p99/max ms: copied {:.0}/{:.0}/{:.0}, alone {:.0}/{:.0}/{:.0}; lossless {:.0}/{:.0}/{:.0} (n={})",
+        q(&copied, 0.5), q(&copied, 0.99), q(&copied, 1.0),
+        q(&alone, 0.5), q(&alone, 0.99), q(&alone, 1.0),
+        q(&clean, 0.5), q(&clean, 0.99), q(&clean, 1.0), copied.len(),
+    );
+    // A copy costs one COPY_DELAY behind the packet it stands in for, and its own jitter.
+    let added = quantile(&copied, 0.99).saturating_sub(quantile(&clean, 0.99));
+    assert!(added <= Duration::from_millis(6), "copies leave {added:?} of loss in the p99");
+    assert_eq!(quantile(&copied, 0.5), quantile(&clean, 0.5), "copies cost the typical key nothing");
+    let canary = quantile(&alone, 0.99).saturating_sub(quantile(&clean, 0.99));
+    assert!(canary >= Duration::from_millis(15), "without copies, loss shows in the p99 ({canary:?})");
+}

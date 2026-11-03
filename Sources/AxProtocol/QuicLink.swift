@@ -96,6 +96,7 @@ public final class QuicLink: FrameLink, @unchecked Sendable {
     private var decoders: [UInt32: FrameDecoder] = [:]
     private var onFrame: ((Frame) -> Void)?
     private var onClose: (((any Error)?) -> Void)?
+    private var onCopy: ((Frame) -> Void)?
     /// Why this side closed it, told to `onClose` when the library confirms.
     private let closeReason = Mutex<(any Error)?>(nil)
 
@@ -139,6 +140,11 @@ public final class QuicLink: FrameLink, @unchecked Sendable {
             let link = Unmanaged<QuicLink>.fromOpaque(ctx).takeUnretainedValue()
             let data = Data(bytes: bytes, count: len)
             link.queue.async { link.received(lane, data) }
+        }, { ctx, _, bytes, len in
+            guard let ctx, let bytes else { return }
+            let link = Unmanaged<QuicLink>.fromOpaque(ctx).takeUnretainedValue()
+            let data = Data(bytes: bytes, count: len)
+            link.queue.async { link.copied(data) }
         }, { ctx, reason in
             guard let ctx else { return }
             let link = Unmanaged<QuicLink>.fromOpaque(ctx).takeRetainedValue()
@@ -152,6 +158,17 @@ public final class QuicLink: FrameLink, @unchecked Sendable {
         data.withUnsafeBytes { raw in
             axq_link_send(ptr, Self.wire(lane), priority, raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
         }
+    }
+
+    public func sendCopy(_ frame: Data, lane: Int) {
+        guard !frame.isEmpty, !isClosed else { return }
+        frame.withUnsafeBytes { raw in
+            axq_link_copy(ptr, Self.wire(lane), raw.bindMemory(to: UInt8.self).baseAddress, raw.count)
+        }
+    }
+
+    public func onCopies(_ handler: @escaping (Frame) -> Void) {
+        queue.sync { onCopy = handler }
     }
 
     public func close(_ error: (any Error)?) {
@@ -178,12 +195,21 @@ public final class QuicLink: FrameLink, @unchecked Sendable {
         }
     }
 
+    /// A datagram copy: one whole frame, or nothing worth closing the link over.
+    private func copied(_ data: Data) {
+        guard let onCopy, onFrame != nil else { return }
+        var decoder = FrameDecoder()
+        decoder.feed(data)
+        if let frame = try? decoder.next() { onCopy(frame) }
+    }
+
     private func ended(_ remote: (any Error)?) {
         closedFlag.store(true, ordering: .releasing)
         let local = closeReason.withLock { $0 }
         onClose?(local ?? remote)
         onFrame = nil
         onClose = nil
+        onCopy = nil
         decoders = [:]
     }
 

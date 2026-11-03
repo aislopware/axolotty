@@ -56,7 +56,9 @@ public enum Wire {
     /// The wire generation. Bumped only for a change an older peer can't skip.
     public static let version = 1
     /// What this build can do beyond the generation's baseline.
-    public static let features = ["heartbeat", "bridge", "git", "paths", "files", "open", "tunnel"]
+    /// "copies": input goes numbered (`ClientMessage.numbered`), and keys and their echoes also
+    /// go as datagram copies on a link that has them (QUIC).
+    public static let features = ["heartbeat", "bridge", "git", "paths", "files", "open", "tunnel", "copies"]
     /// What `axolotty bridge` prints before it splices: a client reading a
     /// remote command's output skips everything up to and including it (ssh
     /// banners, rc files that echo).

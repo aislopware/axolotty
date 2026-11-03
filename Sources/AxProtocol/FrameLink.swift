@@ -26,6 +26,13 @@ public protocol FrameLink: AnyObject, Sendable {
     /// The path's bandwidth in bytes per second, when the link measures it (QUIC's congestion
     /// controller does); nil otherwise.
     var bandwidth: Int? { get }
+    /// Sends one encoded frame, already sent on `lane`, again as a datagram a moment later, on a
+    /// link that has datagrams (QUIC); elsewhere nothing. For a key and its echo: when the
+    /// stream's packet is lost, the copy arrives a few round trips before its retransmission.
+    func sendCopy(_ frame: Data, lane: Int)
+    /// Where copies the peer sent arrive (on `queue`): whole frames, maybe early, twice, or never.
+    /// Set before `start`.
+    func onCopies(_ handler: @escaping (Frame) -> Void)
 }
 
 /// Send priorities on a link that orders lanes (QUIC); a byte stream ignores them.
@@ -85,14 +92,23 @@ extension FrameLink {
     public func close() { close(nil) }
 
     public var bandwidth: Int? { nil }
+    public func sendCopy(_: Data, lane _: Int) {}
+    public func onCopies(_: @escaping (Frame) -> Void) {}
 }
 
 extension ClientMessage {
     /// A person's input rides at the echo's priority, so the key leaves ahead of a file going up.
-    public var priority: Int32 {
+    public var priority: Int32 { isInput || isNumberedInput ? LanePriority.echo : LanePriority.normal }
+
+    /// A person's key, click, paste or typed text: what may be numbered and copied.
+    public var isInput: Bool {
         switch self {
-        case .key, .mouse, .paste, .text: LanePriority.echo
-        default: LanePriority.normal
+        case .key, .mouse, .paste, .text: true
+        default: false
         }
+    }
+
+    private var isNumberedInput: Bool {
+        if case let .numbered(_, m) = self { m.isInput } else { false }
     }
 }
