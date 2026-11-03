@@ -160,7 +160,12 @@ leaves the picture, the reference and a red-on-grey diff in
 is looked at before it is committed. References are of macOS 27's system
 font; an OS update redraws them. The canary draws the same view twice
 (identical) and one word longer (seen). The first recording found a toast
-cut at three lines mid-sentence with no ellipsis.
+cut at three lines mid-sentence with no ellipsis. The empty window's first
+recording found a paragraph ending on a lone word, and straight apostrophes.
+The sidebar is drawn from a host shown without connecting:
+`AppModel(defaults:)` with a suite of its own, `add(_:connect: false)`, then
+`HostSession.show(_:)`. Identical pictures are compared in one `memcmp`, so
+the suite takes 0.4 s.
 
 ### Allocation budgets
 
