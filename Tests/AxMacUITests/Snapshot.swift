@@ -54,6 +54,7 @@ enum Snapshot {
         Axo.Font.registerBundled()
         window.appearance = NSAppearance(named: .darkAqua)
         let view = window.contentView!
+        view.wantsLayer = true
         var image: CGImage?
         NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
             setScale(view.layer!, scale)
@@ -65,6 +66,9 @@ enum Snapshot {
                                 bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
             ctx.scaleBy(x: scale, y: scale)
+            // The window's ground, which is the window's and not the content's.
+            ctx.setFillColor(window.backgroundColor.cgColor)
+            ctx.fill(CGRect(origin: .zero, size: size))
             // A flipped view's layer draws top-down; the bitmap's origin is its bottom.
             if view.isFlipped {
                 ctx.translateBy(x: 0, y: size.height)

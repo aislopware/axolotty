@@ -84,4 +84,35 @@ struct WindowSnapshotTests {
         wc.palette.toggle(.commands)
         try Snapshot.expect(Snapshot.render(window: wc.window!, scale: 1), named: "window-palette@1x")
     }
+
+    /// Settings is a form centred in its window. Not a picture: its font list, and so its
+    /// width, is whatever this Mac has installed.
+    @Test func settingsIsACentredForm() throws {
+        let suite = "axolotty.snapshots.\(UUID().uuidString)"
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        let wc = SettingsWindowController(model: AppModel(defaults: UserDefaults(suiteName: suite)!))
+        defer { wc.window?.close() }
+        let content = wc.window!.contentView!
+        content.layoutSubtreeIfNeeded()
+        let grid = try #require(content.subviews.first { $0 is NSGridView })
+        #expect(abs(grid.frame.midX - content.bounds.midX) <= 0.5)
+        #expect(grid.frame.minX >= 24)
+    }
+
+    /// The far Mac drops while a split session is open: the panes stay, dimmed, under the
+    /// bar that says it is coming back. The moment remote work must not feel remote.
+    @Test func aSessionWhoseMacDropped() throws {
+        let suite = "axolotty.snapshots.\(UUID().uuidString)"
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: UserDefaults(suiteName: suite)!)
+        let host = HostSession(endpoint: .unix(path: "/nonexistent"), client: ClientID(), clientName: "test", isLocal: false)
+        model.add(host, connect: false)
+        let (st, sid) = Self.state()
+        host.show(st, phase: .connecting)
+        let wc = MainWindowController(model: model, autosave: false)
+        defer { wc.window?.close() }
+        wc.window!.setContentSize(Axo.Metric.windowDefault)
+        wc.show(host, sid)
+        try Snapshot.expect(Snapshot.render(window: wc.window!, scale: 1), named: "window-reconnecting@1x")
+    }
 }
