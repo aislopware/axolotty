@@ -421,7 +421,9 @@ async fn a_seed_repeats_its_run() {
 async fn a_lost_key_or_echo_is_carried_by_its_copy() {
     let lossy = || Faults::over(shape::Link { loss: 0.01, ..wifi() });
     let (mut copied, mut alone, mut clean) = (Vec::new(), Vec::new(), Vec::new());
-    for seed in seeds(1).into_iter().flat_map(|s| s * 10..s * 10 + 10) {
+    // Ten seeds in the gate (1 200 keys); `AXQSIM_SEEDS=n` sweeps n, a line each as it ends.
+    let runs: Vec<u64> = if std::env::var_os("AXQSIM_SEEDS").is_some() { seeds(0) } else { (1..=10).collect() };
+    for seed in runs {
         for (copies, out, faults) in [(true, &mut copied, lossy()), (false, &mut alone, lossy())] {
             let mut p = pair(faults, seed).await;
             out.extend(type_keys(&mut p, ECHO_PRIORITY, copies).await);
@@ -430,6 +432,7 @@ async fn a_lost_key_or_echo_is_carried_by_its_copy() {
         let mut p = pair(Faults::over(wifi()), seed).await;
         clean.extend(type_keys(&mut p, ECHO_PRIORITY, true).await);
         p.client.close(0);
+        println!("loss seed {seed}: copied p99 so far {:.0} ms", ms(quantile(&copied, 0.99)));
     }
     let q = |v: &[Duration], f| ms(quantile(v, f));
     println!(
