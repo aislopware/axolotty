@@ -272,11 +272,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         layer?.cornerRadius = Axo.Metric.sheetRadius
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
-        let dark = effectiveAppearance.isDark
-        edgeLayer.borderWidth = dark ? 0 : hairline
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            edgeLayer.borderColor = Axo.Color.border.cgColor
-        }
+        edgeLayer.borderWidth = hairline
+        edgeLayer.borderColor = effectiveAppearance.resolve(Axo.Color.sheetEdge)
         CATransaction.commit()
     }
 

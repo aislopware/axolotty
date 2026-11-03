@@ -86,6 +86,9 @@ final class EmptyStateView: NSView {
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
         layer?.backgroundColor = Axo.Color.ground.cgColor
+        // The same edge as a terminal's sheet: the empty state is one too.
+        layer?.borderWidth = hairline
+        layer?.borderColor = Axo.Color.sheetEdge.cgColor
         badgeBack.layer?.backgroundColor = Axo.Color.ground.cgColor
     }
     override var acceptsFirstResponder: Bool { state == .noSessions }

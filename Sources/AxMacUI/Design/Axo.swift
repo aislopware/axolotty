@@ -36,6 +36,7 @@ enum Axo {
         static let border = token("border") { $0.border }
         static let borderSubtle = token("borderSubtle") { $0.borderSubtle }
         static let borderStrong = token("borderStrong") { $0.borderStrong }
+        static let sheetEdge = token("sheetEdge") { $0.sheetEdge }
 
         // Text
         static let text = token("text") { $0.text }

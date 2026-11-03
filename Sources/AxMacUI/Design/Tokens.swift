@@ -98,6 +98,10 @@ nonisolated struct DesignTokens: Sendable {
     let border: Ink
     let borderSubtle: Ink
     let borderStrong: Ink
+    /// Every sheet's edge, one device pixel: in dark the selection tone (the
+    /// ramp's own hue, so the edge is a lighter step of the bezel, not a grey
+    /// line on it); in light the contact edge a white sheet needs on grey.
+    let sheetEdge: Ink
 
     // Text tiers.
     let text: Ink
@@ -151,6 +155,7 @@ nonisolated struct DesignTokens: Sendable {
             border = Ink(rgb: sel, alpha: 0.70)
             borderSubtle = Ink(rgb: sel, alpha: 0.45)
             borderStrong = Ink(rgb: sel.lightness(sel.hsl.l + 0.10))
+            sheetEdge = Ink(rgb: sel, alpha: 0.55)
             text = Ink(rgb: fg)
             // 7.2 / 5.3 / 4.0 on the frame, 6.3 / 4.7 / 3.5 on the ground.
             textSecondary = tier(0.70, 0.25)
@@ -173,6 +178,7 @@ nonisolated struct DesignTokens: Sendable {
             border = Ink(rgb: fg, alpha: Prim.Ink.a6 + 0.01)
             borderSubtle = Ink(rgb: fg, alpha: Prim.Ink.a4)
             borderStrong = Ink(rgb: fg, alpha: Prim.Ink.a8 - 0.04)
+            sheetEdge = border
             text = Ink(rgb: fg)
             // 7.1 / 4.7 on the frame; disabled is for marks that say "off".
             textSecondary = tier(0.38, 0.20)
