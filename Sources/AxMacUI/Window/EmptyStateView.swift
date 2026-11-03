@@ -177,23 +177,28 @@ final class EmptyStateView: NSView {
         PopMenu.show(items, from: pill)
     }
 
-    /// The size `label` takes within `width`, its lines evened out: text
-    /// that needs two lines gets two of a length, not a lone word under a
-    /// full one (the width is narrowed to about half, then a margin).
+    /// The size `label` takes within `width`, its lines evened out: the narrowest width that
+    /// keeps the line count `width` gives (CSS's `text-wrap: balance`), so a paragraph never
+    /// ends on a lone word under full lines. Found by halving, to a point.
     private static func balanced(_ label: NSTextField, within width: CGFloat) -> NSSize {
-        func size(_ w: CGFloat) -> NSSize {
-            label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: w, height: 400)) ?? .zero
+        // Measured without the label's line limit: under it, a narrower width that needs
+        // another line looks just as tall, and the text is cut instead.
+        let limit = label.maximumNumberOfLines
+        label.maximumNumberOfLines = 0
+        defer { label.maximumNumberOfLines = limit }
+        func height(_ w: CGFloat) -> CGFloat {
+            ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: w, height: 10_000)).height ?? 0)
         }
-        let one = ceil(size(10_000).width)
-        let full = ceil(size(width).height)
-        var w = width
-        if one > width {
-            let lines = max(2, (one / width).rounded(.up))
-            let even = min(width, ceil(one / lines) + 24)
-            if ceil(size(even).height) <= full { w = even }
+        let full = height(width)
+        var lo = (width / 2).rounded(.down), hi = width
+        if height(lo) <= full { hi = lo }
+        while hi - lo > 1 {
+            let mid = ((lo + hi) / 2).rounded(.down)
+            if height(mid) <= full { hi = mid } else { lo = mid }
         }
-        label.preferredMaxLayoutWidth = w
-        return NSSize(width: w, height: ceil(size(w).height))
+        label.preferredMaxLayoutWidth = hi
+        label.maximumNumberOfLines = limit
+        return NSSize(width: hi, height: ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: hi, height: 400)).height ?? 0))
     }
 
     override func layout() {
