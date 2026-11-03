@@ -75,9 +75,16 @@ struct SnapshotTests {
         ended.set(code: 130)
         let crashed = EndedBar()
         crashed.set(code: 139)
+        let find = FindCard()
+        find.field.stringValue = "QuicLink"
+        find.show(total: 12, index: 2)
+        let badge = PaneBadge()
+        badge.show(cols: 120, rows: 40)
         try Self.check(Sheet([(TooltipView("Split Right  ⌘D"), nil), (HoverCardView(card), nil),
                               (ended, NSSize(width: ended.preferredWidth, height: EndedBar.height)),
-                              (crashed, NSSize(width: crashed.preferredWidth, height: EndedBar.height))]), "cards")
+                              (crashed, NSSize(width: crashed.preferredWidth, height: EndedBar.height)),
+                              (find, FindCard.size), (badge, NSSize(width: badge.preferredWidth, height: PaneBadge.height))]),
+                       "cards")
     }
 
     /// The window's empty sheet, at the window's least size: the launcher, and a far Mac
