@@ -44,7 +44,8 @@ it measured becomes a model, and the gate holds the model in virtual time.
   process's output until it exits, so the line also goes straight into the
   watchdog's log (`$AXWATCH_LOG`). Without that, the long sim step looked
   silent for minutes and was ended twice; so did thirty repetitions of a
-  four-second test, which is why each faulty-link test reports its end.
+  four-second test, which is why each faulty-link test reports its end;
+  so did the QUIC loss test, which sweeps 200 seeds and now prints one.
   Suites that spawn carry
   `.timeLimit`. One SwiftPM at a time on `.build`: a second one waits
   silently on the first one's lock.
@@ -148,7 +149,7 @@ socket and needs neither. pf and dummynet need root.
 | `AXSIM_SEEDS` | 4 | 200 | Seeds per simulated-link test |
 | `AXSIM_REPORT` | off | 1 | Print every policy on every link |
 | `AXSIM_TRACE` | off | 1 | Trace a simulated run's events |
-| `AXQSIM_SEEDS` | seed 11 | 200 | Seeds the simulated QUIC echo test sweeps |
+| `AXQSIM_SEEDS` | seed 11 (loss: 1–10) | 200 | Seeds the simulated QUIC echo and loss tests sweep |
 | `AXQSIM_REPORT` | off | 1 | Print each seed's echo times without asserting |
 | `AXFUZZ_RUNS` | 2000 | 200000 | Mutated streams per fuzz test |
 | `AXMODEL_RUNS` | 300 | 20000 | Op sequences per model-based test |
@@ -157,6 +158,10 @@ socket and needs neither. pf and dummynet need root.
 | `AXBENCH` | off | 1 | Run `EchoBench` against a real host (`AXBENCH_TCP=host:port`, `AXBENCH_CMD`, `AXBENCH_KEYS`) |
 
 `scripts/deep.sh` runs the long set:
+- the canaries first: a planted data race, heap overflow and third-run flake
+  (`CanaryTests`, on only with `AXCANARY`), each of which its step must
+  report by name. A sanitizer that stopped reporting, or a repeat flag that
+  stopped repeating, would otherwise pass every step after it;
 - the suite under TSan and under ASan;
 - the socket suites repeated until a failure;
 - the simulations (TCP and QUIC) and the fuzzer at their long budgets.

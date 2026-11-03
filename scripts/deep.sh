@@ -5,7 +5,7 @@
 # a second SwiftPM on this .build waits silently for the first.
 #
 #   scripts/deep.sh            everything (about 25 minutes)
-#   scripts/deep.sh flakes     one step: tsan | asan | flakes | sim | quic | fuzz
+#   scripts/deep.sh flakes     one step: canaries | tsan | asan | flakes | sim | quic | fuzz
 #
 # It tests HEAD, in a worktree of its own with its own .build (AXDEEP_TREE,
 # default $TMPDIR/axolotty-deep). Edits made while it runs can't reach it,
@@ -56,6 +56,28 @@ step() {
 
 only=("$@")
 run() { [ ${#only[@]} -eq 0 ] || [[ " ${only[*]} " == *" $1 "* ]]; }
+
+# Each step first shows it can fail: a planted race, overflow and flake
+# (CanaryTests, AXCANARY) must each be caught, by the same command the step runs.
+caught() {
+    local name=$1 pattern=$2
+    shift 2
+    printf '%-8s ' "canary:$name"
+    scripts/watchdog.sh 300 1200 "$logs/canary-$name.log" -- "$@" >/dev/null 2>&1
+    local rc=$?
+    if [ $rc -ne 0 ] && [ $rc -ne 124 ] && grep -q "$pattern" "$logs/canary-$name.log"; then
+        echo "caught"
+    else
+        echo "MISSED (exit $rc, $logs/canary-$name.log)"
+        failed+=("canary:$name")
+    fi
+}
+if run canaries; then
+    caught tsan 'ThreadSanitizer: data race' env AXCANARY=tsan swift test --sanitize=thread --filter CanaryTests
+    caught asan 'AddressSanitizer: heap-buffer-overflow' env AXCANARY=asan swift test --sanitize=address --filter CanaryTests
+    caught flakes 'AXCANARY flake on run 3' env AXCANARY=flakes swift test --filter CanaryTests \
+        --maximum-repetitions 30 --repeat-until fail
+fi
 
 run tsan && step tsan 300 1800 swift test --sanitize=thread
 # ASan's fork handler takes its allocator lock while other test threads
