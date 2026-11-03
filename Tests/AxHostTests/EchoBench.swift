@@ -49,25 +49,34 @@ struct EchoBench {
             flood = f
         }
         try await Task.sleep(for: .milliseconds(500))
+        // The echo is timed where it lands, and the wait for it is woken by it: a sleeping
+        // poll is a timer the OS may coalesce on an idle Mac, and it showed up as the tail.
         let seen = Mutex<(want: UInt8, sent: ContinuousClock.Instant, got: Duration?)>((0, .now, nil))
+        let landed = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         m.onOutput { buf in
-            seen.withLock { s in
-                if s.got == nil, buf.contains(s.want) { s.got = ContinuousClock.now - s.sent }
+            let hit = seen.withLock { s -> Bool in
+                guard s.got == nil, buf.contains(s.want) else { return false }
+                s.got = ContinuousClock.now - s.sent
+                return true
             }
+            if hit { landed.continuation.yield() }
         }
         var samples: [Duration] = []
         var lost = 0
+        var it = landed.stream.makeAsyncIterator()
         for i in 0 ..< keys {
             let ch = UInt8(ascii: "a") + UInt8(i % 26)
             seen.withLock { $0 = (ch, .now, nil) }
             c.send(.text(p, String(UnicodeScalar(ch))))
+            // Two seconds without the echo is a lost key: a timer wakes the wait.
             let deadline = ContinuousClock.now + .seconds(2)
-            var got: Duration?
-            while got == nil, ContinuousClock.now < deadline {
-                try await Task.sleep(for: .microseconds(100))
-                got = seen.withLock { $0.got }
+            let timeout = Task {
+                guard (try? await Task.sleep(until: deadline)) != nil else { return }
+                landed.continuation.yield()
             }
-            if let got { samples.append(got) } else { lost += 1 }
+            while seen.withLock({ $0.got }) == nil, ContinuousClock.now < deadline { _ = await it.next() }
+            timeout.cancel()
+            if let got = seen.withLock({ $0.got }) { samples.append(got) } else { lost += 1 }
             try await Task.sleep(for: .milliseconds(25))
         }
         m.onOutput(nil)
