@@ -87,6 +87,23 @@ struct SnapshotTests {
                        "cards")
     }
 
+    /// The band over a pane: a local Claude at work with its branch and subagents, a far
+    /// Mac's shell, and the same far band when the window is not key.
+    @Test func bands() throws {
+        let now = Date().timeIntervalSince1970
+        let size = NSSize(width: 720, height: Axo.Metric.bandHeight)
+        let local = BandView()
+        local.update(.init(project: "axolotty", session: "Claude", identity: .of(.claude), activity: .working,
+                           since: now - 252.5, branch: "main", subagents: 2, host: nil), key: true)
+        let far = BandView()
+        far.update(.init(project: "slopty", session: "zsh", identity: .shell, activity: .idle, since: 0,
+                         branch: "quic-pacer", host: ("MacBook Pro", "laptopcomputer")), key: true)
+        let away = BandView()
+        away.update(.init(project: "slopty", session: "zsh", identity: .shell, activity: .idle, since: 0,
+                          branch: "quic-pacer", host: ("MacBook Pro", "laptopcomputer")), key: false)
+        try Self.check(Sheet([(local, size), (far, size), (away, size)]), "bands")
+    }
+
     /// The window's empty sheet, at the window's least size: the launcher, and a far Mac
     /// out of reach in its two kinds, waited for and waiting on the person. Its real copy.
     @Test func emptyWindow() throws {
