@@ -236,7 +236,11 @@ public final class HostConnection: @unchecked Sendable {
                 while true {
                     let c = accept(fd, nil, nil)
                     guard c >= 0 else { return }
-                    guard let tunnels = self?.state.withLock({ $0.welcome == nil ? $0.tunnels : nil }) else {
+                    // Only to a host that reads tunnel frames: an older one
+                    // would take one for a broken link and drop it.
+                    guard let tunnels = self?.state.withLock({ s in
+                        s.welcome == nil && s.hostFeatures.contains("tunnel") ? s.tunnels : nil
+                    }) else {
                         // Between links: refused at once, so a reload can retry.
                         var hard = linger(l_onoff: 1, l_linger: 0)
                         _ = setsockopt(c, SOL_SOCKET, SO_LINGER, &hard, socklen_t(MemoryLayout<linger>.size))
