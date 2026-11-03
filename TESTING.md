@@ -150,6 +150,18 @@ the bytes the far program reads (`KeysAsBytes`). Those bytes are checked in
 the legacy encoding and with every Kitty flag on. The cases that depend on
 the layout assume ABC or US, and are off under any other layout.
 
+The components are checked as pictures (`SnapshotTests`). A sheet of
+variants is drawn at 1× (where craft is judged) and at 2×, by rendering its
+layer tree inside a window that is never ordered in. Each picture is compared
+with `Tests/AxMacUITests/Snapshots/` to within 2 levels a channel. A mismatch
+leaves the picture, the reference and a red-on-grey diff in
+`$TMPDIR/axolotty-snapshots`. A missing reference, or a run with
+`AXSNAPSHOT_RECORD=1`, writes the picture and fails, so every new reference
+is looked at before it is committed. References are of macOS 27's system
+font; an OS update redraws them. The canary draws the same view twice
+(identical) and one word longer (seen). The first recording found a toast
+cut at three lines mid-sentence with no ellipsis.
+
 ### Allocation budgets
 
 `Allocations.count` (in `AxTestSupport`) counts the heap allocations a block
@@ -185,6 +197,7 @@ were written that way.
 | `AXMODEL_RUNS` | 300 | 20000 | Op sequences per model-based test |
 | `AXREAP_RUNS` | 200 | 6000 | Programs the holder must reap in `everyEndedProgramIsReaped` |
 | `AXFUZZ_TRACE` | off | 1 | Print each seed as it starts, to name the one that traps |
+| `AXSNAPSHOT_RECORD` | off | — | Redraw the snapshot references (each then fails until looked at and rerun) |
 | `AXBENCH` | off | 1 | Run `EchoBench` against a real host (`AXBENCH_TCP=host:port`, `AXBENCH_CMD`, `AXBENCH_KEYS`) |
 
 `scripts/deep.sh` runs the long set:
@@ -260,5 +273,5 @@ are the right ones, but for a remote terminal they leave out:
 | swift-property-based 2.0.1 | Works; shrinks; no stateful API | Not needed yet: our own `SimRNG` plus `shrink` covers it |
 | Exhaust 1.9 | Needs Swift 6.4; stateful specs, deterministic `await` interleaving | The candidate if actor interleavings need exploring |
 | Muter | Last release 2023; master mis-scores Swift Testing | Not usable; canaries stand in |
-| swift-snapshot-testing 1.19.7 | Works for NSView | Not for `CAMetalLayer`; the renderer is read back offscreen instead |
+| swift-snapshot-testing 1.19.7 | Works for NSView | Not used: a harness of about a hundred lines renders the layer tree, which `cacheDisplay` misses for layer-drawn views; the Metal renderer is read back offscreen instead |
 | ordo-one/benchmark 1.38 | Works; p99 thresholds against a baseline. Its malloc counts come from jemalloc, a second allocator | Not used: `malloc_logger` counts the system allocator's own calls, inside Swift Testing |
