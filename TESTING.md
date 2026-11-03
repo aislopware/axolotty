@@ -1,7 +1,7 @@
 # Testing
 
 `swift test` is the gate, with `cargo test --manifest-path Rust/axquic/Cargo.toml`
-for the QUIC link (two seconds). It runs on any Mac in about a minute and needs no
+for the QUIC link (two seconds). Built, it runs on any Mac in about 15 seconds and needs no
 network, no second machine and no GUI session. A test that needs one of those
 is gated on an environment variable and never runs in the gate.
 
@@ -107,7 +107,10 @@ can change mid-run, and a drop-tail queue.
 
 Seconds of traffic run in milliseconds. The link it models was measured on
 the real tailnet: 50 Mbit/s, 4 ms each way, 100 ms of router buffer.
-`AXSIM_REPORT=1` prints every send policy on every link. `AXSIM_TRACE=1`
+`AXSIM_REPORT=1` prints every send policy on every link. The simulator lives in
+`AxTestSupport`, which is built `-O` even in a debug build: the sims took 12 s
+unoptimised and take 1.4 s, the same seeds to the same results. The code they drive
+is built as the tests are. `AXSIM_TRACE=1`
 traces one run's events.
 
 ### The simulated QUIC link

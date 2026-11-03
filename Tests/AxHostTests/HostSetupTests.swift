@@ -94,6 +94,9 @@ struct HostSetupTests {
             esac
             exit 0
             """)
+            // The script's waits between tries are counted, not slept: a refusing launchd
+            // would otherwise cost the suite 4.5 s of real time.
+            try write(fakes.appending(path: "sleep"), "#!/bin/sh\necho \"$*\" >> \"$HOME/sleep.log\"\n")
         }
 
         func binaries(_ version: String) throws {
@@ -166,6 +169,7 @@ struct HostSetupTests {
             guard case let .failed(text) = e as? HostSetup.Failure else { return false }
             return text.contains("launchd would not start the server")
         }
+        #expect(s.text(s.home.appending(path: "sleep.log")) == String(repeating: "0.5\n", count: 9), "nine waits, then given up")
     }
 
     @Test func aHostThatWantsASignInSaysSo() async throws {
