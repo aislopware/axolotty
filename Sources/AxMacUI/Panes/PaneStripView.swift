@@ -44,7 +44,7 @@ final class PaneStripView: NSView {
     }
 
     private var model: Model?
-    private var hovering = false { didSet { if hovering != oldValue { restyle(); tickElapsed(); needsLayout = true } } }
+    var hovering = false { didSet { if hovering != oldValue { restyle(); tickElapsed(); needsLayout = true } } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)

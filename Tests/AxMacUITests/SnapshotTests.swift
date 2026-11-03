@@ -135,6 +135,28 @@ struct SnapshotTests {
         try Self.check(Sheet([(agents, agents.preferredSize), (projects, projects.preferredSize)]), "menus")
     }
 
+    /// The strip atop each pane of a split: the focused agent at work, an agent waiting on
+    /// the person with its question, a shell out of focus, and one under the pointer.
+    @Test func strips() throws {
+        let now = Date().timeIntervalSince1970
+        let size = NSSize(width: 520, height: PaneStripView.height)
+        func strip(_ m: PaneStripView.Model, hover: Bool = false) -> PaneStripView {
+            let s = PaneStripView(frame: NSRect(origin: .zero, size: size))
+            s.update(m)
+            s.hovering = hover
+            return s
+        }
+        let working = strip(.init(identity: .of(.claude), name: "Claude", path: "Sources/AxHost", activity: .working,
+                                  since: now - 252.5, question: nil, need: nil, focused: true))
+        let asking = strip(.init(identity: .of(.codex), name: "Codex", path: "", activity: .blocked, since: 0,
+                                 question: "Allow rm -rf .build/deep?", need: .permission, focused: false))
+        let shell = strip(.init(identity: .shell, name: "zsh", path: "Rust/axquic", activity: .idle, since: 0,
+                                question: nil, need: nil, focused: false))
+        let hovered = strip(.init(identity: .shell, name: "zsh", path: "Rust/axquic", activity: .idle, since: 0,
+                                  question: nil, need: nil, focused: false), hover: true)
+        try Self.check(Sheet([(working, size), (asking, size), (shell, size), (hovered, size)]), "strips")
+    }
+
     /// The window's empty sheet, at the window's least size: the launcher, and a far Mac
     /// out of reach in its two kinds, waited for and waiting on the person. Its real copy.
     @Test func emptyWindow() throws {
