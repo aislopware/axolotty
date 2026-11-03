@@ -10,7 +10,7 @@
     <mask id="g0c" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512"><g fill="#fff"><ellipse cx="256" cy="306" rx="166" ry="142"/><circle cx="161.7784" cy="208.872" r="30"/><circle cx="146.72951369367058" cy="167.52552468542004" r="30"/><polygon points="189.96917862357725,198.61139570022996 174.92029231724783,157.26492038565 118.53873507009334,177.7861289851901 133.58762137642276,219.13260429977007"/><circle cx="130.3712" cy="244.656" r="30"/><circle cx="97.67282767899465" cy="215.21425332021025" r="30"/><polygon points="150.44511819076573,222.36165523567817 117.74674586976039,192.9199085558884 77.59890948822891,237.50859808453208 110.29728180923425,266.9503447643218"/><circle cx="114.6676" cy="290.664" r="30"/><circle cx="71.97458804385616" cy="280.0194365936146" r="30"/><polygon points="121.92525686799003,261.5551282117201 79.2322449118462,250.91056480533473 64.71693117586612,309.1283083818945 107.40994313200996,319.7728717882799"/><circle cx="350.22159999999997" cy="208.872" r="30"/><circle cx="365.2704863063294" cy="167.52552468542004" r="30"/><polygon points="378.41237862357724,219.13260429977007 393.4612649299067,177.7861289851901 337.07970768275214,157.26492038565 322.0308213764227,198.61139570022996"/><circle cx="381.6288" cy="244.656" r="30"/><circle cx="414.3271723210054" cy="215.21425332021025" r="30"/><polygon points="401.7027181907658,266.9503447643218 434.40109051177114,237.50859808453208 394.2532541302396,192.9199085558884 361.55488180923425,222.36165523567817"/><circle cx="397.3324" cy="290.664" r="30"/><circle cx="440.02541195614384" cy="280.0194365936146" r="30"/><polygon points="404.59005686799003,319.7728717882799 447.28306882413386,309.1283083818945 432.7677550881538,250.91056480533473 390.07474313201,261.5551282117201"/></g></mask>
     <filter id="g0f" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dy="4" stdDeviation="6" flood-color="#0b0628" flood-opacity="0.55" result="near"/><feDropShadow dy="12" stdDeviation="21" flood-color="#0b0628" flood-opacity="0.3"/></filter>
     <radialGradient id="g0gl0"><stop offset="0" stop-color="#5c1c74"/><stop offset=".45" stop-color="#5c1c74" stop-opacity=".75"/><stop offset="1" stop-color="#5c1c74" stop-opacity="0"/></radialGradient><radialGradient id="g0gl1"><stop offset="0" stop-color="#0e4a7a"/><stop offset=".45" stop-color="#0e4a7a" stop-opacity=".75"/><stop offset="1" stop-color="#0e4a7a" stop-opacity="0"/></radialGradient>
-    <linearGradient id="g0rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.18"/><stop offset=".5" stop-color="#fff" stop-opacity="0.045"/><stop offset="1" stop-color="#fff" stop-opacity="0.108"/></linearGradient>
+    <linearGradient id="g0rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
     <radialGradient id="g0sh"><stop offset="0" stop-color="#12052e" stop-opacity="0.5"/><stop offset="1" stop-color="#12052e" stop-opacity="0"/></radialGradient>
   </defs>
   <rect width="512" height="512" fill="url(#g0bg)"/>
@@ -27,5 +27,14 @@
   <ellipse cx="306" cy="312" rx="27" ry="40" fill="#22004f"/>
   <ellipse cx="298" cy="296" rx="8" ry="11" fill="#fff" opacity=".85"/>
   </g>
-  <rect x="3" y="3" width="506" height="506" rx="112" fill="none" stroke="url(#g0rim)" stroke-width="6"/>
+  <defs>
+    <linearGradient id="g0bv" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9a8ff" stop-opacity="0.95"/><stop offset=".14" stop-color="#d9a8ff" stop-opacity="0"/>
+      <stop offset=".86" stop-color="#7fa2d8" stop-opacity="0"/><stop offset="1" stop-color="#7fa2d8" stop-opacity="0.9"/></linearGradient>
+    <linearGradient id="g0bs" x1="0" y1="0" x2="0" y2="1"><stop offset=".78" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient>
+    <filter id="g0bb" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="5"/></filter>
+  </defs>
+  <rect width="512" height="512" rx="115" fill="none" stroke="#000" stroke-opacity="0.22" stroke-width="4"/>
+  <rect width="512" height="512" rx="115" fill="none" stroke="url(#g0bv)" stroke-width="18" filter="url(#g0bb)" opacity=".7"/>
+  <rect width="512" height="512" rx="115" fill="none" stroke="url(#g0bv)" stroke-width="5"/>
 </g></svg>
