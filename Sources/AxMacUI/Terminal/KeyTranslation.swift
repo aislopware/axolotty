@@ -52,7 +52,9 @@ enum KeyTranslation {
         guard event.type == .keyDown || event.type == .keyUp,
               let s = event.characters(byApplyingModifiers: []), let u = s.unicodeScalars.first
         else { return 0 }
-        return (0xF700 ... 0xF8FF).contains(u.value) ? 0 : u.value
+        // A function key's private-use character, or the control code a layout gives arrows,
+        // ⌫ and Return, is no key's letter.
+        return printable(String(u)).isEmpty ? 0 : u.value
     }
 
     static func input(_ event: NSEvent, action: KeyInput.Action, text: String, optionAsAlt: Bool,

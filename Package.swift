@@ -69,7 +69,7 @@ let package = Package(
         // (Not "Axolotty": on case-insensitive volumes it would collide with the `axolotty` CLI.)
         .executableTarget(name: "AxolottyDev", dependencies: ["AxMacUI"], path: "Sources/AxolottyApp", swiftSettings: ui),
 
-        // MARK: Tests (none link AppKit/UIKit; Metal pixel tests live in AxRenderTests behind a tag)
+        // MARK: Tests (only AxMacUITests links AppKit; Metal pixel tests live in AxRenderTests behind a tag)
         .target(name: "AxTestSupport", dependencies: ["AxModel", "AxProtocol", "AxVT"], path: "Tests/AxTestSupport",
                 swiftSettings: strict),
         .testTarget(name: "AxNativeTests", dependencies: ["AxText", .target(name: "AxSys", condition: macOnly)],
@@ -80,5 +80,8 @@ let package = Package(
         .testTarget(name: "AxProtocolTests", dependencies: ["AxProtocol", "AxTestSupport"], swiftSettings: strict),
         .testTarget(name: "AxHostTests", dependencies: ["AxHost", "AxClient", "AxTestSupport"], swiftSettings: strict),
         .testTarget(name: "AxRenderTests", dependencies: ["AxRender", "AxTestSupport"], swiftSettings: strict),
+        // The app's own layer: keys from synthetic NSEvents, views drawn offscreen. No window.
+        .testTarget(name: "AxMacUITests", dependencies: ["AxMacUI", "AxProtocol", "AxVT", "AxTestSupport"],
+                    swiftSettings: ui),
     ]
 )

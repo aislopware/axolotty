@@ -141,6 +141,15 @@ Toxiproxy itself (v2.13, darwin-arm64) speaks TCP only and is a second
 process with an HTTP control plane. The in-process relay reaches the Unix
 socket and needs neither. pf and dummynet need root.
 
+### The app's layer
+
+`AxMacUITests` is the one test target that links AppKit. A view under test is
+drawn offscreen, with no window and no window server. A key is a synthetic
+`NSEvent` that goes through `KeyTranslation` and the real encoder, ending as
+the bytes the far program reads (`KeysAsBytes`). Those bytes are checked in
+the legacy encoding and with every Kitty flag on. The cases that depend on
+the layout assume ABC or US, and are off under any other layout.
+
 ### Allocation budgets
 
 `Allocations.count` (in `AxTestSupport`) counts the heap allocations a block
