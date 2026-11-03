@@ -91,6 +91,23 @@ struct WindowSnapshotTests {
         try Snapshot.expect(Snapshot.render(window: wc.window!, scale: 1), named: "window-palette@1x")
     }
 
+    /// The same window in the light theme, palette open. Synchronous on the main actor, so
+    /// no other picture is drawn while the theme (a global) is light.
+    @Test func theWindowInTheLight() throws {
+        let (wc, suite) = Self.window()
+        defer {
+            wc.model.prefs.themeMode = .night
+            wc.model.applyTheme()
+            wc.window?.close()
+            UserDefaults().removePersistentDomain(forName: suite)
+        }
+        wc.model.prefs.themeMode = .day
+        wc.model.applyTheme()
+        wc.window!.contentView!.layoutSubtreeIfNeeded()
+        wc.palette.toggle(.commands)
+        try Snapshot.expect(Snapshot.render(window: wc.window!, scale: 1), named: "window-light@1x")
+    }
+
     /// Settings is a form centred in its window. Not a picture: its font list, and so its
     /// width, is whatever this Mac has installed.
     @Test func settingsIsACentredForm() throws {

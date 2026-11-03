@@ -9,7 +9,7 @@ import AxProtocol
 /// toolbar only sets the titlebar height so the traffic lights sit centred
 /// in the band. Handles every window-level action in the responder chain.
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
-    private let model: AppModel
+    let model: AppModel
     let sidebar: SidebarViewController
     let content: SessionViewController
     let shell: ShellView

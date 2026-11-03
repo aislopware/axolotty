@@ -52,11 +52,12 @@ enum Snapshot {
     /// ordered in; its titlebar (drawn by the system, outside the content) is not drawn.
     static func render(window: NSWindow, scale: CGFloat) -> CGImage {
         Axo.Font.registerBundled()
-        window.appearance = NSAppearance(named: .darkAqua)
+        let appearance = window.appearance ?? NSAppearance(named: .darkAqua)!
+        window.appearance = appearance
         let view = window.contentView!
         view.wantsLayer = true
         var image: CGImage?
-        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
+        appearance.performAsCurrentDrawingAppearance {
             setScale(view.layer!, scale)
             view.layoutSubtreeIfNeeded()
             view.displayIfNeeded()
