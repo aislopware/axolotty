@@ -1,4 +1,11 @@
-# Axolotty
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/axolotty-dark.png">
+    <img src="assets/logo/axolotty-light.png" alt="Axolotty" width="360">
+  </picture>
+</p>
+
+<h1 align="center">Axolotty</h1>
 
 A terminal for working with coding agents, on macOS. Sessions are grouped by project in a sidebar that shows what each agent is doing (working, waiting for you, finished, failed), and agents can see and drive the terminal themselves.
 
