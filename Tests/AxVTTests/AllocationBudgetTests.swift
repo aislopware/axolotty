@@ -4,8 +4,9 @@ import Testing
 
 /// What the terminal costs the heap per write and per frame drawn, counted exactly
 /// (`Allocations`); only an optimised build means anything (`scripts/deep.sh budgets`).
+// Whether this target is optimised is asked here: `AxTestSupport` is always built `-O`.
 @Suite("Allocation budgets: terminal", .serialized,
-       .enabled(if: Allocations.optimized && Allocations.works, "an optimised build, without sanitizers"))
+       .enabled(if: !_isDebugAssertConfiguration() && Allocations.works, "an optimised build, without sanitizers"))
 struct VTAllocationBudgetTests {
     static let line = Array("\u{1b}[32mok\u{1b}[0m src/main.swift:12: compiled in 3 ms, nothing more to do\r\n".utf8)
 

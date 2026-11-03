@@ -70,8 +70,11 @@ let package = Package(
         .executableTarget(name: "AxolottyDev", dependencies: ["AxMacUI"], path: "Sources/AxolottyApp", swiftSettings: ui),
 
         // MARK: Tests (only AxMacUITests links AppKit; Metal pixel tests live in AxRenderTests behind a tag)
+        // Built -O even in debug: the link simulations run in it, 12 s unoptimised, 1.4 s
+        // optimised. What it simulates (SendLanes, the pacer) is the code under test, built
+        // as the tests are.
         .target(name: "AxTestSupport", dependencies: ["AxModel", "AxProtocol", "AxVT"], path: "Tests/AxTestSupport",
-                swiftSettings: strict),
+                swiftSettings: strict + [.unsafeFlags(["-O"])]),
         .testTarget(name: "AxNativeTests", dependencies: ["AxText", .target(name: "AxSys", condition: macOnly)],
                     swiftSettings: strict),
         .testTarget(name: "AxModelTests", dependencies: ["AxModel", "AxTestSupport"], swiftSettings: strict),

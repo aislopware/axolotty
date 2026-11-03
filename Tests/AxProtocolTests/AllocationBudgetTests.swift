@@ -7,8 +7,9 @@ import Testing
 /// What one frame costs the heap on its way through the wire codec, counted exactly
 /// (`Allocations`). Counts, not times: the same on any Mac and under any load. Only an
 /// optimised build means anything (`scripts/deep.sh budgets`).
+// Whether this target is optimised is asked here: `AxTestSupport` is always built `-O`.
 @Suite("Allocation budgets: wire", .serialized,
-       .enabled(if: Allocations.optimized && Allocations.works, "an optimised build, without sanitizers"))
+       .enabled(if: !_isDebugAssertConfiguration() && Allocations.works, "an optimised build, without sanitizers"))
 struct WireAllocationBudgetTests {
     let pane = PaneID()
 

@@ -52,10 +52,6 @@ public enum Allocations {
         return Double(try count { for _ in 0 ..< runs { try body() } }.count) / Double(runs)
     }
 
-    /// Whether this is an optimised build. A budget means something only there: unoptimised
-    /// code boxes closures' captures and copies slices that `-O` keeps on the stack.
-    public static let optimized = !_isDebugAssertConfiguration()
-
     /// Whether counting works here: it sees an allocation planted for the purpose.
     public static let works: Bool = {
         let n = count { () -> Int in
