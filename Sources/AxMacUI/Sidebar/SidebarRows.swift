@@ -20,12 +20,14 @@ enum SidebarMetric {
     static let listInset: CGFloat = 8
     static let rowPad: CGFloat = 8
     static let sessionRow: CGFloat = 30  // 28 plate + 2 gap
-    static let headerRow: CGFloat = 32
-    static let headerGap: CGFloat = 20  // above every project but the first
+    static let headerRow: CGFloat = 28
+    /// Above every project but the first: small against the machines' gap,
+    /// so a machine and its projects read as one block.
+    static let headerGap: CGFloat = 6
     static let firstGap: CGFloat = 2
     /// A machine's section label, and the space above every one but the first.
-    static let hostRow: CGFloat = 24
-    static let hostGap: CGFloat = 22
+    static let hostRow: CGFloat = 30
+    static let hostGap: CGFloat = 26
     static let slot: CGFloat = 16
     static let slotGap: CGFloat = 7
     static let tile: CGFloat = 20
@@ -314,8 +316,8 @@ final class FadingLabel: NSView {
 ///   ⌨ MAC STUDIO                       ⋰ 84 ms   (through a relay)
 ///   ⌨ MAC MINI                     ◌ Reconnecting
 final class HostCell: NSTableCellView {
-    let glyph = Symbol("laptopcomputer", size: 11, weight: .medium, color: Axo.Color.textTertiary)
-    let title = Label("", font: Axo.Font.section, color: Axo.Color.textTertiary)
+    let glyph = Symbol("laptopcomputer", size: 13, weight: .regular, color: Axo.Color.textSecondary)
+    let title = Label("", font: Axo.Font.title, color: Axo.Color.text)
     let status = StatusGlyphView(frame: .zero)
     let meta = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     /// Beside the round trip when Tailscale relays the path: a mark, not a
@@ -340,7 +342,7 @@ final class HostCell: NSTableCellView {
     /// `retrying`: it is coming back by itself (a spinner).
     /// `relay`: the path goes through a Tailscale relay (its tooltip).
     func set(name: String, symbol: String, meta text: String, retrying: Bool, waiting: Bool, relay: String? = nil) {
-        title.stringValue = name.uppercased()
+        title.stringValue = name
         glyph.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         // A spinner says "coming back" by itself; its words would only cost
         // the name its room, so they move to the tooltip.
@@ -357,8 +359,10 @@ final class HostCell: NSTableCellView {
         super.layout()
         let h = SidebarMetric.hostRow
         let mid = bounds.height - h / 2
-        let g: CGFloat = 14
-        glyph.frame = NSRect(x: SidebarMetric.textX + 3, y: (mid - g / 2).rounded(), width: g, height: g)
+        // The machine sits in the projects' tile column, its name on theirs.
+        let g = glyph.intrinsicContentSize
+        glyph.frame = NSRect(x: (SidebarMetric.textX + (SidebarMetric.tile - g.width) / 2).rounded(),
+                             y: (mid - g.height / 2).rounded(), width: g.width, height: g.height)
         let right = SidebarMetric.slotRight(bounds.width)
         let ms = meta.intrinsicContentSize
         meta.frame = NSRect(x: right - ms.width, y: (mid - ms.height / 2).rounded(), width: ms.width, height: ms.height)
@@ -380,7 +384,7 @@ final class HostCell: NSTableCellView {
 
 final class WorkspaceCell: NSTableCellView {
     let tile = ProjectTile()
-    let title = Label("", font: Axo.Font.title, color: Axo.Color.text)
+    let title = Label("", font: Axo.Font.bodyStrong, color: Axo.Color.text)
     let rollup = StatusGlyphView(frame: .zero)
     let add = IconButton(symbol: "plus", label: "New Session in Project", size: .small)
     let chevron = Symbol("chevron.down", size: 9, weight: .semibold, color: Axo.Color.textTertiary)
@@ -415,8 +419,8 @@ final class WorkspaceCell: NSTableCellView {
     }
 
     private func restyle() {
-        // Full ink always: a project never reads quieter than its sessions.
-        title.textColor = Axo.Color.text
+        // Between its machine and its sessions: medium weight, near-full ink.
+        title.textColor = Axo.Color.text.withAlphaComponent(0.86)
         add.isHidden = !hovering || !canAdd
         chevron.isHidden = !hovering
         chevron.frameCenterRotation = expanded ? 0 : 90
@@ -448,16 +452,18 @@ final class WorkspaceCell: NSTableCellView {
 
 /// A session row: program icon (carrying the state) and title (secondary ink
 /// at rest; full ink when selected, hovered, or when its agent wants a look).
-/// A row whose agent needs you (waiting or failed) sits on a wash plate of
-/// that state's colour, the same geometry as the selection plate, so "who
-/// needs me" is answered by area, not by a 6 px dot.
-/// Trailing slot: hover → close; ⌘ held → `⌘n`.
+/// A row whose agent needs you (waiting or failed) carries a bar of that
+/// state's colour at its leading edge (as Conductor marks a row): a wash of
+/// yellow or red over this purple-grey frame only turns it olive or brown.
+/// Trailing slot: at rest, how long since it last changed (`4m`, as
+/// Conductor and Codex date their rows); hover → close; ⌘ held → `⌘n`.
 final class SessionCell: NSTableCellView {
-    private let wash = CALayer()
+    private let bar = CALayer()
     let icon = ProgramIcon(frame: .zero)
     let titleView = FadingLabel()
     var title: Label { titleView.label }
     let shortcut = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
+    let age = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     let close = IconButton(symbol: "xmark", label: "Close Session", size: .small)
     var onClose: (() -> Void)?
     /// Shown in the hover card after 550 ms; replaced in place when it changes.
@@ -489,6 +495,7 @@ final class SessionCell: NSTableCellView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         shortcut.alignment = .right
+        age.alignment = .right
         close.target = self
         close.action = #selector(closeClicked)
         close.tooltip = nil
@@ -499,11 +506,11 @@ final class SessionCell: NSTableCellView {
             return true
         }])
         wantsLayer = true
-        wash.cornerRadius = Axo.Radius.md
-        wash.cornerCurve = .continuous
-        wash.actions = ["bounds": NSNull(), "position": NSNull(), "backgroundColor": NSNull(), "hidden": NSNull()]
-        layer?.addSublayer(wash)
-        for v in [icon, titleView, shortcut, close] as [NSView] { addSubview(v) }
+        bar.cornerRadius = 1.5
+        bar.cornerCurve = .continuous
+        bar.actions = ["bounds": NSNull(), "position": NSNull(), "backgroundColor": NSNull(), "hidden": NSNull()]
+        layer?.addSublayer(bar)
+        for v in [icon, titleView, age, shortcut, close] as [NSView] { addSubview(v) }
         textField = title
         restyle()
     }
@@ -532,9 +539,10 @@ final class SessionCell: NSTableCellView {
         let keyOn = showShortcut && !shortcut.stringValue.isEmpty
         shortcut.isHidden = !keyOn
         close.isHidden = keyOn || !hovering
+        age.isHidden = keyOn || hovering || age.stringValue.isEmpty
         let needsYou = activity == .blocked || activity == .error
-        wash.isHidden = !needsYou
-        if needsYou { wash.backgroundColor = effectiveAppearance.resolve(Axo.Color.statusWash(activity)) }
+        bar.isHidden = !needsYou
+        if needsYou { bar.backgroundColor = effectiveAppearance.resolve(Axo.Color.status(activity)) }
         needsLayout = true
     }
 
@@ -542,8 +550,10 @@ final class SessionCell: NSTableCellView {
         super.layout()
         let h = bounds.height
         let mid = h / 2
-        let i = SidebarMetric.listInset
-        wash.frame = CGRect(x: i, y: 1, width: bounds.width - i * 2, height: h - 2)
+        let b = SidebarMetric.slot - 2
+        // In the project's folder column, which a session row leaves empty.
+        bar.frame = CGRect(x: (SidebarMetric.textX + SidebarMetric.tile / 2 - 1.5).rounded(), y: ((h - b) / 2).rounded(),
+                           width: 3, height: b)
         let s = SidebarMetric.slot
         icon.frame = NSRect(x: SidebarMetric.nameX, y: (mid - s / 2).rounded(), width: s, height: s)
         let right = SidebarMetric.slotRight(bounds.width)
@@ -551,7 +561,10 @@ final class SessionCell: NSTableCellView {
         close.frame = NSRect(x: right + 3 - c, y: (mid - c / 2).rounded(), width: c, height: c)
         let k = shortcut.intrinsicContentSize
         shortcut.frame = NSRect(x: right - k.width, y: (mid - k.height / 2).rounded(), width: k.width, height: k.height)
+        let a = age.intrinsicContentSize
+        age.frame = NSRect(x: right - a.width, y: (mid - a.height / 2).rounded(), width: a.width, height: a.height)
         var titleRight = right + 3
+        if !age.isHidden { titleRight = age.frame.minX - 4 }
         if !close.isHidden { titleRight = close.frame.minX }
         if !shortcut.isHidden { titleRight = shortcut.frame.minX }
         let x = SidebarMetric.titleX

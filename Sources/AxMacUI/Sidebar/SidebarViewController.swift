@@ -448,6 +448,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                   retrying: s.retrying, waiting: s.waiting, relay: relay)
             let said = s.meta.isEmpty ? "connected" : s.meta + (host.relay == nil ? "" : " through a relay")
             c.setAccessibilityLabel(host.isLocal ? "This Mac" : "\(host.name), \(said)")
+            // A Mac out of reach steps back; its name stays to be found.
+            c.alphaValue = host.phase == .connected || s.retrying || s.waiting ? 1 : 0.5
         case let .workspace(_, wid):
             guard let c = cell as? WorkspaceCell, let st = host.state, let w = st.workspace(wid) else { return }
             c.set(name: w.name, key: w.root.isEmpty ? w.name : w.root)
@@ -482,6 +484,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             c.selected = selected?.session == sid && selected?.host == n.hostID
             let number = sessionNumber(host: n.hostID, sid)
             c.shortcut.stringValue = number.map { "⌘\($0)" } ?? ""
+            let changed = panes.map(\.activitySince).max() ?? 0
+            c.age.stringValue = changed > 0 ? Self.elapsed(Date().timeIntervalSince1970 - changed) : ""
             c.showShortcut = showKeycaps
             c.onClose = { [weak self, weak host] in if let host { self?.onCloseSession?(host, sid) } }
             var label = title
@@ -653,8 +657,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     /// The kind of Mac, from its name: a laptop unless it says otherwise.
     static func hostSymbol(_ h: HostSession) -> String {
         let n = (h.isLocal ? (Host.current().localizedName ?? "") : h.name).lowercased()
-        if n.contains("mini") { return "macmini" }
-        if n.contains("studio") { return "macstudio" }
+        if n.contains("mini") { return "macmini.fill" }
+        if n.contains("studio") { return "macstudio.fill" }
         if n.contains("imac") { return "desktopcomputer" }
         if n.contains("mac pro") { return "macpro.gen3" }
         return "laptopcomputer"
