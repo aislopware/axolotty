@@ -1,3 +1,4 @@
+import Accessibility
 import AppKit
 import AxClient
 import AxModel
@@ -369,7 +370,10 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             updateFrame(frameState)
             let dirty = renderer.prepare(frameState, selectionBackground: colors.selection)
             cursorInfo = frameState.cursor
-            if generation != lastGeneration { cursor.noteActivity(now) }
+            if generation != lastGeneration {
+                cursor.noteActivity(now)
+                announceOutput(now)
+            }
             lastGeneration = generation
             needsRender = false
             // Output that changed nothing on screen (a title, a cwd report, a
@@ -1533,6 +1537,33 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     override func accessibilityValue() -> Any? {
         mirror.withTerminal { $0.text(.plain) }
+    }
+
+    /// When the value last told an assistive technology it changed; whether a later tell waits.
+    private var announcedAt = -Double.infinity
+    private var announcePending = false
+
+    /// New output in the focused terminal tells VoiceOver (or Switch Control, Voice Control…)
+    /// that the text changed, four times a second at most, so it can read what arrived. Only
+    /// while one is listening (macOS 27's `isApplicationAccessibilityEnabled`): otherwise no
+    /// notification is built, and the screen is read only when asked.
+    private func announceOutput(_ now: Double) {
+        guard window?.firstResponder === self, AccessibilitySettings.isApplicationAccessibilityEnabled else { return }
+        let gap = 0.25
+        if now - announcedAt >= gap {
+            announcedAt = now
+            NSAccessibility.post(element: self, notification: .valueChanged)
+        } else if !announcePending {
+            announcePending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + (announcedAt + gap - now)) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.announcePending = false
+                    self.announcedAt = CACurrentMediaTime()
+                    NSAccessibility.post(element: self, notification: .valueChanged)
+                }
+            }
+        }
     }
 }
 
