@@ -29,13 +29,13 @@
   </g>
   <defs>
     <linearGradient id="g1bv" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset=".14" stop-color="#ffffff" stop-opacity="0"/>
-      <stop offset=".86" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#ffffff" stop-opacity="0.95"/></linearGradient>
-    <linearGradient id="g1bs" x1="0" y1="0" x2="0" y2="1"><stop offset=".78" stop-color="#7d8ea3" stop-opacity="0"/><stop offset="1" stop-color="#7d8ea3" stop-opacity="0.3"/></linearGradient>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.8"/><stop offset=".14" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset=".86" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#ffffff" stop-opacity="0.7"/></linearGradient>
+    <linearGradient id="g1bs" x1="0" y1="0" x2="0" y2="1"><stop offset=".78" stop-color="#7d8ea3" stop-opacity="0"/><stop offset="1" stop-color="#7d8ea3" stop-opacity="0.15"/></linearGradient>
     <filter id="g1bb" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="5"/></filter>
   </defs>
   <rect width="512" height="512" rx="115" fill="none" stroke="url(#g1bs)" stroke-width="44" filter="url(#g1bb)"/>
-  <rect width="512" height="512" rx="115" fill="none" stroke="#000" stroke-opacity="0.06" stroke-width="4"/>
-  <rect width="512" height="512" rx="115" fill="none" stroke="url(#g1bv)" stroke-width="18" filter="url(#g1bb)" opacity=".7"/>
-  <rect width="512" height="512" rx="115" fill="none" stroke="url(#g1bv)" stroke-width="5"/>
+  <rect width="512" height="512" rx="115" fill="none" stroke="#000" stroke-opacity="0.035" stroke-width="4"/>
+  <rect width="512" height="512" rx="115" fill="none" stroke="url(#g1bv)" stroke-width="10" filter="url(#g1bb)" opacity=".35"/>
+  <rect width="512" height="512" rx="115" fill="none" stroke="url(#g1bv)" stroke-width="4"/>
 </g></svg>
