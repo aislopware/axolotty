@@ -155,6 +155,8 @@ final class ToastView: Surface {
         body.textColor = Axo.Color.textSecondary
         body.stringValue = c.body
         body.maximumNumberOfLines = 3
+        // A body cut at three lines ends in "…", or the reader takes a cut sentence for the whole.
+        body.cell?.truncatesLastVisibleLine = true
         if let pane = c.pane, let p = c.host?.state?.panes[pane] {
             glyph.need = c.activity == .blocked ? p.status.headline?.need : nil
             glyph.activity = c.activity == .idle ? .done : c.activity
