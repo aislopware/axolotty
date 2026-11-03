@@ -335,7 +335,18 @@ public actor Server {
     private nonisolated static func serve(_ conn: FramedConnection, sink: AsyncStream<Inbound>.Continuation) {
         sink.yield(.accepted(conn))
         let key = ObjectIdentifier(conn)
-        conn.start(onFrame: { sink.yield(.frame(key, $0)) }, onClose: { _ in sink.yield(.closed(key)) })
+        // Tunnelled streams (feature "tunnel") go straight to their sockets,
+        // never through the actor: a page loading must not wait on a pane.
+        let tunnels = Tunnels(conn: conn) { port in try? TCPSocket.connect(host: "localhost", port: port, timeout: 2) }
+        conn.start(onFrame: { frame in
+            switch frame {
+            case .open, .stream, .streamAck, .reset: tunnels.receive(frame)
+            default: sink.yield(.frame(key, frame))
+            }
+        }, onClose: { _ in
+            tunnels.closeAll()
+            sink.yield(.closed(key))
+        })
     }
 
     /// Listens on every tailnet address this Mac has now and stops on the

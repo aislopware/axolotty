@@ -377,7 +377,9 @@ public enum TCPSocket {
     }
 
     /// Listens on one numeric address (a tailnet IP). Returns the fd.
-    public static func listen(address: String, port: UInt16, backlog: Int32 = 16) throws -> Int32 {
+    /// `reuse` false: refuses a port anything here already listens on, even
+    /// on the wildcard address (SO_REUSEADDR would let this one shadow it).
+    public static func listen(address: String, port: UInt16, backlog: Int32 = 16, reuse: Bool = true) throws -> Int32 {
         var hints = addrinfo()
         hints.ai_socktype = SOCK_STREAM
         hints.ai_flags = AI_NUMERICHOST | AI_PASSIVE
@@ -388,7 +390,7 @@ public enum TCPSocket {
         guard fd >= 0 else { throw POSIXError(.EIO) }
         noSIGPIPE(fd)
         var one: Int32 = 1
-        _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
+        if reuse { _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size)) }
         if a.pointee.ai_family == AF_INET6 {
             _ = setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, socklen_t(MemoryLayout<Int32>.size))
         }
@@ -399,6 +401,24 @@ public enum TCPSocket {
         }
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         return fd
+    }
+
+    /// The port a socket is bound to (a listener asked for port 0).
+    public static func localPort(_ fd: Int32) -> UInt16? {
+        var ss = sockaddr_storage()
+        var len = socklen_t(MemoryLayout<sockaddr_storage>.size)
+        let ok = withUnsafeMutablePointer(to: &ss) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) == 0 }
+        }
+        guard ok else { return nil }
+        let family = Int32(ss.ss_family)
+        return withUnsafePointer(to: &ss) { p -> UInt16? in
+            switch family {
+            case AF_INET: p.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { UInt16(bigEndian: $0.pointee.sin_port) }
+            case AF_INET6: p.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { UInt16(bigEndian: $0.pointee.sin6_port) }
+            default: nil
+            }
+        }
     }
 
     /// The peer's "ip:port" (for `tailscale whois`).

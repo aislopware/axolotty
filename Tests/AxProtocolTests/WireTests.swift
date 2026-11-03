@@ -14,6 +14,11 @@ import Testing
             .output(pane: pane, offset: 1 << 40, bytes: Data()),
             .snapshot(pane: pane, at: 99, flags: [.first, .last], bytes: Data(repeating: 0xAB, count: 5000)),
             .ack(pane: pane, offset: 12345),
+            .open(stream: pane.raw, port: 5173),
+            .stream(stream: pane.raw, offset: 1 << 33, bytes: Data("GET / HTTP/1.1\r\n".utf8), end: false),
+            .stream(stream: pane.raw, offset: 7, bytes: Data(), end: true),
+            .streamAck(stream: pane.raw, offset: 65536),
+            .reset(stream: pane.raw),
         ]
     }
 
@@ -45,6 +50,15 @@ import Testing
         var dec3 = FrameDecoder()
         dec3.feed(Data([4, 0, 0, 0, 0x02, 0, 1, 2]))
         #expect(throws: WireError.malformed("short data frame")) { try dec3.next() }
+
+        // A tunnel opened to no port, or to one past 65535, is refused.
+        for port: UInt64 in [0, 1 << 16] {
+            var d = Data([26, 0, 0, 0, 0x06, 0]) + Data(count: 16)
+            withUnsafeBytes(of: port.littleEndian) { d.append(contentsOf: $0) }
+            var dec4 = FrameDecoder()
+            dec4.feed(d)
+            #expect(throws: WireError.malformed("open to port \(port)")) { try dec4.next() }
+        }
     }
 
     @Test func messagesRoundTrip() throws {

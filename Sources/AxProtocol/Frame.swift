@@ -13,6 +13,10 @@ public enum FrameType: UInt8, Sendable {
     case output = 0x02
     case snapshot = 0x03
     case ack = 0x05
+    case open = 0x06
+    case stream = 0x07
+    case streamAck = 0x08
+    case reset = 0x09
 }
 
 public struct FrameFlags: OptionSet, Sendable, Hashable {
@@ -30,13 +34,29 @@ public enum Frame: Sendable, Equatable {
     case snapshot(pane: PaneID, at: UInt64, flags: FrameFlags, bytes: Data)
     /// The client applied everything for `pane` up to `offset`.
     case ack(pane: PaneID, offset: UInt64)
+
+    // A byte stream to a TCP port on the host's loopback (feature "tunnel"):
+    // `localhost:5173` printed by a far pane opens here as if it ran here.
+    // Same header as the data frames: a 16-byte stream id, then a u64.
+
+    /// Client → host: connect stream `id` to `localhost:port` there.
+    case open(stream: UUID, port: UInt16)
+    /// Bytes of a stream from `offset` on; `end`: the sender's side is done
+    /// writing (its local socket read EOF), and these are its last bytes.
+    case stream(stream: UUID, offset: UInt64, bytes: Data, end: Bool)
+    /// The receiver wrote everything up to `offset` into its local socket:
+    /// the sender may have a window more than that in flight.
+    case streamAck(stream: UUID, offset: UInt64)
+    /// The stream is over, abruptly (a refused connect, a reset, a link
+    /// that dropped it): both ends close.
+    case reset(stream: UUID)
 }
 
 public enum Wire {
     /// The wire generation. Bumped only for a change an older peer can't skip.
     public static let version = 1
     /// What this build can do beyond the generation's baseline.
-    public static let features = ["heartbeat", "bridge", "git", "paths", "files", "open"]
+    public static let features = ["heartbeat", "bridge", "git", "paths", "files", "open", "tunnel"]
     /// What `axolotty bridge` prints before it splices: a client reading a
     /// remote command's output skips everything up to and including it (ssh
     /// banners, rc files that echo).
@@ -78,6 +98,23 @@ public enum Wire {
             header(.ack, [], 24)
             appendID(&out, pane)
             appendLE(&out, offset)
+        case let .open(id, port):
+            header(.open, [], 24)
+            appendID(&out, id)
+            appendLE(&out, UInt64(port))
+        case let .stream(id, offset, bytes, end):
+            header(.stream, end ? .last : [], 24 + bytes.count)
+            appendID(&out, id)
+            appendLE(&out, offset)
+            out.append(bytes)
+        case let .streamAck(id, offset):
+            header(.streamAck, [], 24)
+            appendID(&out, id)
+            appendLE(&out, offset)
+        case let .reset(id):
+            header(.reset, [], 24)
+            appendID(&out, id)
+            appendLE(&out, UInt64(0))
         }
         return out
     }
@@ -86,8 +123,10 @@ public enum Wire {
         withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) }
     }
 
-    static func appendID(_ d: inout Data, _ id: PaneID) {
-        withUnsafeBytes(of: id.raw.uuid) { d.append(contentsOf: $0) }
+    static func appendID(_ d: inout Data, _ id: PaneID) { appendID(&d, id.raw) }
+
+    static func appendID(_ d: inout Data, _ id: UUID) {
+        withUnsafeBytes(of: id.uuid) { d.append(contentsOf: $0) }
     }
 }
 
@@ -124,17 +163,26 @@ public struct FrameDecoder: Sendable {
         switch type {
         case .control:
             return .control(Data(buffer[payload]))
-        case .output, .snapshot, .ack:
+        case .output, .snapshot, .ack, .open, .stream, .streamAck, .reset:
             guard payload.count >= 24 else { throw .malformed("short data frame") }
-            let pane = readID(at: payload.lowerBound - buffer.startIndex)
+            let id = readID(at: payload.lowerBound - buffer.startIndex)
+            let pane = PaneID(raw: id)
             let offset = readLE(UInt64.self, at: payload.lowerBound - buffer.startIndex + 16)
             let bytes = Data(buffer[(payload.lowerBound + 24) ..< payload.upperBound])
             switch type {
             case .output: return .output(pane: pane, offset: offset, bytes: bytes)
             case .snapshot: return .snapshot(pane: pane, at: offset, flags: flags, bytes: bytes)
+            case .stream: return .stream(stream: id, offset: offset, bytes: bytes, end: flags.contains(.last))
             default:
-                guard bytes.isEmpty else { throw .malformed("ack with payload") }
-                return .ack(pane: pane, offset: offset)
+                guard bytes.isEmpty else { throw .malformed("\(type) with payload") }
+                switch type {
+                case .ack: return .ack(pane: pane, offset: offset)
+                case .open:
+                    guard let port = UInt16(exactly: offset), port > 0 else { throw .malformed("open to port \(offset)") }
+                    return .open(stream: id, port: port)
+                case .streamAck: return .streamAck(stream: id, offset: offset)
+                default: return .reset(stream: id)
+                }
             }
         }
     }
@@ -157,11 +205,11 @@ public struct FrameDecoder: Sendable {
         return T(littleEndian: v)
     }
 
-    private func readID(at offset: Int) -> PaneID {
+    private func readID(at offset: Int) -> UUID {
         var u = UUID().uuid
         _ = withUnsafeMutableBytes(of: &u) { dst in
             buffer.copyBytes(to: dst, from: (buffer.startIndex + offset) ..< (buffer.startIndex + offset + 16))
         }
-        return PaneID(raw: UUID(uuid: u))
+        return UUID(uuid: u)
     }
 }

@@ -119,6 +119,11 @@ public final class HostConnection: @unchecked Sendable {
         var rtt: Duration?
         /// The last TCP dial was refused at the port (see `unanswered`).
         var portClosed = false
+        /// The streams the link up now carries (feature "tunnel").
+        var tunnels: Tunnels?
+        /// Host ports answering on this Mac's loopback, by host port. They
+        /// outlive a link that drops: a page reloaded after it heals works.
+        var forwards: [UInt16: Forward] = [:]
     }
 
     /// How a remote link is judged alive (`LinkLiveness.Timing.standard`
@@ -180,12 +185,86 @@ public final class HostConnection: @unchecked Sendable {
     }
 
     public func disconnect() {
-        let conn = state.withLock { s -> FramedConnection? in
+        let (conn, forwards) = state.withLock { s -> (FramedConnection?, [Forward]) in
             s.wantConnected = false
-            return s.conn
+            defer { s.forwards = [:] }
+            return (s.conn, Array(s.forwards.values))
         }
+        forwards.forEach { $0.stop() }
         conn?.close()
     }
+
+    // MARK: Forwarding
+
+    /// A host port that answers on this Mac's loopback.
+    final class Forward: Sendable {
+        let port: UInt16
+        private let sources: [any DispatchSourceRead]
+        init(port: UInt16, sources: [any DispatchSourceRead]) {
+            self.port = port
+            self.sources = sources
+        }
+
+        func stop() { sources.forEach { $0.cancel() } }
+    }
+
+    /// Makes `port` on the host's loopback (a dev server a far pane started)
+    /// answer on this Mac's: at the same port when nothing here has it, so
+    /// the link a program printed works unchanged; else at one the system
+    /// picks. Returns the port here. Needs the host's "tunnel" feature.
+    public func forward(port: UInt16) throws(ConnectionError) -> UInt16 {
+        let (known, able) = state.withLock { s in
+            (s.forwards[port]?.port, s.conn != nil && s.welcome == nil && s.hostFeatures.contains("tunnel"))
+        }
+        if let known { return known }
+        guard able else { throw .closed }
+        // IPv4 loopback is the one that must be had: browsers try ::1 for
+        // `localhost` and fall back to it at once when refused.
+        var fds: [Int32] = []
+        if let fd = try? TCPSocket.listen(address: "127.0.0.1", port: port, backlog: 64, reuse: false) {
+            fds.append(fd)
+            if let v6 = try? TCPSocket.listen(address: "::1", port: port, backlog: 64, reuse: false) { fds.append(v6) }
+        } else if let fd = try? TCPSocket.listen(address: "127.0.0.1", port: 0, backlog: 64, reuse: false) {
+            fds.append(fd)
+        }
+        guard let first = fds.first, let here = TCPSocket.localPort(first) else { throw .refused("no port to listen on") }
+        let queue = DispatchQueue(label: "axolotty.forward.\(port)")
+        let sources = fds.map { fd -> any DispatchSourceRead in
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+            let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+            src.setEventHandler { [weak self] in
+                while true {
+                    let c = accept(fd, nil, nil)
+                    guard c >= 0 else { return }
+                    guard let tunnels = self?.state.withLock({ $0.welcome == nil ? $0.tunnels : nil }) else {
+                        // Between links: refused at once, so a reload can retry.
+                        var hard = linger(l_onoff: 1, l_linger: 0)
+                        _ = setsockopt(c, SOL_SOCKET, SO_LINGER, &hard, socklen_t(MemoryLayout<linger>.size))
+                        Darwin.close(c)
+                        continue
+                    }
+                    tunnels.open(c, port: port)
+                }
+            }
+            src.setCancelHandler { Darwin.close(fd) }
+            src.resume()
+            return src
+        }
+        let f = Forward(port: here, sources: sources)
+        let raced = state.withLock { s -> UInt16? in
+            if let other = s.forwards[port] { return other.port }
+            s.forwards[port] = f
+            return nil
+        }
+        if let raced {
+            f.stop()
+            return raced
+        }
+        return here
+    }
+
+    /// The host ports forwarded now, and where each answers here.
+    public var forwarded: [UInt16: UInt16] { state.withLock { $0.forwards.mapValues(\.port) } }
 
     private func open() async throws -> HostHello {
         let dial = state.withLock { s -> Task<HostHello, any Error> in
@@ -242,9 +321,11 @@ public final class HostConnection: @unchecked Sendable {
             }
         }
         let t = now
+        let tunnels = Tunnels(conn: conn)
         return try await withCheckedThrowingContinuation { c in
             state.withLock { s in
                 s.conn = conn
+                s.tunnels = tunnels
                 s.welcome = c
                 s.refusal = nil
                 s.liveness = nil
@@ -276,6 +357,8 @@ public final class HostConnection: @unchecked Sendable {
             #endif
             s.heartbeat?.cancel()
             s.heartbeat = nil
+            taken.tunnels = s.tunnels
+            s.tunnels = nil
             s.liveness = nil
             s.welcome = nil
             s.intents = [:]
@@ -288,6 +371,7 @@ public final class HostConnection: @unchecked Sendable {
             return true
         }
         guard mine else { return }
+        taken.tunnels?.closeAll()
         taken.intents.values.forEach { $0.resume(returning: .failure(.closed)) }
         taken.captures.values.forEach { $0.resume(returning: nil) }
         taken.pongs.values.forEach { $0.resume() }
@@ -446,8 +530,13 @@ public final class HostConnection: @unchecked Sendable {
 
     private func receive(_ frame: Frame, on conn: FramedConnection) {
         let t = now
-        state.withLock { $0.liveness?.heard(at: t) }
+        let tunnels = state.withLock { s in
+            s.liveness?.heard(at: t)
+            return s.tunnels
+        }
         switch frame {
+        case .open, .stream, .streamAck, .reset:
+            tunnels?.receive(frame)
         case let .control(json):
             guard let msg = try? MessageCodec.host(json) else { return }
             handle(msg, on: conn)
