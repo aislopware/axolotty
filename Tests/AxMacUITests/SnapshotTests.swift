@@ -76,4 +76,25 @@ struct SnapshotTests {
         try Self.check(Sheet([(TooltipView("Split Right  ⌘D"), nil), (HoverCardView(card), nil),
                               (ended, NSSize(width: ended.preferredWidth, height: EndedBar.height))]), "cards")
     }
+
+    /// The window's empty sheet, at the window's least size: the launcher, and a far Mac
+    /// out of reach in its two kinds, waited for and waiting on the person. Its real copy.
+    @Test func emptyWindow() throws {
+        let size = Axo.Metric.windowMin
+        let launcher = EmptyStateView()
+        launcher.configure(agents: [.claude, .codex, .gemini], projects: [.init(id: WorkspaceID(), name: "axolotty", key: "axolotty")],
+                           selected: nil)
+        let offline = EmptyStateView()
+        offline.set(.away(title: "MacBook Pro is offline",
+                          detail: "Tailscale last saw it 50 minutes ago. Your sessions keep running there; "
+                              + "this window reattaches the moment it’s back.",
+                          retrying: true, action: nil, machine: "laptopcomputer"))
+        let setUp = EmptyStateView()
+        setUp.set(.away(title: "Axolotty isn’t running on MacBook Pro",
+                        detail: "MacBook Pro is reachable. Set Axolotty up there over SSH and this Mac connects by itself.",
+                        retrying: false, action: "Set Up over SSH", machine: "laptopcomputer"))
+        for (view, name) in [(launcher, "empty-launcher"), (offline, "empty-offline"), (setUp, "empty-setup")] {
+            try Snapshot.expect(Snapshot.render(view, size: size, scale: 1, margin: 0, on: Axo.Color.frame), named: "\(name)@1x")
+        }
+    }
 }
