@@ -71,6 +71,9 @@ enum Snapshot {
     static func difference(_ a: CGImage, _ b: CGImage, tolerance: Int = 2) -> (pixels: Int, diff: CGImage?) {
         guard a.width == b.width, a.height == b.height else { return (max(a.width * a.height, b.width * b.height), nil) }
         let pa = pixels(a), pb = pixels(b)
+        // The usual answer, "the same", in one memcmp: the loop below is slow unoptimised.
+        let same = pa.withUnsafeBytes { x in pb.withUnsafeBytes { y in memcmp(x.baseAddress!, y.baseAddress!, x.count) == 0 } }
+        if same { return (0, nil) }
         var marked = pb, n = 0
         for i in stride(from: 0, to: pa.count, by: 4) {
             var off = false
