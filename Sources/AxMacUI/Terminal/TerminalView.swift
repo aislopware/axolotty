@@ -81,6 +81,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
 
     // Grid geometry (pixels) for the current bounds.
     private(set) var grid = (cols: 0, rows: 0)
+    /// Past the turn the pane was first sized in: a grid change from here on is a resize.
+    private(set) var sized = false
     private var origin = (x: Float(0), y: Float(0))
     private var cellSize = (w: 1, h: 1)
     private var lastViewport: (cols: Int, rows: Int, cw: Int, ch: Int)?
@@ -304,7 +306,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         origin = (Float((padX + (leftX / 2)).rounded(.down)), Float(padT.rounded(.down)))
         let before = grid
         grid = (cols, rows)
-        if before.cols > 0, before != grid, window != nil { showSize() }
+        // The size shows on a resize, never on the first sizing (as Ghostty's "after-first"):
+        // a pane opening takes several frames in one turn (its first frame, then the strip
+        // over a split, then the split's frame), and none of them is a resize.
+        if before.cols == 0, grid.cols > 0 { Task { @MainActor [weak self] in self?.sized = true } }
+        if sized, before != grid, window != nil { showSize() }
         scheduleViewport()
     }
 
