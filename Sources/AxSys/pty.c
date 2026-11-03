@@ -83,9 +83,8 @@ int ax_pty_spawn(const char *path, char *const argv[], char *const envp[],
   int err = set_cloexec_nonblock(master, true);
   if (err == 0) err = set_cloexec_nonblock(slave, false);
   int errpipe[2] = {-1, -1};
-  if (err == 0 && pipe(errpipe) != 0) err = errno;
-  if (err == 0) err = set_cloexec_nonblock(errpipe[0], false);
-  if (err == 0) err = set_cloexec_nonblock(errpipe[1], false);
+  // Close-on-exec from birth (macOS 27's pipe2), so a successful exec closes the write end.
+  if (err == 0 && pipe2(errpipe, O_CLOEXEC) != 0) err = errno;
 
   int *fds = NULL;
   int nfds = err == 0 ? open_fds(&fds) : -1;

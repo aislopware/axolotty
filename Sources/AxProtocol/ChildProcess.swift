@@ -29,18 +29,20 @@ public enum ChildProcess {
     public static func run(_ path: String, _ arguments: [String], environment: [String: String]? = nil,
                            input: Data? = nil, timeout: Double? = nil) throws -> Output {
         var inPipe: [Int32] = [-1, -1], outPipe: [Int32] = [-1, -1], errPipe: [Int32] = [-1, -1]
-        guard pipe(&outPipe) == 0 else { throw POSIXError(.EMFILE) }
-        guard pipe(&errPipe) == 0 else {
+        // Close-on-exec from birth (macOS 27's pipe2): no end reaches another thread's child,
+        // even one spawned between creating it and flagging it. The child's ends reach this
+        // child by dup2, which clears the flag on the copy.
+        guard pipe2(&outPipe, O_CLOEXEC) == 0 else { throw POSIXError(.EMFILE) }
+        guard pipe2(&errPipe, O_CLOEXEC) == 0 else {
             outPipe.forEach { _ = close($0) }
             throw POSIXError(.EMFILE)
         }
-        if input != nil, pipe(&inPipe) != 0 {
+        if input != nil, pipe2(&inPipe, O_CLOEXEC) != 0 {
             (outPipe + errPipe).forEach { _ = close($0) }
             throw POSIXError(.EMFILE)
         }
-        // Our ends never reach any child (this one or another thread's).
+        // Our ends don't block; the child's do (O_NONBLOCK in pipe2 would set both).
         for fd in [outPipe[0], errPipe[0], inPipe[1]] where fd >= 0 {
-            _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
             _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         }
         // A child that stops reading is an EPIPE here, not a signal.

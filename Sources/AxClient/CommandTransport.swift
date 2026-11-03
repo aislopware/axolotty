@@ -35,7 +35,7 @@ public final class CommandChild: @unchecked Sendable {
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0 else { throw POSIXError(.EMFILE) }
         noSIGPIPE(pair[0])
         var err: [Int32] = [-1, -1]
-        guard pipe(&err) == 0 else {
+        guard pipe2(&err, O_CLOEXEC) == 0 else {
             Darwin.close(pair[0])
             Darwin.close(pair[1])
             throw POSIXError(.EMFILE)
@@ -77,7 +77,6 @@ public final class CommandChild: @unchecked Sendable {
         self.fd = fd
         self.errFD = errFD
         _ = fcntl(errFD, F_SETFL, fcntl(errFD, F_GETFL) | O_NONBLOCK)
-        _ = fcntl(errFD, F_SETFD, FD_CLOEXEC)
         errSource = DispatchSource.makeReadSource(fileDescriptor: errFD, queue: queue)
         errSource.setEventHandler { [weak self] in self?.drainStderr() }
         errSource.setCancelHandler { [errFD] in _ = Darwin.close(errFD) }
