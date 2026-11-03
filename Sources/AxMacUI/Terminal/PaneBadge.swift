@@ -30,12 +30,17 @@ final class PaneBadge: Surface {
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    var preferredWidth: CGFloat { ceil(label.intrinsicContentSize.width) + 2 * 12 }
+    var preferredWidth: CGFloat { Self.width(of: label.stringValue) }
 
-    /// How wide the badge is with `text` in it.
+    /// How wide the badge is with `text` in it, measured by a label like its
+    /// own: the string alone is a few points short of what the field draws,
+    /// and a text that "fits" by that count still loses its middle.
     static func width(of text: String) -> CGFloat {
-        ceil((text as NSString).size(withAttributes: [.font: Axo.Font.meta]).width) + 2 * 12
+        ruler.stringValue = text
+        return ceil(ruler.intrinsicContentSize.width) + 2 * 12
     }
+
+    private static let ruler = Label("", font: Axo.Font.meta, color: Axo.Color.textSecondary)
 
     /// Shows `cols × rows` and (re)starts the fade-out clock.
     func show(cols: Int, rows: Int) { show("\(cols) × \(rows)", linger: 0.7) }
