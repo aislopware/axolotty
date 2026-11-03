@@ -485,7 +485,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             let number = sessionNumber(host: n.hostID, sid)
             c.shortcut.stringValue = number.map { "⌘\($0)" } ?? ""
             let changed = panes.map(\.activitySince).max() ?? 0
-            c.age.stringValue = changed > 0 ? Self.elapsed(Date().timeIntervalSince1970 - changed) : ""
+            let need = Self.needWord(activity, panes.compactMap(\.status.headline).first(where: { $0.state == .blocked })?.need)
+            c.age.stringValue = need ?? (changed > 0 ? Self.elapsed(Date().timeIntervalSince1970 - changed) : "")
+            c.need = need ?? ""
             c.showShortcut = showKeycaps
             c.onClose = { [weak self, weak host] in if let host { self?.onCloseSession?(host, sid) } }
             var label = title
@@ -560,6 +562,21 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         guard let since else { return word }
         let e = Self.elapsed(since)
         return e == "now" ? word : "\(word) · \(e)"
+    }
+
+    /// The one word a row says when its agent needs you: what to do.
+    static func needWord(_ a: Activity, _ need: StatusRecord.Need?) -> String? {
+        switch a {
+        case .blocked:
+            switch need {
+            case .permission?: "Approve"
+            case .question?: "Answer"
+            case .auth?: "Sign in"
+            case nil: "Waiting"
+            }
+        case .error: "Failed"
+        default: nil
+        }
     }
 
     static func elapsed(_ s: Double) -> String {

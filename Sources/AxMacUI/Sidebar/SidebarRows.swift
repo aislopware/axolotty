@@ -447,20 +447,21 @@ final class WorkspaceCell: NSTableCellView {
 
 /// A session row: program icon (carrying the state) and title (secondary ink
 /// at rest; full ink when selected, hovered, or when its agent wants a look).
-/// A row whose agent needs you (waiting or failed) carries a bar of that
-/// state's colour on its leading edge, inside the plate's curve (as Conductor
-/// marks a row): a wash of yellow or red over this purple-grey frame only
-/// turns it olive or brown.
+/// A row whose agent needs you (waiting or failed) says what it needs in the
+/// trailing slot, in that state's colour ("Approve", "Answer", "Failed"):
+/// colour on a word that means something, not a stripe or a wash.
 /// Trailing slot: at rest, how long since it last changed (`4m`, as
-/// Conductor and Codex date their rows); hover → close; ⌘ held → `⌘n`.
+/// Conductor and Codex date their rows), or the need; hover → close;
+/// ⌘ held → `⌘n`.
 final class SessionCell: NSTableCellView {
-    private let bar = CALayer()
     private static let ageColumn = ceil(("88m" as NSString).size(withAttributes: [.font: Axo.Font.meta]).width)
     let icon = ProgramIcon(frame: .zero)
     let titleView = FadingLabel()
     var title: Label { titleView.label }
     let shortcut = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
     let age = Label("", font: Axo.Font.meta, color: Axo.Color.textTertiary)
+    /// What a waiting or failed agent needs, said in the trailing slot.
+    var need = "" { didSet { if need != oldValue { restyle() } } }
     let close = IconButton(symbol: "xmark", label: "Close Session", size: .small)
     var onClose: (() -> Void)?
     /// Shown in the hover card after 550 ms; replaced in place when it changes.
@@ -502,11 +503,6 @@ final class SessionCell: NSTableCellView {
             onClose()
             return true
         }])
-        wantsLayer = true
-        bar.cornerRadius = 1.5
-        bar.cornerCurve = .continuous
-        bar.actions = ["bounds": NSNull(), "position": NSNull(), "backgroundColor": NSNull(), "hidden": NSNull()]
-        layer?.addSublayer(bar)
         for v in [icon, titleView, age, shortcut, close] as [NSView] { addSubview(v) }
         textField = title
         restyle()
@@ -537,9 +533,9 @@ final class SessionCell: NSTableCellView {
         shortcut.isHidden = !keyOn
         close.isHidden = keyOn || !hovering
         age.isHidden = keyOn || hovering || age.stringValue.isEmpty
-        let needsYou = activity == .blocked || activity == .error
-        bar.isHidden = !needsYou
-        if needsYou { bar.backgroundColor = effectiveAppearance.resolve(Axo.Color.status(activity)) }
+        let needsYou = (activity == .blocked || activity == .error) && !need.isEmpty
+        age.font = needsYou ? Axo.Font.captionStrong : Axo.Font.meta
+        age.textColor = needsYou ? Axo.Color.status(activity) : Axo.Color.textTertiary
         needsLayout = true
     }
 
@@ -547,8 +543,6 @@ final class SessionCell: NSTableCellView {
         super.layout()
         let h = bounds.height
         let mid = h / 2
-        let b = h - 12
-        bar.frame = CGRect(x: SidebarMetric.listInset + 2, y: ((h - b) / 2).rounded(), width: 3, height: b)
         let s = SidebarMetric.slot
         icon.frame = NSRect(x: SidebarMetric.nameX, y: (mid - s / 2).rounded(), width: s, height: s)
         let right = SidebarMetric.slotRight(bounds.width)
