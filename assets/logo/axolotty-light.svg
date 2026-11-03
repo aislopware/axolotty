@@ -14,13 +14,13 @@
     <feComposite in="SourceAlpha" in2="hio" operator="out" result="hia"/>
     <feGaussianBlur in="hia" stdDeviation=".7" result="hib"/>
     <feComposite in="hib" in2="SourceAlpha" operator="in" result="him"/>
-    <feFlood flood-color="#ffffff" flood-opacity="0.4"/>
+    <feFlood flood-color="#ffffff" flood-opacity="0.25"/>
     <feComposite in2="him" operator="in" result="hi"/>
     <feOffset in="SourceAlpha" dx="-2" dy="-2" result="loo"/>
     <feComposite in="SourceAlpha" in2="loo" operator="out" result="loa"/>
     <feGaussianBlur in="loa" stdDeviation=".7" result="lob"/>
     <feComposite in="lob" in2="SourceAlpha" operator="in" result="lom"/>
-    <feFlood flood-color="#5a1fb0" flood-opacity="0.22"/>
+    <feFlood flood-color="#5a1fb0" flood-opacity="0"/>
     <feComposite in2="lom" operator="in" result="lo"/>
     <feMerge><feMergeNode in="body"/><feMergeNode in="hi"/><feMergeNode in="lo"/></feMerge></filter>
     
