@@ -25,9 +25,10 @@ Under load the cores stay awake and all of this shrinks to 0.18 ms.
 **Tried, A/B interleaved, 3 runs each, and not kept.** Runs differ by about ±0.2 ms at p50, so a single run decides nothing.
 - **The server actor on a user-interactive serial queue,** with isolated loops (one hop instead of two). Hop p50 was 0.21–0.24 ms against 0.16–0.18 ms on the default executor, and the total p50 was 1.0–1.2 ms against 0.66–0.94 ms. Slightly worse.
 - **`FramedConnection.send` writing from the caller when nothing is queued** (one wake fewer each way). Total p50 was 0.90–1.14 ms. No gain.
+- **A spin-poll window on the PTY after input** (the pane queue polls the master for up to 2 ms after writing a key, so the echo is read without a kernel wake). Three interleaved rounds, spin off against 2 ms: p50 0.71 / 1.07 / 1.11 ms against 0.87 / 1.10 / 1.10 ms; p99 11.2 / 9.5 / 9.3 ms against 7.8 / 10.2 / 14.6 ms; max 11–15 ms against 26–30 ms. No gain at p50, p99 mixed, and the worst echo twice as late: a pane queue spinning holds the core the shell needs to answer.
 
 **Kept.**
 - The bench's event-driven wait.
 - A pane's read buffer allocated once (it was 64 KiB zeroed on every read). That is hygiene, not a measured millisecond.
 
-What could still help has to remove wake-ups on both Macs together. One example is a short spin-poll window on the PTY after input. Any such change must win an interleaved A/B before it lands. The remote echo is about 8 ms of network on the tailnet (ping p50 6, p99 14), and the idle hops add 1–2 ms on top.
+What could still help has to remove wake-ups on both Macs together; spinning is ruled out above. Any such change must win an interleaved A/B before it lands. The remote echo is about 8 ms of network on the tailnet (ping p50 6, p99 14), and the idle hops add 1–2 ms on top.

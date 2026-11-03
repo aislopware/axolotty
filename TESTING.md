@@ -67,6 +67,8 @@ it measured becomes a model, and the gate holds the model in virtual time.
 | Faults on real sockets | Blackout, reset and delay on loopback through `LinkRelay`; every line arrives once, in order | `FaultyLinkTests` |
 | Crash and recovery | The PTY holder outlives the server, a fresh holder adopts live sessions, concurrent launches leave one | `HolderTests` |
 | Pixels | The Metal renderer drawn offscreen and read back | `RenderTests` |
+| Pictures | Every component, the sidebar and the whole window (palette open, a Mac dropped) drawn offscreen at 1× and 2× against references; keys as the bytes a program reads | `AxMacUITests` |
+| Allocation budgets | Heap allocations on the hot path, counted exactly in an optimised build | `AllocationBudgetTests` |
 | Sanitizers | Data races and memory errors across the whole suite | `swift test --sanitize=thread` / `=address` |
 | Measurement | The real tailnet, Studio to MacBook | `EchoBench` (`AXBENCH=1`), `.research/slopty-latency-2026-11-02.md` |
 
@@ -247,6 +249,9 @@ where it could be shown, that test failed before the fix.
 | Repeated host suites | A process-directed SIGPIPE (in XNU, a write into a pipe whose reader is gone) killed the test process. The writer is not found yet. The app now ignores SIGPIPE, as the daemons do, and a test run logs `AXTEST SIGPIPE`, with every pipe write end open at that moment and the broken ones starred, which fails its deep step. XNU raises EPIPE as a process-wide signal only for descriptors that aren't sockets, and every socket here sets `SO_NOSIGPIPE`, so the writer is a pipe | Open |
 | A repeat run's `outputSurvivesServerDisconnectAndReattach`, then a probe | XNU can post `NOTE_EXIT` a moment before the child is waitable (1 to 4 exits in 5000 with twelve probes running). `ptyd` reaped with `WNOHANG`, so that program stayed a zombie for good. The old holder left 4 of 6000 under load | `HolderTests.everyEndedProgramIsReaped` |
 | The allocation budgets, on first count | `FrameDecoder` kept its bytes in `Data`. Emptying `Data` while keeping its capacity still reallocates it, so every frame cost two allocations before its payload, even in release. It is now an array | `WireAllocationBudgetTests` |
+| The whole window's first picture | A split session opened with its size ("54 × 39") on both panes: a pane is sized three times in the turn it opens in, and each counted as a resize | `WindowSnapshotTests.aPaneShowsItsSizeOnAResizeNotOnOpening` |
+| The whole window's first picture | The band faded out a path it had never laid out, so its folder glyph spilled over the window's top edge for the fade | `window@1x` |
+| The first recording of the components | A toast cut at three lines mid-sentence with no ellipsis; the empty window's paragraph ending on a lone word | `toasts@1x`, `empty-*@1x` |
 | A planted off-by-four in the frame check | The fuzzer's random bytes never landed a length a few bytes off a frame's real one | `WireFuzzTests.mutate`, case 7 |
 
 ## What the general playbook leaves out
