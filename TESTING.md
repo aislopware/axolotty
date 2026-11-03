@@ -165,7 +165,11 @@ recording found a paragraph ending on a lone word, and straight apostrophes.
 The sidebar is drawn from a host shown without connecting:
 `AppModel(defaults:)` with a suite of its own, `add(_:connect: false)`, then
 `HostSession.show(_:)`. Identical pictures are compared in one `memcmp`, so
-the suite takes 0.4 s.
+the suite takes 0.4 s. `CALayer.render(in:)` draws what is
+composited only in part: it ignores `maskedCorners` (checked: a layer
+rounding one corner comes out with all four), as it does masks and filters.
+The reconnect bar rounds only its top corners on screen and all four in its
+picture, so that picture checks its copy, colour and layout, not its outline.
 
 ### Allocation budgets
 

@@ -5,6 +5,10 @@ import Testing
 
 /// A view drawn offscreen, the way the screen would show it: its layer tree rendered into a
 /// bitmap on the Axolotty backdrop, at a scale of 1 or 2, in the dark appearance.
+///
+/// `render(in:)` is not the compositor: it rounds every corner of a layer that masks some
+/// (`maskedCorners`) and skips masks and filters, so a picture of such a view is checked for
+/// its copy, colour and layout, not its outline.
 enum Snapshot {
     /// `view` at `size`, inside `margin` of backdrop so its shadow and ring show.
     static func render(_ view: NSView, size: NSSize, scale: CGFloat = 1, margin: CGFloat = 16,

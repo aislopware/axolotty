@@ -95,6 +95,7 @@ struct SnapshotTests {
         let local = BandView()
         local.update(.init(project: "axolotty", session: "Claude", identity: .of(.claude), activity: .working,
                            since: now - 252.5, branch: "main", subagents: 2, host: nil), key: true)
+        local.diff.set(GitChanges(root: "/r", files: [.init(path: "Frame.swift", added: 412, removed: 96, kind: .modified)]))
         let far = BandView()
         far.update(.init(project: "slopty", session: "zsh", identity: .shell, activity: .idle, since: 0,
                          branch: "quic-pacer", host: ("MacBook Pro", "laptopcomputer")), key: true)
@@ -102,6 +103,20 @@ struct SnapshotTests {
         away.update(.init(project: "slopty", session: "zsh", identity: .shell, activity: .idle, since: 0,
                           branch: "quic-pacer", host: ("MacBook Pro", "laptopcomputer")), key: false)
         try Self.check(Sheet([(local, size), (far, size), (away, size)]), "bands")
+    }
+
+    /// The bar over a session whose host is out of reach, in its three kinds: coming back
+    /// by itself, waited for, and waiting on the person. Its real copy.
+    @Test func veils() throws {
+        let size = NSSize(width: 640, height: LinkVeil.barHeight)
+        let back = LinkVeil(frame: NSRect(origin: .zero, size: size))
+        back.set("Reconnecting to MacBook Pro", retrying: true, action: "Reconnect Now") {}
+        let offline = LinkVeil(frame: NSRect(origin: .zero, size: size))
+        offline.set("MacBook Pro is offline", retrying: true, idle: true, action: nil, nil)
+        let behind = LinkVeil(frame: NSRect(origin: .zero, size: size))
+        behind.set("MacBook Pro runs another Axolotty version", retrying: false, action: "Update There") {}
+        for v in [back, offline, behind] { v.show(animated: false) }
+        try Self.check(Sheet([(back, size), (offline, size), (behind, size)]), "veils")
     }
 
     /// The window's empty sheet, at the window's least size: the launcher, and a far Mac
