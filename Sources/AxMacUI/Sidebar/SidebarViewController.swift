@@ -30,6 +30,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     var onCloseSession: ((HostSession, SessionID) -> Void)?
     var onRemoveWorktree: ((HostSession, SessionID) -> Void)?
     let footer = SidebarFooter()
+    private var fade: ScrollFade?
 
     private static let sessionType = NSPasteboard.PasteboardType("dev.axolotty.session")
 
@@ -106,6 +107,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             footer.heightAnchor.constraint(equalToConstant: Axo.Metric.footerHeight),
         ])
         scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: Axo.Space.md, right: 0)
+        fade = ScrollFade(scroll)
         view = root
     }
 
