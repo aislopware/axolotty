@@ -109,8 +109,9 @@ final class SettingsWindowController: NSWindowController {
         content.addSubview(grid)
         NSLayoutConstraint.activate([
             grid.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-            grid.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            grid.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -24),
+            // Centred, as a form in a window wider than itself is: the colons on one axis.
+            grid.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            grid.leadingAnchor.constraint(greaterThanOrEqualTo: content.leadingAnchor, constant: 24),
             grid.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -24),
         ])
         window?.contentView = content
