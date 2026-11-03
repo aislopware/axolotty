@@ -205,6 +205,10 @@ impl TransportConfig {
     /// This suits small interactive messages, such as a terminal's echo, sharing a paced
     /// connection with a media flood. A stream at the threshold that always has data pending is
     /// never paced.
+    ///
+    /// A stream at the threshold also writes past [`Self::send_window`]: only the peer's flow
+    /// control bounds it. Other streams that filled the window would otherwise hold its write
+    /// until acknowledgements freed room, and they take that room as fast as it comes.
     pub fn stream_priority_unpaced(&mut self, value: Option<i32>) -> &mut Self {
         self.stream_priority_unpaced = value;
         self

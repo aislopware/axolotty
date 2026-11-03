@@ -16,3 +16,4 @@ dist/
 .research/snapshots/
 Vendor/AxQuic.xcframework/
 Rust/axquic/target/
+Rust/axquic/vendor/*/target/

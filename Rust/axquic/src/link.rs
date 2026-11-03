@@ -8,16 +8,23 @@
 //!
 //! A pane's output lost in one packet holds back that pane alone, never another pane's echo
 //! (TCP held every lane behind it). Priorities come with each send: a lane carrying an echo is
-//! raised to `transport::ECHO_PRIORITY` and leaves in the next packet, unpaced.
+//! raised to `transport::ECHO_PRIORITY` and leaves in the next packet, unpaced, and is never
+//! held for send-buffer room a flood has taken (noq-proto patch 23).
+//!
+//! QUIC's send buffer is held to twice the congestion window ([`SendWindow`]): what a flood
+//! queues past that waits here, where `pending` counts it, so the app sees a pane fall behind
+//! and skips ahead (a snapshot) rather than streaming seconds of stale output after Ctrl-C.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use bytes::Bytes;
-use noq::{Connection, ConnectionError, RecvStream, SendStream, VarInt};
+use noq::{Connection, ConnectionError, PathId, RecvStream, SendStream, VarInt};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot};
+use tokio::time::Instant;
 
 /// Where a link's bytes and its end go. Called on the runtime's threads; `data` for one lane in
 /// order, never after `closed`.
@@ -29,6 +36,43 @@ pub trait Sink: Send + Sync + 'static {
 
 /// The largest read handed to the sink at once.
 const READ_CHUNK: usize = 64 << 10;
+
+/// The send buffer never shrinks below this: a few round trips of a fast tailnet path.
+pub const SEND_WINDOW_FLOOR: u64 = 256 << 10;
+/// How often a writing link fits its send buffer to the congestion window.
+const SEND_WINDOW_EVERY: Duration = Duration::from_millis(20);
+
+/// QUIC's send buffer, fitted to twice the congestion window while the link writes. noq's
+/// default is 10 MB, eight round trips of a 100 Mbit/s path: on a 5 MB/s Wi-Fi link a flood of
+/// panes kept 2.7 s of output in it after the program stopped (`tests/sim.rs`). Twice the
+/// window never holds back a byte the congestion controller would send.
+struct SendWindow {
+    conn: Connection,
+    /// When it was last fitted; `None` once tuning is off.
+    at: Mutex<Option<Option<Instant>>>,
+}
+
+impl SendWindow {
+    fn new(conn: Connection) -> Self {
+        conn.set_send_window(SEND_WINDOW_FLOOR);
+        Self { conn, at: Mutex::new(Some(None)) }
+    }
+
+    /// Called as a lane writes; fits the buffer at most every [`SEND_WINDOW_EVERY`], so an idle
+    /// link wakes for nothing.
+    fn fit(&self) {
+        let now = Instant::now();
+        let mut at = lock(&self.at);
+        let Some(last) = at.as_mut() else { return };
+        if last.is_some_and(|t| now.duration_since(t) < SEND_WINDOW_EVERY) {
+            return;
+        }
+        *last = Some(now);
+        drop(at);
+        let cwnd = self.conn.congestion_state(PathId::ZERO).map_or(0, |c| c.window());
+        self.conn.set_send_window(cwnd.saturating_mul(2).max(SEND_WINDOW_FLOOR));
+    }
+}
 
 enum Out {
     Data(Bytes),
@@ -43,6 +87,7 @@ struct Lane {
 
 struct Inner {
     conn: Connection,
+    window: Arc<SendWindow>,
     server: bool,
     runtime: Handle,
     lanes: Mutex<HashMap<u32, Lane>>,
@@ -81,6 +126,7 @@ impl Link {
 
     fn new(conn: Connection, server: bool, runtime: Handle) -> Self {
         Self(Arc::new(Inner {
+            window: Arc::new(SendWindow::new(conn.clone())),
             conn,
             server,
             runtime,
@@ -180,6 +226,13 @@ impl Link {
         Some(std::net::SocketAddr::new(a.ip().to_canonical(), a.port()))
     }
 
+    /// Leaves QUIC's send buffer at noq's default from now on, to measure against the fitted one.
+    pub fn keep_default_send_window(&self) {
+        // noq's default: eight times a stream's 1.25 MB receive window.
+        self.0.conn.set_send_window(10_000_000);
+        *lock(&self.0.window.at) = None;
+    }
+
     /// Ends the link; the sink hears `closed(None)`. What is still queued is dropped.
     pub fn close(&self, code: u32) {
         self.0.conn.close(VarInt::from_u32(code), b"");
@@ -195,6 +248,7 @@ impl Link {
         let pending = Arc::new(AtomicUsize::new(0));
         lock(&self.0.lanes).insert(lane, Lane { tx, pending: Arc::clone(&pending), priority: 0 });
         let total = Arc::clone(&self.0.total);
+        let window = Arc::clone(&self.0.window);
         self.0.runtime.spawn(async move {
             let Some(mut s) = stream.await else { return };
             if header && s.write_all(&lane.to_be_bytes()).await.is_err() {
@@ -207,6 +261,7 @@ impl Link {
                     }
                     Out::Data(b) => {
                         let n = b.len();
+                        window.fit();
                         let sent = s.write_chunk(b).await;
                         pending.fetch_sub(n, Ordering::Relaxed);
                         total.fetch_sub(n, Ordering::Relaxed);

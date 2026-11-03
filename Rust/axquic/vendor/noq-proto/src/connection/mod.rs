@@ -415,14 +415,18 @@ impl Connection {
 
             next_observed_addr_seq_no: 0u32.into(),
 
-            streams: StreamsState::new(
-                side,
-                config.max_concurrent_uni_streams,
-                config.max_concurrent_bidi_streams,
-                config.send_window,
-                config.receive_window,
-                config.stream_receive_window,
-            ),
+            streams: {
+                let mut streams = StreamsState::new(
+                    side,
+                    config.max_concurrent_uni_streams,
+                    config.max_concurrent_bidi_streams,
+                    config.send_window,
+                    config.receive_window,
+                    config.stream_receive_window,
+                );
+                streams.set_window_exempt(config.stream_priority_unpaced);
+                streams
+            },
             datagrams: DatagramState::default(),
             config,
             remote_cids: FxHashMap::from_iter([(PathId::ZERO, CidQueue::new(remote_cid))]),

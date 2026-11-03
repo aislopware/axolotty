@@ -1,6 +1,7 @@
 # Testing
 
-`swift test` is the gate. It runs on any Mac in about a minute and needs no
+`swift test` is the gate, with `cargo test --manifest-path Rust/axquic/Cargo.toml`
+for the QUIC link (two seconds). It runs on any Mac in about a minute and needs no
 network, no second machine and no GUI session. A test that needs one of those
 is gated on an environment variable and never runs in the gate.
 
@@ -57,6 +58,7 @@ it measured becomes a model, and the gate holds the model in virtual time.
 |---|---|---|
 | Pure doors | Scheduling, pacing, liveness, redial and echo-prediction rules, to the millisecond | `SendLanesModelTests`, `LinkLivenessTests`, `RemoteLinkTests.redialsClimbSloptysLadder`, `EchoPredictorTests`, `DoorTests` |
 | Simulated link | Echo latency beside a flood, rate drops, loss, all in virtual time over a TCP model | `LinkSimTests`, `AxTestSupport/LinkSim.swift` |
+| Simulated QUIC | The real QUIC link (noq, its patches, `Link`) on Slopty's in-memory network in tokio's paused time: an echo beside twelve flooding panes, the drain after Ctrl-C, loss and reordering, a blackout ridden out and one that ends the link, a seed that repeats its run | `Rust/axquic/tests/sim.rs`, `tests/shape` |
 | Model-based | `SendLanes` against a reference model over random op sequences, shrunk; echo prediction against a simulated shell across a delayed link | `SendLanesModelTests`, `EchoPredictorTests` |
 | Fuzzing | A peer's bytes, structure-aware, against invariants | `WireFuzzTests` |
 | Metamorphic | The terminal engine over Ghostty's fuzz corpus: chunked feed equals one feed; a snapshot restores; snapshot mid-stream then continue equals uninterrupted | `AxVTTests/Relations.swift` |
@@ -105,6 +107,23 @@ the real tailnet: 50 Mbit/s, 4 ms each way, 100 ms of router buffer.
 `AXSIM_REPORT=1` prints every send policy on every link. `AXSIM_TRACE=1`
 traces one run's events.
 
+### The simulated QUIC link
+
+`tests/shape` is Slopty's `slopty-shape`: a seeded shaper (delay, jitter that
+never reorders, loss, rate, a drop-tail queue) and an in-memory network that
+noq's endpoints sit on as their socket. Under `#[tokio::test(start_paused)]`,
+tokio's clock jumps to the next packet or timer whenever every task waits, and
+noq reads that clock. So the whole stack runs in virtual time: the patched
+noq, BBR3 with its bound, and Axolotty's `Link` with its lanes and priorities.
+A minute's blackout passes in milliseconds, and a seed repeats its run to the
+packet.
+
+It found two things the real network couldn't show:
+- an echo stalled 100–450 ms beside a flood, with nothing lost, because noq's
+  send window was full (noq-proto patch 23);
+- 2.7 s of output still on its way after Ctrl-C, from noq's 10 MB send buffer
+  (`SendWindow` now fits it to the congestion window).
+
 ### Faults on real sockets
 
 `LinkRelay` is a small Toxiproxy in the test process. The client dials it
@@ -129,6 +148,8 @@ socket and needs neither. pf and dummynet need root.
 | `AXSIM_SEEDS` | 4 | 200 | Seeds per simulated-link test |
 | `AXSIM_REPORT` | off | 1 | Print every policy on every link |
 | `AXSIM_TRACE` | off | 1 | Trace a simulated run's events |
+| `AXQSIM_SEEDS` | seed 11 | 200 | Seeds the simulated QUIC echo test sweeps |
+| `AXQSIM_REPORT` | off | 1 | Print each seed's echo times without asserting |
 | `AXFUZZ_RUNS` | 2000 | 200000 | Mutated streams per fuzz test |
 | `AXMODEL_RUNS` | 300 | 20000 | Op sequences per model-based test |
 | `AXREAP_RUNS` | 200 | 6000 | Programs the holder must reap in `everyEndedProgramIsReaped` |
@@ -138,7 +159,7 @@ socket and needs neither. pf and dummynet need root.
 `scripts/deep.sh` runs the long set:
 - the suite under TSan and under ASan;
 - the socket suites repeated until a failure;
-- the simulation and the fuzzer at their long budgets.
+- the simulations (TCP and QUIC) and the fuzzer at their long budgets.
 
 It tests HEAD in a worktree of its own (`$TMPDIR/axolotty-deep`, with its
 own `.build`). Work in progress can't break a half-hour run by failing to

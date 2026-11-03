@@ -62,7 +62,7 @@ Design notes live in `.research/design-system.md`.
 
 ## Third-party
 
-The QUIC link (`Rust/axquic`) runs n0's noq with Slopty's patches (`Rust/axquic/vendor/*/SLOPTY.md`) under MIT or Apache-2.0, and ports Slopty's null crypto provider and transport tuning (MIT).
+The QUIC link (`Rust/axquic`) runs n0's noq with Slopty's patches (`Rust/axquic/vendor/*/SLOPTY.md`) under MIT or Apache-2.0, and ports Slopty's null crypto provider and transport tuning (MIT). Its simulated network (`Rust/axquic/tests/shape`) is Slopty's `slopty-shape` (MIT).
 
 
 Geist Mono © 2023 Vercel, patched by Nerd Fonts v3.5.1, under the SIL Open Font License 1.1: `Sources/AxMacUI/Resources/Fonts/LICENSE-GeistMono.txt`, with the icon sets' licences in `README-NerdFonts.md` beside it.

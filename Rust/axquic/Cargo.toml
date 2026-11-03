@@ -17,6 +17,11 @@ noq-proto = { version = "1.4.0", default-features = false }
 socket2 = "0.6.5"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
 
+[dev-dependencies]
+# `tests/shape`: Slopty's in-memory network, on tokio's paused clock.
+parking_lot = "0.12"
+tokio = { version = "1.54.1", features = ["test-util"] }
+
 [profile.release]
 opt-level = 3
 lto = "thin"

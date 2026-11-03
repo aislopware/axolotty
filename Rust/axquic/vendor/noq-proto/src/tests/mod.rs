@@ -2679,6 +2679,48 @@ fn stream_priority_unpaced_off_waits_for_the_pacer() {
     assert_eq!(stream_frames_past_the_pacer(None), 0);
 }
 
+/// Fills the client's send window from one stream at priority 0, then writes to a second at
+/// priority 1, and returns how many bytes that write took.
+fn bytes_written_past_a_full_send_window(unpaced: Option<i32>) -> usize {
+    let _guard = subscribe();
+    let mut transport = TransportConfig::default();
+    transport.send_window(4_000).stream_priority_unpaced(unpaced);
+    let client_cfg = ClientConfig {
+        transport: Arc::new(transport),
+        ..client_config()
+    };
+    let mut pair = Pair::default();
+    let (client_ch, _) = pair.connect_with(client_cfg);
+
+    let flood = pair.client_streams(client_ch).open(Dir::Uni).unwrap();
+    let mut written = 0;
+    while let Ok(n) = pair.client_send(client_ch, flood).write(&[0xF1; 1_000]) {
+        written += n;
+    }
+    assert_eq!(written, 4_000, "the flood fills the window and is held there");
+
+    let echo = pair.client_streams(client_ch).open(Dir::Uni).unwrap();
+    pair.client_send(client_ch, echo).set_priority(1).unwrap();
+    pair.client_send(client_ch, echo)
+        .write(b"echo")
+        .unwrap_or(0)
+}
+
+#[test]
+fn stream_priority_unpaced_writes_past_a_full_send_window() {
+    assert_eq!(bytes_written_past_a_full_send_window(Some(1)), 4);
+}
+
+#[test]
+fn stream_priority_unpaced_below_the_stream_is_held_by_the_window() {
+    assert_eq!(bytes_written_past_a_full_send_window(Some(2)), 0);
+}
+
+#[test]
+fn stream_priority_unpaced_off_is_held_by_the_window() {
+    assert_eq!(bytes_written_past_a_full_send_window(None), 0);
+}
+
 /// `send_many` rejects the whole batch if any datagram is too large, queueing
 /// nothing, so a size error is never a partial send.
 #[test]

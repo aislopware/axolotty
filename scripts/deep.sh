@@ -5,7 +5,7 @@
 # a second SwiftPM on this .build waits silently for the first.
 #
 #   scripts/deep.sh            everything (about 25 minutes)
-#   scripts/deep.sh flakes     one step: tsan | asan | flakes | sim | fuzz
+#   scripts/deep.sh flakes     one step: tsan | asan | flakes | sim | quic | fuzz
 #
 # It tests HEAD, in a worktree of its own with its own .build (AXDEEP_TREE,
 # default $TMPDIR/axolotty-deep). Edits made while it runs can't reach it,
@@ -22,8 +22,8 @@ if [ -z "${AXDEEP_INSIDE:-}" ]; then
     else
         git worktree add -q --detach "$tree" "$sha" || exit 1
     fi
-    # Built by scripts/build-ghostty-vt.sh, not tracked.
-    rsync -a --delete Vendor/GhosttyVT.xcframework "$tree/Vendor/" || exit 1
+    # Built by scripts/build-ghostty-vt.sh and scripts/build-axquic.sh, not tracked.
+    rsync -a --delete Vendor/GhosttyVT.xcframework Vendor/AxQuic.xcframework "$tree/Vendor/" || exit 1
     [ -n "$(git status --porcelain --untracked-files=no)" ] && echo "deep: uncommitted changes are not in this run"
     echo "deep: $(git log -1 --format='%h %s' "$sha") in $tree"
     AXDEEP_INSIDE=1 exec "$tree/scripts/deep.sh" "$@"
@@ -68,6 +68,8 @@ run asan && step asan 300 1800 bash -c 'swift test --sanitize=address --skip PTY
 run flakes && step flakes 300 1800 env AXREAP_RUNS=1000 swift test --filter '\.(FaultyLinkTests|RemoteLinkTests|HolderTests|HostTests|TailnetTests)/' \
     --maximum-repetitions 30 --repeat-until fail
 run sim && step sim 180 1200 env AXSIM_SEEDS=200 swift test --filter LinkSimTests
+# Each seed prints its line as it ends (--nocapture), so the watchdog sees progress.
+run quic && step quic 180 1200 env AXQSIM_SEEDS=200 cargo test --manifest-path Rust/axquic/Cargo.toml --test sim -- --nocapture
 run fuzz && step fuzz 180 900 env AXFUZZ_RUNS=200000 AXMODEL_RUNS=20000 swift test --filter 'WireFuzzTests|SendLanesModelTests'
 
 if [ ${#failed[@]} -gt 0 ]; then

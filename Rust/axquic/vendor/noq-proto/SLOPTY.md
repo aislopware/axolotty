@@ -1,9 +1,10 @@
-# noq-proto, vendored with twenty-two patches
+# noq-proto, vendored with twenty-three patches
 
 The published `noq-proto` 1.4.0 (crates.io, upstream tag `noq-proto-v1.4.0`, commit
 `34f75c49f` of <https://github.com/n0-computer/noq>) with these commits on top. Patches 1 to 20
 keep the numbers they had on 1.3.0; 21 was 33 there, 22 undoes one of 1.4.0's changes, and
-1.3.0's 21 to 32 are 1.4.0's own ("The sync to 1.4.0", below).
+1.3.0's 21 to 32 are 1.4.0's own ("The sync to 1.4.0", below). Patch 23 is Axolotty's, on top
+of Slopty's copy as it stood on 2026-11-03.
 
 1. `feat(proto): Add TransportConfig::stream_priority_before_datagrams`
 
@@ -286,6 +287,18 @@ keep the numbers they had on 1.3.0; 21 was 33 there, 22 undoes one of 1.4.0's ch
    floor so holds 15 full packets in flight, and BBR3's four-packet floor three. Test:
    `a_packet_never_fills_the_window_to_the_byte` (upstream's `full_initial_window`, the other way
    round).
+
+23. `feat(proto): A stream at the unpaced priority writes past the send window` (Axolotty)
+
+   `TransportConfig::stream_priority_unpaced` also exempts its streams from `send_window`: they are
+   held by the peer's flow control alone. Slopty's sessions send frames two at a time, so its
+   send buffer never fills. Axolotty sends a pane's raw output, and twelve panes streaming a
+   build log filled noq's 10 MB send window. An echo's write then waited until acknowledgements
+   freed room, and the flood's twelve writers took that room as fast as it came. On a simulated
+   5 MB/s Wi-Fi link (`Rust/axquic/tests/sim.rs`), the echo beside that flood had a p99 of
+   100–450 ms in half of 30 seeds, with nothing lost and nothing overflowed. Exempt, every one
+   of 100 seeds kept the echo within 20 ms of the idle link's. Tests:
+   `stream_priority_unpaced_writes_past_a_full_send_window`, and the two the other way round.
 
 A probe-up exit for an app-limited round (leaving `ProbeBW_UP` when a round ends
 app-limited) was tried beside patches 11 to 13 and not taken. The draft and Linux keep such a
