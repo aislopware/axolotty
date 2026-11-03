@@ -39,8 +39,34 @@ final class EndedBar: Surface {
 
     override var isFlipped: Bool { true }
 
+    /// What ended it, in words: a shell's 128 + signal is named as the signal is known
+    /// (⌃C is a person stopping it, a segmentation fault a crash), anything else by its code.
+    static func describe(_ code: Int32) -> String {
+        if code < 0 { return "Couldn’t start" }
+        guard code > 128, code < 160 else { return "Exited with code \(code)" }
+        return switch code - 128 {
+        case SIGHUP: "Hung up"
+        case SIGINT: "Stopped with ⌃C"
+        case SIGQUIT: "Quit with ⌃\\"
+        case SIGKILL: "Killed"
+        case SIGTERM: "Terminated"
+        case SIGSEGV: "Crashed: segmentation fault"
+        case SIGBUS: "Crashed: bus error"
+        case SIGABRT: "Crashed: aborted"
+        case SIGILL: "Crashed: illegal instruction"
+        case SIGTRAP: "Crashed: trap"
+        case let n: "Ended by signal \(n)"
+        }
+    }
+
+    /// Whether the person ended it (⌃C, ⌃\\): said in grey, not as a failure.
+    static func byHand(_ code: Int32) -> Bool { code == 128 + SIGINT || code == 128 + SIGQUIT }
+
+    private var code: Int32 = 0
+
     func set(code: Int32) {
-        label.stringValue = code < 0 ? "Couldn’t start" : "Exited with code \(code)"
+        self.code = code
+        label.stringValue = Self.describe(code)
         setAccessibilityLabel(label.stringValue + ". Press Return to restart")
         needsLayout = true
     }
@@ -57,7 +83,7 @@ final class EndedBar: Surface {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.frame = NSRect(x: 14, y: (mid - 3).rounded(), width: 6, height: 6)
-        effectiveAppearance.performAsCurrentDrawingAppearance { dot.backgroundColor = Axo.Color.status(.error).cgColor }
+        effectiveAppearance.performAsCurrentDrawingAppearance { dot.backgroundColor = (Self.byHand(code) ? Axo.Color.textTertiary : Axo.Color.status(.error)).cgColor }
         CATransaction.commit()
         let ls = label.intrinsicContentSize
         label.frame = NSRect(x: dot.frame.maxX + 8, y: (mid - ls.height / 2).rounded(), width: ceil(ls.width), height: ls.height)

@@ -73,8 +73,11 @@ struct SnapshotTests {
                       HoverCard.Fact(.symbol("folder"), "~/Workspace/oss/aislopware/axolotty", truncation: .byTruncatingMiddle)]
         let ended = EndedBar()
         ended.set(code: 130)
+        let crashed = EndedBar()
+        crashed.set(code: 139)
         try Self.check(Sheet([(TooltipView("Split Right  ⌘D"), nil), (HoverCardView(card), nil),
-                              (ended, NSSize(width: ended.preferredWidth, height: EndedBar.height))]), "cards")
+                              (ended, NSSize(width: ended.preferredWidth, height: EndedBar.height)),
+                              (crashed, NSSize(width: crashed.preferredWidth, height: EndedBar.height))]), "cards")
     }
 
     /// The window's empty sheet, at the window's least size: the launcher, and a far Mac
