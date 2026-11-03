@@ -383,7 +383,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     func windowDidBecomeKey(_ notification: Notification) {
         refreshChrome()
-        content.current?.restoreFocus()
+        // Back from another app with a field open (the palette, a rename):
+        // the keys go on into it, not into the pane behind.
+        if !(window?.firstResponder is NSText) { content.current?.restoreFocus() }
         (NSApp.delegate as? AppDelegate)?.windowBecameKey(self)
     }
 
