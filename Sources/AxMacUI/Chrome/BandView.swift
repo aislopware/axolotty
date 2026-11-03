@@ -140,7 +140,9 @@ final class BandView: NSView {
         let on = hasContext && showsIdentity
         let views = identityViews
         if on { for v in views { v.isHidden = false } }
-        guard animated, !Axo.Motion.reduced else {
+        // A path never laid out has nothing to fade: its views sit at zero size, where
+        // their images spill past the band's top edge until the fade would end.
+        guard animated, !Axo.Motion.reduced, on || !project.frame.isEmpty else {
             for v in views {
                 v.alphaValue = 1
                 v.isHidden = !on && hasContext
