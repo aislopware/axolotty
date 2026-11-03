@@ -123,6 +123,14 @@ public struct SendLanes: Sendable {
 /// driver's especially), and a key's echo then queues behind output already
 /// on the wire.
 ///
+/// Wi-Fi lifts single round trips by more than `tolerance` with no queue
+/// behind them. Judged on each raw sample, the pacer took that jitter for a
+/// queue and held a flood to a sixth of the link (6 MB/s where ssh moved 15
+/// on the Studio→MacBook tailnet; `LinkSimTests` holds the case). So a
+/// sample over tolerance only stops the growth; the cap is cut when the
+/// least round trip over `window` is over too (a queue lifts every sample,
+/// jitter only some), or at once when one is past `surge`.
+///
 /// Pure: the time, the round trip and the socket's bytes come in, so the
 /// simulated link drives it in virtual time.
 public struct BulkPacer: Sendable {
@@ -131,16 +139,28 @@ public struct BulkPacer: Sendable {
     public static let maxCap = 8 << 20
     /// Extra delay over the floor that counts as a queue building.
     public static let tolerance: Duration = .milliseconds(3)
+    /// Extra delay that is a queue on its own, however short-lived: Wi-Fi
+    /// jitter seldom lifts a round trip this far, a queue lifts it further.
+    public static let surge: Duration = .milliseconds(9)
+    /// How long every round trip must stay over tolerance before the cap is
+    /// cut (LEDBAT's current-delay filter, the least sample over the window).
+    public static let filterWindow: Duration = .milliseconds(80)
     public static let adjustEvery: Duration = .milliseconds(5)
     /// How long a floor is trusted before a higher sample may replace it
     /// (the path may have changed).
     public static let floorLife: Duration = .seconds(10)
 
+    /// This pacer's filter: `filterWindow`, unless a test judges raw
+    /// samples (zero) to show what the filter is for.
+    public let window: Duration
     public private(set) var floor: Duration?
     private var floorAt: Duration = .zero
     private var adjustedAt: Duration?
+    /// The window's samples that may still be its least, rising: an older
+    /// sample no smaller than a newer one never will be, so it goes.
+    private var rising: [(at: Duration, rtt: Duration)] = []
 
-    public init() {}
+    public init(window: Duration = Self.filterWindow) { self.window = window }
 
     /// Whether bulk output should wait now. `now` is time since any fixed
     /// epoch; `rtt` the latest round trip (nil if unknown); `socketBytes`
@@ -151,11 +171,14 @@ public struct BulkPacer: Sendable {
                 floor = rtt
                 floorAt = now
             }
+            while let last = rising.last, last.rtt >= rtt { rising.removeLast() }
+            rising.append((now, rtt))
+            while rising.count > 1, now - rising[0].at > window { rising.removeFirst() }
             if let floor, adjustedAt.map({ now - $0 > Self.adjustEvery }) ?? true {
                 adjustedAt = now
-                if rtt > floor + Self.tolerance {
+                if rising[0].rtt > floor + Self.tolerance || rtt > floor + Self.surge {
                     cap = max(Self.minCap, cap * 3 / 4)
-                } else {
+                } else if rtt <= floor + Self.tolerance {
                     cap = min(Self.maxCap, cap + Self.minCap)
                 }
             }

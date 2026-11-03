@@ -171,6 +171,8 @@ public struct EchoRun: Sendable {
     public var lagBytes = 2 << 20
     /// The socket's TCP_NOTSENT_LOWAT.
     public var lowat = Wire.notSentLowat
+    /// The pacer's delay filter (zero judges every raw sample).
+    public var pacerWindow = BulkPacer.filterWindow
     /// The largest output frame the host cuts (`Wire.maxData`).
     public var frameBytes = Wire.maxData
     public var mss = 1228
@@ -257,7 +259,7 @@ extension EchoRun {
         var upShaper = Shaper(up, seed: seed &* 2 &+ 2)
         let lanesOn = policy != .fifo
         var lanes = SendLanes()
-        var pacer: BulkPacer? = policy == .paced ? BulkPacer() : nil
+        var pacer: BulkPacer? = policy == .paced ? BulkPacer(window: pacerWindow) : nil
         let echoLane = 1, floodLane = 2
 
         // Sender (the host's TCP).
