@@ -44,7 +44,7 @@ struct HostSetupTests {
         #expect(HostSetup.failure(status: 255, stderr: "ada@mini: Permission denied (publickey,password).") == .signIn("ada@mini: Permission denied (publickey,password)."))
         #expect(HostSetup.failure(status: 255, stderr: "Host key verification failed.\n") == .signIn("Host key verification failed."))
         #expect(HostSetup.failure(status: 255, stderr: "ssh: connect to host mini port 22: Operation timed out")
-            == .failed("It didn't answer ssh. Is it awake and on the tailnet?"))
+            == .failed("It didn’t answer ssh. Is it awake and on the tailnet?"))
         #expect(HostSetup.failure(status: 255, stderr: "ssh: connect to host mini port 22: Connection refused")
             == .failed("Remote Login is off there. Turn it on in System Settings › General › Sharing, or use Tailscale SSH."))
         #expect(HostSetup.failure(status: 255, stderr: "ssh: Could not resolve hostname mini: nodename nor servname provided")

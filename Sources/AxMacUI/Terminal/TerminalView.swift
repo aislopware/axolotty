@@ -1517,7 +1517,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             guard let self else { return }
             self.sending = nil
             if let failed {
-                self.say("Couldn't send \(failed) to \(far.name)", "Couldn't send \(failed)", "Not sent", color: Axo.Color.status(.error), linger: 2.5)
+                self.say("Couldn’t send \(failed) to \(far.name)", "Couldn’t send \(failed)", "Not sent", color: Axo.Color.status(.error), linger: 2.5)
             } else {
                 self.badge.hide()
             }

@@ -274,7 +274,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
             var e = Entry(item: .host(name: p.name, dial: p.dialName), title: p.name, detail: "", symbol: symbol(p.name), chord: "",
                           alias: p.dialName)
             if !p.online {
-                e.detail = "Offline · connects when it's back"
+                e.detail = "Offline · connects when it’s back"
                 away.append(e)
             } else if let h = here(p.dialName) {
                 // Already in the sidebar: what it says there, and its remedy.
@@ -311,7 +311,7 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
                                           symbol: "network", chord: "", literal: true)]))
         }
         if peers.isEmpty, typed.isEmpty {
-            let why = TailscaleCLI.path == nil ? "Tailscale isn't installed on this Mac" : "No other Macs of yours are on the tailnet"
+            let why = TailscaleCLI.path == nil ? "Tailscale isn’t installed on this Mac" : "No other Macs of yours are on the tailnet"
             out.append(("Your tailnet", [Entry(item: .note, title: why, detail: "type a name or address", symbol: "info.circle",
                                                chord: "", literal: true)]))
         }

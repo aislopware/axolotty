@@ -23,7 +23,7 @@ enum ServerLauncher {
     /// Returns nil on success, else a reason to show.
     static func ensureRunning(_ paths: RuntimePaths) async -> String? {
         if isRunning(paths) { return nil }
-        do { try paths.prepare() } catch { return "Can't create \(paths.root.path(percentEncoded: false)): \(error)" }
+        do { try paths.prepare() } catch { return "Can’t create \(paths.root.path(percentEncoded: false)): \(error)" }
         let bundled = Bundle.main.bundleURL.pathExtension == "app"
             && FileManager.default.fileExists(
                 atPath: Bundle.main.bundleURL.appending(path: "Contents/Library/LaunchAgents/\(agentPlist)")
@@ -48,7 +48,7 @@ enum ServerLauncher {
 
     private static func spawnSibling(_ paths: RuntimePaths) -> String? {
         guard let dir = Bundle.main.executableURL?.resolvingSymlinksInPath().deletingLastPathComponent() else {
-            return "Can't locate the app's executables."
+            return "Can’t locate the app’s executables."
         }
         let exe = dir.appending(path: "axolottyd").path(percentEncoded: false)
         guard FileManager.default.isExecutableFile(atPath: exe) else { return "axolottyd is missing next to the app." }
@@ -73,7 +73,7 @@ enum ServerLauncher {
         }
         var pid: pid_t = 0
         let rc = posix_spawn(&pid, exe, &actions, &attr, argv, envp)
-        guard rc == 0 else { return "Couldn't start axolottyd: \(String(cString: strerror(rc)))" }
+        guard rc == 0 else { return "Couldn’t start axolottyd: \(String(cString: strerror(rc)))" }
         // The server outlives us; reap it only if it exits while we run.
         let child = pid
         Thread.detachNewThread {

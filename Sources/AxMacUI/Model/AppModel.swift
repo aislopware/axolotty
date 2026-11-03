@@ -161,13 +161,13 @@ final class AppModel {
                 case .signIn:
                     self?.notices.emit(("\(s.name) wants you to sign in", "Run ssh \(s.host) in a session once, then set it up again. A key or Tailscale SSH lets Axolotty in without asking."))
                 case let .unsupported(why):
-                    self?.notices.emit(("Axolotty can't run on \(s.name)", why))
+                    self?.notices.emit(("Axolotty can’t run on \(s.name)", why))
                 case let .failed(why):
-                    self?.errors.emit("Couldn't set up \(s.name): \(why)")
+                    self?.errors.emit("Couldn’t set up \(s.name): \(why)")
                 }
             } catch {
                 h.settingUp = nil
-                self?.errors.emit("Couldn't set up \(s.name): \(error.localizedDescription)")
+                self?.errors.emit("Couldn’t set up \(s.name): \(error.localizedDescription)")
             }
         }
     }

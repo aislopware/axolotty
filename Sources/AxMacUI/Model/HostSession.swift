@@ -284,16 +284,16 @@ final class HostSession: Identifiable {
         switch e {
         case .notConnected, .closed: "Not connected to the server."
         case let .refused(why): "Connection refused: \(why)"
-        case .intent(.spawnFailed): "Couldn't start the shell."
+        case .intent(.spawnFailed): "Couldn’t start the shell."
         case .intent(.targetGone): "That session or pane no longer exists."
         case .intent(.invalid): "The server rejected the change."
         case .intent(.notAllowed): "Not allowed."
-        case .intent(.worktreeFailed): "Couldn't make the worktree. The branch may be checked out elsewhere."
+        case .intent(.worktreeFailed): "Couldn’t make the worktree. The branch may be checked out elsewhere."
         case .intent(.dirty): "The worktree has uncommitted changes."
         case .failed(.needsLogin(_)): "The host needs you to sign in."
-        case .failed(.notInstalled): "Axolotty isn't set up on that host."
+        case .failed(.notInstalled): "Axolotty isn’t set up on that host."
         case .failed(.incompatible(_)): "That host runs a different Axolotty version."
-        case .failed(.denied): "That host doesn't accept this device."
+        case .failed(.denied): "That host doesn’t accept this device."
         }
     }
 
@@ -303,15 +303,15 @@ final class HostSession: Identifiable {
         return switch phase {
         case .connected: nil
         case .connecting, .offline:
-            if nobodyListens, !isLocal { ("Axolotty isn't running on \(name)", false) }
+            if nobodyListens, !isLocal { ("Axolotty isn’t running on \(name)", false) }
             else if offline != nil { ("\(name) is offline", true) }
             // Never reached yet this run: connecting, not coming back.
             else if state == nil { ("Connecting to \(isLocal ? "This Mac" : name)", true) }
             else { ("Reconnecting to \(isLocal ? "This Mac" : name)", true) }
         case .failed(.needsLogin(_)): ("\(name) needs you to sign in", false)
-        case .failed(.notInstalled): ("Axolotty isn't set up on \(name)", false)
+        case .failed(.notInstalled): ("Axolotty isn’t set up on \(name)", false)
         case .failed(.incompatible(_)): ("\(name) runs another Axolotty version", false)
-        case .failed(.denied): ("\(name) doesn't accept this Mac", false)
+        case .failed(.denied): ("\(name) doesn’t accept this Mac", false)
         }
     }
 
@@ -340,8 +340,8 @@ final class HostSession: Identifiable {
             }
             if let o = offline {
                 let seen = o.lastSeen.map { "Tailscale last saw it \(Self.ago($0)). " } ?? ""
-                return seen + (state == nil ? "This window opens there the moment it's back."
-                    : "Your sessions keep running there; this window reattaches the moment it's back.")
+                return seen + (state == nil ? "This window opens there the moment it’s back."
+                    : "Your sessions keep running there; this window reattaches the moment it’s back.")
             }
             if state == nil { return "This window opens there the moment it answers." }
             return "Your sessions keep running on the server. This window reattaches as soon as it answers."

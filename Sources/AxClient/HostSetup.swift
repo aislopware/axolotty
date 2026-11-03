@@ -97,7 +97,7 @@ public struct HostSetup: Sendable {
                                  environment: ["COPYFILE_DISABLE": "1"], timeout: limit)
         }.value
         guard tar.status == 0 else {
-            throw Failure.failed("Couldn't pack Axolotty: \(String(decoding: tar.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
+            throw Failure.failed("Couldn’t pack Axolotty: \(String(decoding: tar.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
         }
         let r = try await run(Self.quoted(Self.installScript), input: tar.stdout)
         guard r.status == 0, r.stdout.contains("axolotty: started") else {
@@ -189,9 +189,9 @@ public struct HostSetup: Sendable {
             return .failed("Remote Login is off there. Turn it on in System Settings › General › Sharing, or use Tailscale SSH.")
         }
         if status == 255, ["Operation timed out", "No route to host", "Network is unreachable"].contains(where: said.contains) {
-            return .failed("It didn't answer ssh. Is it awake and on the tailnet?")
+            return .failed("It didn’t answer ssh. Is it awake and on the tailnet?")
         }
-        if status == 255 { return .failed(said.isEmpty ? "ssh couldn't reach the host." : said) }
+        if status == 255 { return .failed(said.isEmpty ? "ssh couldn’t reach the host." : said) }
         return .failed(said.isEmpty ? "The install stopped (exit \(status))." : said)
     }
 

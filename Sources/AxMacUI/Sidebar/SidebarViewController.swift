@@ -444,7 +444,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             let s = Self.hostStatus(host)
             // Why a far Mac is slow, and that it isn't this app.
             let relay = host.relay.map { r in
-                "\(host.name) · \(s.meta) through Tailscale's relay in \(TailnetDirectory.relayPlace(r)), not a direct path. Tailscale keeps looking for one."
+                "\(host.name) · \(s.meta) through Tailscale’s relay in \(TailnetDirectory.relayPlace(r)), not a direct path. Tailscale keeps looking for one."
             }
             c.set(name: host.isLocal ? "This Mac" : host.name, symbol: Self.hostSymbol(host), meta: s.meta,
                   retrying: s.retrying, waiting: s.waiting, relay: relay)

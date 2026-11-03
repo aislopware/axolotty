@@ -418,7 +418,7 @@ public final class HostConnection: @unchecked Sendable {
             #if os(macOS)
             let child: CommandChild
             do { child = try CommandChild.spawn(argv) } catch {
-                throw ConnectionError.refused("can't run \(argv.first ?? ""): \(error)")
+                throw ConnectionError.refused("can’t run \(argv.first ?? ""): \(error)")
             }
             conn = FramedConnection(fd: child.fd, label: "host", preamble: Wire.bridgePreamble)
             state.withLock { $0.child = child }
