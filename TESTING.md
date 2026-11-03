@@ -164,7 +164,13 @@ cut at three lines mid-sentence with no ellipsis. The empty window's first
 recording found a paragraph ending on a lone word, and straight apostrophes.
 The sidebar is drawn from a host shown without connecting:
 `AppModel(defaults:)` with a suite of its own, `add(_:connect: false)`, then
-`HostSession.show(_:)`. Identical pictures are compared in one `memcmp`, so
+`HostSession.show(_:)`. The whole window is the real `MainWindowController`
+over such a host, in a window never ordered in, rendered in place (the
+titlebar is the system's and is not drawn; the terminals are Metal and come
+out empty). Its first picture found a split session opening with "54 × 39"
+on both panes (each pane is sized three times in its first turn, and each
+counted as a resize), and the band's hidden path spilling a folder glyph
+over its top edge (it faded out views never laid out). Identical pictures are compared in one `memcmp`, so
 the suite takes 0.4 s. `CALayer.render(in:)` draws what is
 composited only in part: it ignores `maskedCorners` (checked: a layer
 rounding one corner comes out with all four), as it does masks and filters.

@@ -18,7 +18,7 @@ struct SidebarSnapshotTests {
         p.title = title
         p.program = program
         p.agent = agent
-        p.status.report(id: "s", state: state, app: agent?.rawValue ?? "", message: message, need: need)
+        p.status.report(id: "", state: state, app: agent?.rawValue ?? "", message: message, need: need)
         p.activitySince = Date().timeIntervalSince1970 - ago
         return p
     }

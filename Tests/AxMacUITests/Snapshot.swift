@@ -48,6 +48,34 @@ enum Snapshot {
         return ctx.makeImage()!
     }
 
+    /// A whole window's content as it stands, rendered in place. The window is never
+    /// ordered in; its titlebar (drawn by the system, outside the content) is not drawn.
+    static func render(window: NSWindow, scale: CGFloat) -> CGImage {
+        Axo.Font.registerBundled()
+        window.appearance = NSAppearance(named: .darkAqua)
+        let view = window.contentView!
+        var image: CGImage?
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
+            setScale(view.layer!, scale)
+            view.layoutSubtreeIfNeeded()
+            view.displayIfNeeded()
+            CATransaction.flush()
+            let size = view.bounds.size
+            let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
+                                bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            ctx.scaleBy(x: scale, y: scale)
+            // A flipped view's layer draws top-down; the bitmap's origin is its bottom.
+            if view.isFlipped {
+                ctx.translateBy(x: 0, y: size.height)
+                ctx.scaleBy(x: 1, y: -1)
+            }
+            view.layer!.render(in: ctx)
+            image = ctx.makeImage()
+        }
+        return image!
+    }
+
     private static func setScale(_ l: CALayer, _ s: CGFloat) {
         l.contentsScale = s
         l.setNeedsDisplay()
