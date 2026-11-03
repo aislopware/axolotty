@@ -366,9 +366,6 @@ public actor Server {
         })
     }
 
-    /// Listens on every tailnet address this Mac has now and stops on the
-    /// ones it lost. A caller is served only when Tailscale says it is the
-    /// same person (`TailnetGate`); anyone else hears "denied".
     /// Serves a tailnet caller Tailscale says is the same person; tells anyone else "denied".
     private nonisolated static func admit(_ conn: any FrameLink, peer: String, gate: TailnetGate,
                                           sink: AsyncStream<Inbound>.Continuation) {
@@ -381,6 +378,9 @@ public actor Server {
         }
     }
 
+    /// Listens on every tailnet address this Mac has now and stops on the
+    /// ones it lost. A caller is served only when Tailscale says it is the
+    /// same person (`TailnetGate`); anyone else hears "denied".
     private func listenOnTailnet(port: UInt16) {
         let now = Set(Tailnet.localAddresses())
         for (address, src) in tailnetSources where !now.contains(address) {
