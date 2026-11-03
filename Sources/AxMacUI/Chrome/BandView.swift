@@ -181,7 +181,17 @@ final class BandView: NSView {
         }
     }
 
+    /// A shell reports the resolved path (/private/tmp/…) of a place
+    /// opened through its macOS link (/tmp/…): said the way it was opened.
+    static func unlinked(_ p: String) -> String {
+        for top in ["/private/tmp", "/private/var", "/private/etc"] where p == top || p.hasPrefix(top + "/") {
+            return String(p.dropFirst("/private".count))
+        }
+        return p
+    }
+
     static func abbreviate(_ path: String) -> String {
+        let path = unlinked(path)
         let home = NSHomeDirectory()
         if path == home { return "~" }
         if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
