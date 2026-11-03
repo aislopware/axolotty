@@ -39,6 +39,13 @@ struct TailnetTests {
             #expect(TailnetDirectory.peer(dialledAs: dialled, in: peers)?.name == "Air", "\(dialled)")
         }
         #expect(TailnetDirectory.peer(dialledAs: "ai", in: peers) == nil)
+
+        // One Mac, however it was saved: its short name and its MagicDNS name.
+        #expect(TailnetDirectory.sameMachine("mbp", "MBP.ts.example."))
+        #expect(TailnetDirectory.sameMachine("mbp.ts.example", "mbp"))
+        #expect(!TailnetDirectory.sameMachine("mbp", "mbp-2.ts.example"))
+        #expect(!TailnetDirectory.sameMachine("mbp.ts.example", "mbp.other.example"), "two full names: two Macs")
+        #expect(!TailnetDirectory.sameMachine("100.64.0.2", "100.64.0.20"))
         #expect(TailnetDirectory.relayPlace("sin") == "Singapore")
         #expect(TailnetDirectory.relayPlace("dc-old") == "dc-old", "a region of its own")
     }

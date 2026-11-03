@@ -85,6 +85,19 @@ public enum TailnetDirectory {
         }
     }
 
+    /// Whether two dial names reach the same Mac without asking Tailscale:
+    /// equal (case and a trailing dot aside), or one is the other's short
+    /// name (`mbp` and `mbp.ts.example`). An address is only ever itself.
+    public static func sameMachine(_ a: String, _ b: String) -> Bool {
+        func norm(_ s: String) -> String { s.lowercased().hasSuffix(".") ? String(s.lowercased().dropLast()) : s.lowercased() }
+        let x = norm(a), y = norm(b)
+        if x == y { return true }
+        func isAddress(_ s: String) -> Bool { s.contains(":") || s.split(separator: ".").allSatisfy { UInt8($0) != nil } }
+        guard !isAddress(x), !isAddress(y) else { return false }
+        func short(_ s: String) -> String { s.split(separator: ".").first.map(String.init) ?? s }
+        return (!x.contains(".") && x == short(y)) || (!y.contains(".") && y == short(x))
+    }
+
     /// Where a DERP relay is, from its region code ("sin"); the code as it is
     /// for a region not named here.
     public static func relayPlace(_ code: String) -> String {

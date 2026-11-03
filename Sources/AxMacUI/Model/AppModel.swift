@@ -99,7 +99,14 @@ final class AppModel {
 
     private var nudge: LinkNudge?
 
-    func host(at endpoint: HostEndpoint) -> HostSession? { hosts.first { $0.endpoint == endpoint } }
+    func host(at endpoint: HostEndpoint) -> HostSession? { hosts.first { Self.same($0.endpoint, endpoint) } }
+
+    /// One Mac saved by its short name and found again by its MagicDNS name
+    /// (the palette dials those) is one host, not two rows of the same Mac.
+    static func same(_ a: HostEndpoint, _ b: HostEndpoint) -> Bool {
+        guard case let .tcp(x, p) = a, case let .tcp(y, q) = b else { return a == b }
+        return p == q && TailnetDirectory.sameMachine(x, y)
+    }
 
     /// Connects to a host and keeps it; one already here is tried again now.
     @discardableResult
@@ -108,7 +115,7 @@ final class AppModel {
             h.retry()
             return h
         }
-        saved = saved.filter { $0.endpoint != s.endpoint } + [s]
+        saved = saved.filter { !Self.same($0.endpoint, s.endpoint) } + [s]
         return addRemote(s)
     }
 

@@ -275,8 +275,18 @@ final class PaletteController: NSObject, NSTextFieldDelegate, NSTableViewDataSou
                 e.detail = "Offline · connects when it's back"
                 away.append(e)
             } else if let h = here(p.dialName) {
-                e.detail = h.phase == .connected ? "Connected" : "Connecting"
-                ready.append(e)
+                // Already in the sidebar: what it says there, and its remedy.
+                if h.phase == .connected {
+                    e.detail = "Connected"
+                    ready.append(e)
+                } else if let r = h.linkRemedy, r.setUp != nil {
+                    e.item = .setUp(name: p.name, dial: p.dialName)
+                    e.detail = h.isBehind ? "Needs update · ↩ updates it over SSH" : "Not running · ↩ sets it up over SSH"
+                    other.append(e)
+                } else {
+                    e.detail = SidebarViewController.hostStatus(h).meta
+                    other.append(e)
+                }
             } else if let probe = probes[p.dialName] {
                 if let took = probe {
                     e.detail = "\(path) · \(Self.ms(took))"
