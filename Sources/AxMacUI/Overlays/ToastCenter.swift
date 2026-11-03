@@ -140,8 +140,12 @@ final class ToastView: Surface {
 
     init(_ c: ToastCenter.Content) {
         info = c
-        // 6 s when it asks something of you (it is also a button), 4 s otherwise.
-        remaining = c.activity == .error || c.activity == .blocked ? 6 : 4
+        // 6 s when it asks something of you (it is also a button), 4 s
+        // otherwise; longer when there is more to read than that allows
+        // (a second, then 200 words a minute; at most 12).
+        let words = (c.title + " " + c.body).split(whereSeparator: \.isWhitespace).count
+        let base: TimeInterval = c.activity == .error || c.activity == .blocked ? 6 : 4
+        remaining = min(12, max(base, 1 + Double(words) * 0.3))
         super.init(elevation: .float, radius: Axo.Metric.toastRadius)
         title.stringValue = c.title
         body.font = Axo.Font.small
