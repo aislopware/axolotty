@@ -104,7 +104,6 @@ enum LinkOpener {
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
     }
 
-    /// Whether a far host's paths can open here at all.
     /// The editor a folder opens in ("Cursor", "Visual Studio Code"); with
     /// `remote`, only one that opens a far folder over SSH.
     static func editorName(remote: Bool) -> String? {
@@ -112,7 +111,24 @@ enum LinkOpener {
         return app.map { FileManager.default.displayName(atPath: $0.path(percentEncoded: false)).replacingOccurrences(of: ".app", with: "") }
     }
 
+    /// Whether a far host's paths can open here at all.
     static func opensFar(_ far: FarHost) -> Bool { far.ssh != nil && installedEditor(remote: true) != nil }
+
+    /// Opens a web link a far program printed or asked to open. One to that
+    /// Mac's own loopback (its dev server, a sign-in's callback) is carried
+    /// there first, so it opens here as it would there: at the same port,
+    /// or at the one this Mac gave it when its own is taken.
+    static func openWeb(_ url: URL, from far: FarHost?) {
+        var url = url
+        if let far, far.connection.hostFeatures.contains("tunnel") {
+            let own = Loopback.port(of: url)
+            for port in Loopback.ports(in: url) {
+                guard let here = try? far.connection.forward(port: port), port == own else { continue }
+                url = Loopback.moved(url, to: here)
+            }
+        }
+        NSWorkspace.shared.open(url)
+    }
 
     /// Opens a path found on a far host in the editor, over SSH.
     @discardableResult

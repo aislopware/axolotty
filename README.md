@@ -11,6 +11,7 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
   - ⌘-click opens a path on that Mac in VS Code, Cursor or Windsurf over Remote-SSH;
   - a file dropped on its pane, or a screenshot pasted with ⌘V, goes to that Mac and its path there is pasted, so an agent there can read it;
   - what its programs open or copy for you comes here: a sign-in link (`open https://…`) opens in this Mac's browser, and `pbcopy` or OSC 52 (an agent's `/copy`, vim, tmux) lands on this Mac's clipboard;
+  - a link to its own `localhost` (a dev server at `localhost:5173`, a sign-in waiting on `127.0.0.1:8085`) is carried to it first, ⌘-clicked or opened, so the page opens here at the same port; at another one only when this Mac already has that port;
   - the band shows its branch and changes, and its notices say which Mac.
 - **Agent status from the agent itself.** Claude Code reports over OSC 7501, and any other program can too. Rows, the band, the Dock badge, toasts and notifications all follow it. A notification goes away as soon as you've seen its pane.
 - **Find who needs you.** Go to Session (⌘J) lists sessions as needs-you, then finished, then working. Next waiting agent is ⇧⌘U.

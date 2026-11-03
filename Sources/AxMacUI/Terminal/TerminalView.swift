@@ -750,6 +750,8 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         if event.modifierFlags.contains(.command), let link = link(at: event) {
             if let far = linkContext.far, let found = link.found, case let .path(_, line, column) = link.target {
                 LinkOpener.openFar(found, line: line, column: column, on: far)
+            } else if case let .url(url) = link.target {
+                LinkOpener.openWeb(url, from: linkContext.far)
             } else {
                 LinkOpener.open(link.target, cwd: linkContext.cwd, local: linkContext.far == nil)
             }

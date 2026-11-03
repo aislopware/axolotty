@@ -110,7 +110,7 @@ final class AttentionCenter: NSObject, UNUserNotificationCenterDelegate {
             // A far program's link (a sign-in, a preview) opens here, where
             // the person is; only the web: nothing on this Mac is run.
             guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
-            NSWorkspace.shared.open(url)
+            LinkOpener.openWeb(url, from: host.far)
         case .claudeConversation:
             break  // AppModel keeps it with the closed session
         }
