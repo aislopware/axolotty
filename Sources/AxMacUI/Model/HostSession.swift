@@ -138,6 +138,14 @@ final class HostSession: Identifiable {
         }
     }
 
+    /// Shows `state` as if the host had sent it, without connecting: for a picture of the
+    /// sidebar or a window in tests. A host that connects never calls it.
+    func show(_ state: HostState, phase: Phase = .connected) {
+        self.state = state
+        self.phase = phase
+        changes.emit(phase == .connected ? .connected : .disconnected(nil))
+    }
+
     func stop() {
         loop?.cancel()
         downWatch?.cancel()

@@ -81,7 +81,7 @@ let package = Package(
         .testTarget(name: "AxHostTests", dependencies: ["AxHost", "AxClient", "AxTestSupport"], swiftSettings: strict),
         .testTarget(name: "AxRenderTests", dependencies: ["AxRender", "AxTestSupport"], swiftSettings: strict),
         // The app's own layer: keys from synthetic NSEvents, views drawn offscreen. No window.
-        .testTarget(name: "AxMacUITests", dependencies: ["AxMacUI", "AxModel", "AxProtocol", "AxVT", "AxTestSupport"],
+        .testTarget(name: "AxMacUITests", dependencies: ["AxMacUI", "AxClient", "AxModel", "AxProtocol", "AxVT", "AxTestSupport"],
                     swiftSettings: ui),
     ]
 )

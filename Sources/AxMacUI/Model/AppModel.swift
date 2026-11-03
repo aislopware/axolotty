@@ -9,7 +9,7 @@ import Foundation
 final class AppModel {
     static let shared = AppModel()
 
-    let prefs = Preferences()
+    let prefs: Preferences
     let paths = RuntimePaths.standard()
     let clientID: ClientID
     private(set) var hosts: [HostSession] = []
@@ -47,8 +47,9 @@ final class AppModel {
     /// True once per host per launch: the caller may create the first session.
     func bootstrap(_ host: HostSession) -> Bool { bootstrapped.insert(host.id).inserted }
 
-    private init() {
-        let defaults = UserDefaults.standard
+    /// The app's one model reads `.standard`; a test's reads a suite of its own.
+    init(defaults: UserDefaults = .standard) {
+        prefs = Preferences(defaults: defaults)
         if let s = defaults.string(forKey: "clientID"), let id = ClientID(s) {
             clientID = id
         } else {
@@ -181,7 +182,9 @@ final class AppModel {
         hostsChanged.emit()
     }
 
-    func add(_ host: HostSession, prepare: (@MainActor () async -> Void)? = nil) {
+    /// Adds a host and connects to it; with `connect` false it is only shown (a test's
+    /// picture of the sidebar), as `HostSession.show` sets it.
+    func add(_ host: HostSession, prepare: (@MainActor () async -> Void)? = nil, connect: Bool = true) {
         hosts.append(host)
         host.onError = { [weak self] in self?.errors.emit($0) }
         tokens.append(host.changes.observe { [weak self, weak host] change in
@@ -193,7 +196,7 @@ final class AppModel {
             }
             anyChange.emit((host, change))
         })
-        host.start(prepare: prepare)
+        if connect { host.start(prepare: prepare) }
         hostsChanged.emit()
     }
 
