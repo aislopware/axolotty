@@ -47,7 +47,7 @@ axolotty mcp                                 # the same, as MCP tools over stdio
 
 ## Build
 
-Requirements: macOS 26 or later and the Swift toolchain named in `Package.swift`. `Vendor/GhosttyVT.xcframework` comes from `scripts/build-ghostty-vt.sh`, which needs Zig, and only has to run when the pinned commit changes. `Vendor/AxQuic.xcframework`, the QUIC link, comes from `scripts/build-axquic.sh`, which needs Rust (rustup) and rebuilds only when `Rust/axquic` changes.
+Requirements: macOS 27 or later (iOS 27 for the iPhone and iPad app) and the Swift toolchain named in `Package.swift`. `Vendor/GhosttyVT.xcframework` comes from `scripts/build-ghostty-vt.sh`, which needs Zig, and only has to run when the pinned commit changes. `Vendor/AxQuic.xcframework`, the QUIC link, comes from `scripts/build-axquic.sh`, which needs Rust (rustup) and rebuilds only when `Rust/axquic` changes.
 
 ```
 swift build                                  # everything, debug

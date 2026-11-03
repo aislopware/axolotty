@@ -37,7 +37,7 @@ module AxQuic {
 }
 EOF2
 for t in "${TARGETS[@]}"; do
-  MACOSX_DEPLOYMENT_TARGET=26.0 cargo build --manifest-path "$CRATE/Cargo.toml" --release --locked --target "$t"
+  MACOSX_DEPLOYMENT_TARGET=27.0 cargo build --manifest-path "$CRATE/Cargo.toml" --release --locked --target "$t"
   ARGS+=(-library "$CRATE/target/$t/release/libaxquic.a" -headers "$HDRS")
 done
 rm -rf "$OUT"

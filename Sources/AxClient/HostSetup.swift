@@ -46,7 +46,7 @@ public struct HostSetup: Sendable {
     /// The binaries that go across.
     public static let binaries = ["axolottyd", "axolotty-ptyd", "axolotty"]
     /// Oldest macOS the binaries run on (Package.swift).
-    public static let minimumMajor = 26
+    public static let minimumMajor = 27
 
     /// Runs one command line on the host: `argv + [line]`.
     public var remote: [String]

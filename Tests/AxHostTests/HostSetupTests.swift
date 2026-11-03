@@ -18,11 +18,11 @@ struct HostSetupTests {
         func facts(_ s: String, _ arch: String, _ v: Int) -> HostSetup.Facts {
             .init(system: s, arch: arch, version: .init(majorVersion: v, minorVersion: 0, patchVersion: 0), home: "/h")
         }
-        try HostSetup.supports(facts("Darwin", "arm64", 26), archs: ["arm64"])
-        try HostSetup.supports(facts("Darwin", "x86_64", 27), archs: ["arm64", "x86_64"])
-        try HostSetup.supports(facts("Darwin", "arm64", 26), archs: [])  // unreadable: let the host try
-        for (f, why) in [(facts("Linux", "x86_64", 6), "Macs"), (facts("Darwin", "arm64", 15), "macOS 26"),
-                         (facts("Darwin", "x86_64", 26), "Intel")] {
+        try HostSetup.supports(facts("Darwin", "arm64", 27), archs: ["arm64"])
+        try HostSetup.supports(facts("Darwin", "x86_64", 28), archs: ["arm64", "x86_64"])
+        try HostSetup.supports(facts("Darwin", "arm64", 27), archs: [])  // unreadable: let the host try
+        for (f, why) in [(facts("Linux", "x86_64", 6), "Macs"), (facts("Darwin", "arm64", 26), "macOS 27"),
+                         (facts("Darwin", "x86_64", 27), "Intel")] {
             #expect {
                 try HostSetup.supports(f, archs: ["arm64"])
             } throws: { e in

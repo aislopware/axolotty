@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 // Axolotty — the shared package. Everything except the two app shells lives here and is
 // tested with `swift test` on the Mac. App bundles (macOS AppKit, iOS UIKit) come from
 // App/project.yml (XcodeGen) and link these libraries.
@@ -27,7 +27,7 @@ let macOnly: TargetDependencyCondition? = .when(platforms: [.macOS])
 
 let package = Package(
     name: "Axolotty",
-    platforms: [.macOS("26.0"), .iOS("26.0")],
+    platforms: [.macOS("27.0"), .iOS("27.0")],
     products: [
         .library(name: "AxolottyKit", targets: ["AxModel", "AxProtocol", "AxVT", "AxClient", "AxRender"]),
         .library(name: "AxMacUI", targets: ["AxMacUI"]),
