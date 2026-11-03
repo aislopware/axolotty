@@ -36,6 +36,34 @@ public enum LanePriority {
     public static let bulk: Int32 = -2
 }
 
+/// The output a key buys ahead of everything (Slopty's `EchoBurst`): the reads that follow a
+/// person's input within `window` go at `LanePriority.echo`, `reads` of them at most, so a flood
+/// beside the typing stays at its own priority.
+public struct EchoBurst: Sendable {
+    /// Output read this long after the input no longer counts as its echo.
+    public static let window: Duration = .milliseconds(50)
+    /// The echo, and a second write that repaints it (a highlighter recolouring the line).
+    public static let reads = 2
+
+    private var until: ContinuousClock.Instant?
+    private var left = 0
+
+    public init() {}
+
+    /// A person's input reached the program at `now`.
+    public mutating func arm(_ now: ContinuousClock.Instant) {
+        until = now + Self.window
+        left = Self.reads
+    }
+
+    /// The priority of output read at `now`, spending one of the burst's reads when it is an echo.
+    public mutating func priority(_ now: ContinuousClock.Instant) -> Int32 {
+        guard left > 0, let until, now <= until else { return LanePriority.normal }
+        left -= 1
+        return LanePriority.echo
+    }
+}
+
 extension FrameLink {
     public func send(_ data: Data, lane: Int = 0) { send(data, lane: lane, priority: LanePriority.normal) }
 
@@ -47,9 +75,19 @@ extension FrameLink {
         if let d = try? MessageCodec.frame(message) { send(d, lane: lane, priority: LanePriority.normal) }
     }
 
-    public func send(_ message: ClientMessage, lane: Int = 0, priority: Int32 = LanePriority.normal) {
-        if let d = try? MessageCodec.frame(message) { send(d, lane: lane, priority: priority) }
+    public func send(_ message: ClientMessage, lane: Int = 0, priority: Int32? = nil) {
+        if let d = try? MessageCodec.frame(message) { send(d, lane: lane, priority: priority ?? message.priority) }
     }
 
     public func close() { close(nil) }
+}
+
+extension ClientMessage {
+    /// A person's input rides at the echo's priority, so the key leaves ahead of a file going up.
+    public var priority: Int32 {
+        switch self {
+        case .key, .mouse, .paste, .text: LanePriority.echo
+        default: LanePriority.normal
+        }
+    }
 }

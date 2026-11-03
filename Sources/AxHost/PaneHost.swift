@@ -56,6 +56,8 @@ final class PaneHost: @unchecked Sendable {
     private var writeSource: (any DispatchSourceWrite)?
     private var writeActive = false
     private var pendingInput: [UInt8] = []
+    /// The reads that answer a person's input go ahead of every other lane.
+    private var echo = EchoBurst()
     private var ended = false
 
     private var cellWidth: UInt32 = 8
@@ -169,7 +171,7 @@ final class PaneHost: @unchecked Sendable {
                 let offset = ring.head
                 ring.append(chunk)
                 events += terminal.write(chunk)
-                fanOut(Data(chunk), at: offset)
+                fanOut(Data(chunk), at: offset, priority: echo.priority(.now))
                 total += n
                 if n < buf.count { break }
             } else if n < 0, errno == EAGAIN || errno == EINTR {
@@ -227,7 +229,7 @@ final class PaneHost: @unchecked Sendable {
         checkpoint()
     }
 
-    private func fanOut(_ bytes: Data, at offset: UInt64) {
+    private func fanOut(_ bytes: Data, at offset: UInt64, priority: Int32 = LanePriority.normal) {
         guard !subscribers.isEmpty else { return }
         let frames = Self.outputFrames(id, bytes, at: offset)
         let head = offset + UInt64(bytes.count)
@@ -237,7 +239,7 @@ final class PaneHost: @unchecked Sendable {
                 armResync()
                 continue
             }
-            for f in frames { sub.conn.send(f, lane: lane) }
+            for f in frames { sub.conn.send(f, lane: lane, priority: priority) }
         }
     }
 
@@ -334,6 +336,7 @@ final class PaneHost: @unchecked Sendable {
                                   unshifted: k.unshifted, composing: k.composing)
             if !bytes.isEmpty {
                 terminal.scrollViewport(.bottom)
+                echo.arm(.now)
                 writeToPTY(bytes)
             }
         }
@@ -342,6 +345,7 @@ final class PaneHost: @unchecked Sendable {
     func mouse(_ m: MouseInput) {
         queue.async { [self] in
             let action = VTInputEncoder.MouseAction(rawValue: m.action.rawValue) ?? .press
+            echo.arm(.now)
             writeToPTY(input.mouse(action: action, button: m.button, mods: m.mods,
                                    x: m.x * Double(cellWidth), y: m.y * Double(cellHeight),
                                    cellWidth: cellWidth, cellHeight: cellHeight))
@@ -349,12 +353,16 @@ final class PaneHost: @unchecked Sendable {
     }
 
     func paste(_ text: String) {
-        queue.async { [self] in writeToPTY(input.paste(text)) }
+        queue.async { [self] in
+            echo.arm(.now)
+            writeToPTY(input.paste(text))
+        }
     }
 
     /// Raw text as if typed (CLI `send`): no bracketing, newlines as CR.
     func type(_ text: String) {
         queue.async { [self] in
+            echo.arm(.now)
             writeToPTY(Array(text.utf8).map { $0 == 0x0A ? 0x0D : $0 })
         }
     }

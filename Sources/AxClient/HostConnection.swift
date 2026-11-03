@@ -889,7 +889,7 @@ public final class HostConnection: @unchecked Sendable {
                         let bytes = try pieces.next()
                         sent += UInt64(bytes.count)
                         let last = bytes.count < HostFile.piece || sent >= size
-                        conn.send(ClientMessage.file(token, name: name, bytes: bytes, last: last), lane: lane)
+                        conn.send(ClientMessage.file(token, name: name, bytes: bytes, last: last), lane: lane, priority: LanePriority.bulk)
                         progress(size == 0 ? 1 : min(1, Double(sent) / Double(size)))
                         if last { return }
                     }

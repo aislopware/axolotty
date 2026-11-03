@@ -48,7 +48,7 @@ public final class Tunnels: @unchecked Sendable {
         queue.async { [self] in
             guard !closed, streams.count < Self.maxStreams else { return abort(fd) }
             // On the stream's own lane, so it goes before the stream's bytes.
-            conn.send(.open(stream: id, port: port), lane: FramedConnection.lane(id))
+            conn.send(.open(stream: id, port: port), lane: FramedConnection.lane(id), priority: LanePriority.tunnel)
             start(id, fd)
         }
     }
@@ -60,10 +60,10 @@ public final class Tunnels: @unchecked Sendable {
             switch frame {
             case let .open(id, port):
                 guard streams[id] == nil else { return }
-                guard streams.count < Self.maxStreams, let dial, let fd = dial(port) else { return conn.send(.reset(stream: id), lane: FramedConnection.lane(id)) }
+                guard streams.count < Self.maxStreams, let dial, let fd = dial(port) else { return conn.send(.reset(stream: id), lane: FramedConnection.lane(id), priority: LanePriority.tunnel) }
                 start(id, fd)
             case let .stream(id, offset, bytes, end):
-                guard let s = streams[id] else { return conn.send(.reset(stream: id), lane: FramedConnection.lane(id)) }
+                guard let s = streams[id] else { return conn.send(.reset(stream: id), lane: FramedConnection.lane(id), priority: LanePriority.tunnel) }
                 guard offset == s.received, !s.peerEnded else { return reset(s, tell: true) }
                 s.received += UInt64(bytes.count)
                 if !bytes.isEmpty { s.outbox.append(bytes) }
@@ -164,11 +164,11 @@ public final class Tunnels: @unchecked Sendable {
             }
             let n = buffer.withUnsafeMutableBytes { Darwin.read(s.fd, $0.baseAddress, $0.count) }
             if n > 0 {
-                conn.send(.stream(stream: s.id, offset: s.sent, bytes: Data(buffer[0 ..< n]), end: false), lane: s.lane)
+                conn.send(.stream(stream: s.id, offset: s.sent, bytes: Data(buffer[0 ..< n]), end: false), lane: s.lane, priority: LanePriority.tunnel)
                 s.sent += UInt64(n)
             } else if n == 0 {
                 s.readDone = true
-                conn.send(.stream(stream: s.id, offset: s.sent, bytes: Data(), end: true), lane: s.lane)
+                conn.send(.stream(stream: s.id, offset: s.sent, bytes: Data(), end: true), lane: s.lane, priority: LanePriority.tunnel)
                 s.reader?.cancel()
                 s.reader = nil
                 finishIfDone(s)
@@ -231,7 +231,7 @@ public final class Tunnels: @unchecked Sendable {
     /// close (its request did not complete).
     private func reset(_ s: Stream, tell: Bool) {
         guard streams[s.id] === s else { return }
-        if tell { conn.send(.reset(stream: s.id), lane: s.lane) }
+        if tell { conn.send(.reset(stream: s.id), lane: s.lane, priority: LanePriority.tunnel) }
         var hard = linger(l_onoff: 1, l_linger: 0)
         _ = setsockopt(s.fd, SOL_SOCKET, SO_LINGER, &hard, socklen_t(MemoryLayout<linger>.size))
         end(s)
