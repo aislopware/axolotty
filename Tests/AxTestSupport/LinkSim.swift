@@ -42,6 +42,9 @@ public struct LinkModel: Sendable, Equatable {
     public var delay: Duration
     /// Added on top of `delay`, spread over 0 ..< jitter; packets still leave in order.
     public var jitter: Duration
+    /// The jitter's skew: `jitter × u^power` for a uniform u. 1 spreads it
+    /// evenly; 3 makes most packets quick and a few slow, as Wi-Fi is.
+    public var jitterPower: Double = 1
     /// Share of packets lost, 0 ... 1.
     public var loss: Double
     /// Bytes per second; 0 is unlimited.
@@ -49,13 +52,36 @@ public struct LinkModel: Sendable, Equatable {
     /// How long the bottleneck's buffer holds at `rate`; a packet that would
     /// wait longer is dropped, as a router's full queue drops it.
     public var queue: Duration
+    /// While traffic is dense (a packet within 5 ms of the last), the radio
+    /// stalls for `busyStall.length` after every `busyStall.every` of busy
+    /// time on average (spread exponentially): what would arrive meanwhile
+    /// arrives after it. Wi-Fi under load does this, idle it does not. Zero
+    /// for none.
+    public var busyStall: (every: Duration, length: Duration) = (.zero, .zero)
+    /// While busy, every packet waits this much more (contention for the
+    /// air), and packets within `aggregate` of the one that drew a jitter
+    /// share it (they go out together, as one Wi-Fi aggregate).
+    public var busyExtra: Duration = .zero
+    public var aggregate: Duration = .zero
 
-    public init(delay: Duration, jitter: Duration = .zero, loss: Double = 0, rate: Int = 0, queue: Duration = .milliseconds(100)) {
+    public init(delay: Duration, jitter: Duration = .zero, jitterPower: Double = 1, loss: Double = 0, rate: Int = 0,
+                queue: Duration = .milliseconds(100), busyStall: (every: Duration, length: Duration) = (.zero, .zero),
+                busyExtra: Duration = .zero, aggregate: Duration = .zero) {
         self.delay = delay
         self.jitter = jitter
         self.loss = loss
         self.rate = rate
         self.queue = queue
+        self.jitterPower = jitterPower
+        self.busyStall = busyStall
+        self.busyExtra = busyExtra
+        self.aggregate = aggregate
+    }
+
+    public static func == (a: LinkModel, b: LinkModel) -> Bool {
+        a.delay == b.delay && a.jitter == b.jitter && a.loss == b.loss && a.rate == b.rate && a.queue == b.queue
+            && a.jitterPower == b.jitterPower && a.busyStall.every == b.busyStall.every && a.busyStall.length == b.busyStall.length
+            && a.busyExtra == b.busyExtra && a.aggregate == b.aggregate
     }
 }
 
@@ -68,6 +94,11 @@ public struct Shaper: Sendable {
     /// The last arrival, so jitter never reorders.
     private var lastArrival: Duration = .zero
     public private(set) var sent = 0, lost = 0, overflowed = 0
+    private var lastAdmit: Duration = .seconds(-1)
+    /// Busy time left before the next stall, and when the current one ends.
+    private var busyLeft: Duration?
+    private var stallEnds: Duration = .zero
+    private var drawn: (at: Duration, jitter: Duration) = (.seconds(-1), .zero)
 
     public init(_ link: LinkModel, seed: UInt64) {
         self.link = link
@@ -93,8 +124,31 @@ public struct Shaper: Sendable {
             drainsAt += .nanoseconds(Int64(bytes) * 1_000_000_000 / Int64(link.rate))
         }
         sent += 1
-        let jitter: Duration = link.jitter > .zero ? link.jitter * rng.unit() : .zero
-        let at = max(lastArrival, leaves + link.delay + jitter)
+        let busy = now - lastAdmit < .milliseconds(5)
+        let gap = now - lastAdmit
+        lastAdmit = now
+        var jitter: Duration
+        if busy, link.aggregate > .zero, now - drawn.at < link.aggregate {
+            jitter = drawn.jitter
+        } else {
+            jitter = link.jitter > .zero ? link.jitter * pow(rng.unit(), link.jitterPower) : .zero
+            drawn = (now, jitter)
+        }
+        if busy { jitter += link.busyExtra }
+        var at = max(lastArrival, leaves + link.delay + jitter)
+        if link.busyStall.every > .zero {
+            func draw() -> Duration { link.busyStall.every * -log(1 - rng.unit()) }
+            if busy {
+                let left = (busyLeft ?? draw()) - gap
+                if left <= .zero {
+                    stallEnds = at + link.busyStall.length
+                    busyLeft = draw()
+                } else {
+                    busyLeft = left
+                }
+            }
+            at = max(at, stallEnds)
+        }
         lastArrival = at
         return at
     }
@@ -173,13 +227,16 @@ public struct EchoRun: Sendable {
     public var lowat = Wire.notSentLowat
     /// The pacer's delay filter (zero judges every raw sample).
     public var pacerWindow = BulkPacer.filterWindow
+    /// In place of the pacer, bulk keeps at most this in the socket (to see
+    /// the link at a load of one's choosing).
+    public var fixedCap: Int?
     /// The largest output frame the host cuts (`Wire.maxData`).
     public var frameBytes = Wire.maxData
     public var mss = 1228
 
     public init(down: LinkModel, up: LinkModel? = nil, policy: SendPolicy, seed: UInt64) {
         self.down = down
-        self.up = up ?? LinkModel(delay: down.delay, jitter: down.jitter, loss: down.loss)
+        self.up = up ?? LinkModel(delay: down.delay, jitter: down.jitter, jitterPower: down.jitterPower, loss: down.loss)
         self.policy = policy
         self.seed = seed
     }
@@ -201,6 +258,9 @@ public struct EchoResult: Sendable, Equatable {
     public var digest: UInt64
     /// Pooled results: the seeds that lost a key, to replay with `AXSEED`.
     public var lostIn: [UInt64] = []
+    /// The sender's latest round trip (`tcpi_rttcur`, whole ms) every 20 ms
+    /// while keys are typed, as the host's pacer reads it.
+    public var rtts: [Duration] = []
 
     public init(echoes: [Duration], lostKeys: Int = 0, floodRate: Double = 0, resyncs: Int = 0, retransmits: Int = 0,
                 timeouts: Int = 0, probes: Int = 0, digest: UInt64 = 0) {
@@ -216,6 +276,19 @@ public struct EchoResult: Sendable, Equatable {
 
     public func quantile(_ q: Double) -> Duration {
         let s = echoes.sorted()
+        guard !s.isEmpty else { return .seconds(999) }
+        return s[min(s.count - 1, Int(Double(s.count) * q))]
+    }
+
+    public func with(rtts: [Duration]) -> EchoResult {
+        var r = self
+        r.rtts = rtts
+        return r
+    }
+
+    /// The `q` quantile of the sampled round trips.
+    public func rttQuantile(_ q: Double) -> Duration {
+        let s = rtts.sorted()
         guard !s.isEmpty else { return .seconds(999) }
         return s[min(s.count - 1, Int(Double(s.count) * q))]
     }
@@ -276,6 +349,7 @@ extension EchoRun {
         var srtt: Duration?, rttvar: Duration = .zero, rttcur: Duration?
         var timerGen = 0, rto: Duration = .milliseconds(200), probed = false
         var retransmits = 0, timeouts = 0, probes = 0
+        var rtts: [Duration] = [], rttSampledAt: Duration = .zero
 
         // Receiver (the client).
         var rcvNxt = 0
@@ -329,7 +403,7 @@ extension EchoRun {
 
         func hostFlush(_ now: Duration) {
             while written - sndNxt < lowat {
-                let hold = pacer?.holdsBulk(now: now, rtt: rttcur.map { .milliseconds(Int(($0 / .milliseconds(1)).rounded())) },
+                let hold = fixedCap.map { written - sndUna >= $0 } ?? pacer?.holdsBulk(now: now, rtt: rttcur.map { .milliseconds(Int(($0 / .milliseconds(1)).rounded())) },
                                             socketBytes: written - sndUna) ?? false
                 guard let f = lanes.next(holdBulk: hold) else {
                     if hold, lanes.choose() != nil, !wakeArmed {
@@ -399,6 +473,10 @@ extension EchoRun {
         defer { if tracing { print("EVENTS", counts.sorted { $0.key < $1.key }) } }
         while let (now, e) = events.pop(), now <= end {
             if tracing { counts["\(e)".prefix { $0 != "(" }.description, default: 0] += 1 }
+            if now >= typingStarts, now < typingEnds, now - rttSampledAt >= .milliseconds(20), let r = rttcur {
+                rttSampledAt = now
+                rtts.append(.milliseconds(Int((r / .milliseconds(1)).rounded())))
+            }
             switch e {
             case .rateDrop:
                 downShaper.link.rate = Int(Double(down.rate) * rateAfterWarmup)
@@ -563,5 +641,6 @@ extension EchoRun {
         return EchoResult(echoes: echoes.compactMap { $0 }, lostKeys: echoes.filter { $0 == nil }.count,
                           floodRate: Double(floodDelivered) / max(typed, 0.001), resyncs: resyncs,
                           retransmits: retransmits, timeouts: timeouts, probes: probes, digest: digest)
+            .with(rtts: rtts)
     }
 }
