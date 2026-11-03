@@ -236,12 +236,10 @@ final class SidebarOutlineView: NSOutlineView {
             let spring = Axo.Motion.snap.animation("position")
             spring.fromValue = plate.presentation()?.position ?? plate.position
             spring.toValue = CGPoint(x: target.midX, y: target.midY)
-            spring.duration = spring.settlingDuration
             plate.add(spring, forKey: "position")
             let size = Axo.Motion.snap.animation("bounds.size")
             size.fromValue = plate.presentation()?.bounds.size ?? plate.bounds.size
             size.toValue = target.size
-            size.duration = size.settlingDuration
             plate.add(size, forKey: "size")
         }
         plate.frame = target

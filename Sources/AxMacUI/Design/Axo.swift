@@ -227,9 +227,11 @@ enum Axo {
             let response: Double
             let bounce: Double
 
+            /// Runs until it settles (a spring's duration is not its response).
             func animation(_ keyPath: String) -> CASpringAnimation {
                 let a = CASpringAnimation(perceptualDuration: response, bounce: bounce)
                 a.keyPath = keyPath
+                a.duration = a.settlingDuration
                 return a
             }
 
@@ -282,6 +284,10 @@ enum Axo {
         static let swift = Beat(duration: 0.20, curve: easeOut)
         /// Layout: panes, folds.
         static let glide = Beat(duration: 0.26, curve: easeOut)
+        /// A surface the person summoned (palette, menu): in from 98 %, 4 pt off.
+        static let rise = Beat(duration: 0.16, curve: easeOut)
+        /// One turn of a working spinner.
+        static let spin: CFTimeInterval = 0.9
 
         static let snap = Spring(response: 0.25, bounce: 0)
         static let standard = Spring(response: 0.35, bounce: 0)
@@ -318,6 +324,23 @@ enum Axo {
 
         static func fade(in: Bool, _ changes: () -> Void, completion: (@MainActor @Sendable () -> Void)? = nil) {
             run(`in` ? swift : tickOut, changes, completion: completion)
+        }
+
+        /// Brings in a summoned surface on `rise`: it fades up while growing
+        /// from 98 % about its top edge at `anchorX` (where it came from),
+        /// settling the last 4 pt. Under Reduce Motion, the fade alone.
+        static func rise(_ view: NSView, anchorX: CGFloat) {
+            view.alphaValue = 0
+            run(rise) { view.animator().alphaValue = 1 }
+            guard !reduced, let layer = view.layer else { return }
+            let top = layer.bounds.minY
+            var t = CATransform3DMakeTranslation(anchorX, top, 0)
+            t = CATransform3DScale(t, 0.98, 0.98, 1)
+            t = CATransform3DTranslate(t, -anchorX, -top - 4, 0)
+            let a = rise.animation("transform")
+            a.fromValue = t
+            a.toValue = CATransform3DIdentity
+            layer.add(a, forKey: "rise")
         }
 
         /// Runs layer changes without implicit animations.

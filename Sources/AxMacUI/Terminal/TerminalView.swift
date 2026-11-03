@@ -414,7 +414,7 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
             a.fromValue = dimLayer.presentation()?.opacity ?? dimLayer.opacity
             a.toValue = target
             a.duration = Axo.Motion.fadeIn.duration
-            a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            a.timingFunction = Axo.Motion.standardCurve
             dimLayer.add(a, forKey: "opacity")
         }
         dimLayer.opacity = target

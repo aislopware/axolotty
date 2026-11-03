@@ -239,17 +239,15 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 0
         fade.toValue = 1
-        fade.duration = crossfadeOnly ? 0.12 : Axo.Motion.fadeIn.duration
+        fade.duration = crossfadeOnly ? Axo.Motion.fadeOut.duration : Axo.Motion.fadeIn.duration
         fade.timingFunction = Axo.Motion.fadeIn.curve
         fade.fillMode = .backwards
         if !crossfadeOnly, !Axo.Motion.reduced {
             fade.beginTime = CACurrentMediaTime() + 0.06
             if let axis = parentAxis(of: id, in: tree) {
-                let slide = CABasicAnimation(keyPath: axis == .horizontal ? "transform.translation.x" : "transform.translation.y")
+                let slide = Axo.Motion.standard.animation(axis == .horizontal ? "transform.translation.x" : "transform.translation.y")
                 slide.fromValue = -12
                 slide.toValue = 0
-                slide.duration = Axo.Motion.standard.settleTime
-                slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
                 slide.beginTime = fade.beginTime
                 slide.fillMode = .backwards
                 layer.add(slide, forKey: "entrance.slide")

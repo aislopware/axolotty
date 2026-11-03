@@ -99,11 +99,9 @@ final class PaneStripView: NSView {
         path.stringValue = m.path
         restyle()
         if washChanged, needsYou(m), !Axo.Motion.reduced {
-            let a = CABasicAnimation(keyPath: "opacity")
+            let a = Axo.Motion.swift.animation("opacity")
             a.fromValue = 0
             a.toValue = 1
-            a.duration = 0.2
-            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
             wash.add(a, forKey: "in")
         }
         tickElapsed()

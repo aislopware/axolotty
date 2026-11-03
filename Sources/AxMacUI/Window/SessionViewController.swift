@@ -86,7 +86,7 @@ final class SessionViewController: NSViewController {
         if animated, current != nil, !Axo.Motion.reduced {
             let fade = CATransition()
             fade.type = .fade
-            fade.duration = 0.10
+            fade.duration = Axo.Motion.tickOut.duration
             stage.layer?.add(fade, forKey: "switch")
         }
         current?.removeFromSuperview()

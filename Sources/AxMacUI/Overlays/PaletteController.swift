@@ -650,20 +650,8 @@ final class PaletteSurface: Surface {
 
     /// Opens in 160 ms: from 98 % scale and 4 pt higher, fading in (ease-out).
     func animateIn() {
-        alphaValue = 0
         layoutSubtreeIfNeeded()
-        Axo.Motion.run(Axo.Motion.Beat(duration: 0.16, curve: Axo.Motion.easeOut)) { animator().alphaValue = 1 }
-        guard !Axo.Motion.reduced, let layer else { return }
-        let b = layer.bounds
-        var t = CATransform3DMakeTranslation(b.midX, b.minY, 0)
-        t = CATransform3DScale(t, 0.98, 0.98, 1)
-        t = CATransform3DTranslate(t, -b.midX, -b.minY - 4, 0)
-        let a = CABasicAnimation(keyPath: "transform")
-        a.fromValue = t
-        a.toValue = CATransform3DIdentity
-        a.duration = 0.16
-        a.timingFunction = Axo.Motion.easeOut
-        layer.add(a, forKey: "pop")
+        Axo.Motion.rise(self, anchorX: layer?.bounds.midX ?? 0)
     }
 
     func animateOut() {

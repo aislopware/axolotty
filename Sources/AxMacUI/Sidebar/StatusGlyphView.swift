@@ -101,7 +101,7 @@ final class StatusGlyphView: NSView {
                     let spin = CABasicAnimation(keyPath: "transform.rotation.z")
                     spin.fromValue = 0
                     spin.toValue = -2 * Double.pi
-                    spin.duration = 0.9
+                    spin.duration = Axo.Motion.spin
                     spin.repeatCount = .infinity
                     spin.isRemovedOnCompletion = false
                     mark.add(spin, forKey: "spin")

@@ -127,20 +127,8 @@ final class PopMenu: Surface {
     }
 
     private func animateIn() {
-        alphaValue = 0
         layoutSubtreeIfNeeded()
-        Axo.Motion.run(Axo.Motion.Beat(duration: 0.16, curve: Axo.Motion.easeOut)) { animator().alphaValue = 1 }
-        guard !Axo.Motion.reduced, let layer else { return }
-        let b = layer.bounds
-        var t = CATransform3DMakeTranslation(b.minX, b.minY, 0)
-        t = CATransform3DScale(t, 0.98, 0.98, 1)
-        t = CATransform3DTranslate(t, -b.minX, -b.minY - 4, 0)
-        let an = CABasicAnimation(keyPath: "transform")
-        an.fromValue = t
-        an.toValue = CATransform3DIdentity
-        an.duration = 0.16
-        an.timingFunction = Axo.Motion.easeOut
-        layer.add(an, forKey: "pop")
+        Axo.Motion.rise(self, anchorX: layer?.bounds.minX ?? 0)
     }
 
     // MARK: Layout
