@@ -44,7 +44,7 @@ final class PopMenu: Surface {
     private let items: [Item?]
     private var rows: [Row] = []
     private var separators: [CALayer] = []
-    private var highlighted: Int? { didSet { if highlighted != oldValue { restyleRows() } } }
+    var highlighted: Int? { didSet { if highlighted != oldValue { restyleRows() } } }
     private weak var host: OverlayHostView?
     private var keyMonitor: Any?
 
@@ -52,7 +52,7 @@ final class PopMenu: Surface {
     private static let rowH: CGFloat = 28
     private static let sepH: CGFloat = 9
 
-    private init(items: [Item?]) {
+    init(items: [Item?]) {
         self.items = items
         super.init(elevation: .float, radius: 14)
         for item in items {

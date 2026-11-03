@@ -119,6 +119,22 @@ struct SnapshotTests {
         try Self.check(Sheet([(back, size), (offline, size), (behind, size)]), "veils")
     }
 
+    /// The menus: the "+" menu with a row under the pointer, and the project menu with the
+    /// open project checked.
+    @Test func menus() throws {
+        let agents = PopMenu(items: [PopMenu.Item(title: "Shell", image: ProgramIdentity.shell.image(), key: "1") {}, nil]
+            + ([.claude, .codex, .gemini] as [AgentKind]).enumerated().map { i, a in
+                PopMenu.Item(title: a.displayName, image: ProgramIdentity.of(a).image(), key: "\(i + 2)") {}
+            })
+        agents.highlighted = 1
+        let projects = PopMenu(items: [
+            PopMenu.Item(title: "axolotty", image: ProjectTile.menuImage, checked: true) {},
+            PopMenu.Item(title: "slopty", image: ProjectTile.menuImage) {}, nil,
+            PopMenu.Item(title: "Open Folder…", image: NSImage(systemSymbolName: "folder", accessibilityDescription: nil)) {},
+        ])
+        try Self.check(Sheet([(agents, agents.preferredSize), (projects, projects.preferredSize)]), "menus")
+    }
+
     /// The window's empty sheet, at the window's least size: the launcher, and a far Mac
     /// out of reach in its two kinds, waited for and waiting on the person. Its real copy.
     @Test func emptyWindow() throws {
