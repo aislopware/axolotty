@@ -90,6 +90,9 @@ final class PaneHost: @unchecked Sendable {
 
     private var subscribers: [ObjectIdentifier: Subscriber] = [:]
     private var resyncTimer: (any DispatchSourceTimer)?
+    /// Where reads land, kept: a key's echo is one byte, and a fresh 64 KiB zeroed for each
+    /// one was most of a read's work. On `queue`.
+    private var readBuffer = UnsafeMutableRawBufferPointer.allocate(byteCount: 64 << 10, alignment: 16)
 
     private var checkpointOffset: UInt64 = 0
     private var checkpointTime = ContinuousClock.now
@@ -140,6 +143,7 @@ final class PaneHost: @unchecked Sendable {
 
     deinit {
         Darwin.close(master)
+        readBuffer.deallocate()
     }
 
     func start() {
@@ -173,14 +177,14 @@ final class PaneHost: @unchecked Sendable {
     // MARK: Output
 
     private func readAvailable() {
-        var buf = [UInt8](repeating: 0, count: 64 << 10)
+        let buf = readBuffer
         var events: [VTEvent] = []
         var total = 0
         // Bounded so one chatty pane cannot starve the queue's other work.
         for _ in 0 ..< 8 {
-            let n = buf.withUnsafeMutableBytes { Darwin.read(master, $0.baseAddress, $0.count) }
+            let n = Darwin.read(master, buf.baseAddress, buf.count)
             if n > 0 {
-                let chunk = buf.withUnsafeBytes { UnsafeRawBufferPointer(rebasing: $0[0 ..< n]) }
+                let chunk = UnsafeRawBufferPointer(rebasing: buf[0 ..< n])
                 let offset = ring.head
                 ring.append(chunk)
                 events += terminal.write(chunk)
