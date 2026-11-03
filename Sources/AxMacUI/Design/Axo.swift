@@ -197,8 +197,12 @@ enum Axo {
         static let panePaddingTop: CGFloat = 10
         static let panePaddingBottom: CGFloat = 8
         /// Each pane is a sheet set in the frame: radius 10 at a 6 pt inset keeps
-        /// it concentric with the ~16 pt window corner (Dia's geometry; Codex's
-        /// card is 12 at 4, Claude insets 8).
+        /// it concentric with the 16 pt window corner (Dia's geometry; Codex's
+        /// card is 12 at 4, Claude insets 8). macOS 27's own concentric corners
+        /// (`NSView.cornerConfiguration`, `.containerConcentric`) give exactly 10
+        /// at the window's corner, measured on a split window. They also round
+        /// every inner corner down to their minimum and want a per-corner mask on
+        /// the Metal layer. The sheets keep one radius all round, set here.
         static let sheetRadius: CGFloat = 10
         static let sheetInset: CGFloat = 6
         /// The frame showing between split sheets; nothing is drawn in it at rest.
