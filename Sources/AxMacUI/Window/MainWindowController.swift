@@ -374,10 +374,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                 chip.alphaValue = 1
             }
         } else {
-            chip.alphaValue = 0
-            chip.isHidden = false
             content.band.needsLayout = true
-            Axo.Motion.fade(in: true) { chip.animator().alphaValue = 1 }
+            Axo.Motion.reveal(chip, on: Axo.Motion.swift)
         }
     }
 

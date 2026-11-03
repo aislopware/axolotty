@@ -326,6 +326,20 @@ enum Axo {
             run(`in` ? swift : tickOut, changes, completion: completion)
         }
 
+        /// Unhides `view` and fades it up on `beat` from the opacity it shows
+        /// now. Not by `animator()`: AppKit drops that fade on a view unhidden
+        /// in the same turn, and the view pops in at full strength.
+        static func reveal(_ view: NSView, on beat: Beat) {
+            let from = view.isHidden ? 0 : view.layer?.presentation()?.opacity ?? Float(view.alphaValue)
+            view.isHidden = false
+            view.alphaValue = 1
+            guard !reduced, from < 1, let layer = view.layer else { return }
+            let a = beat.animation("opacity")
+            a.fromValue = from
+            a.toValue = Float(1)
+            layer.add(a, forKey: "reveal")
+        }
+
         /// Brings in a summoned surface on `rise`: it fades up while growing
         /// from 98 % about its top edge at `anchorX` (where it came from),
         /// settling the last 4 pt. Under Reduce Motion, the fade alone.

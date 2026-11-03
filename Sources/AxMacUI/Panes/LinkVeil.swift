@@ -134,21 +134,7 @@ final class LinkVeil: NSView, DesignRefreshable {
 
     private var pending: Task<Void, Never>?
 
-    private func reveal() {
-        let from = isHidden ? 0 : alphaValue
-        isHidden = false
-        guard from < 1 else { return }
-        guard !Axo.Motion.reduced else {
-            alphaValue = 1
-            return
-        }
-        alphaValue = from
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = Axo.Motion.glide.duration
-            ctx.timingFunction = Axo.Motion.easeOut
-            animator().alphaValue = 1
-        }
-    }
+    private func reveal() { Axo.Motion.reveal(self, on: Axo.Motion.glide) }
 
     func hide(animated: Bool) {
         pending?.cancel()

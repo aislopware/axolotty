@@ -51,8 +51,7 @@ final class PaneBadge: Surface {
         label.textColor = color
         needsLayout = true
         if isHidden || alphaValue < 1 {
-            isHidden = false
-            Axo.Motion.run(Axo.Motion.tick) { animator().alphaValue = 1 }
+            Axo.Motion.reveal(self, on: Axo.Motion.tick)
         }
         fade?.invalidate()
         fade = nil
