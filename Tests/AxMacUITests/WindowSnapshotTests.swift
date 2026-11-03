@@ -31,18 +31,30 @@ struct WindowSnapshotTests {
         return (st, sid)
     }
 
-    /// A window controller showing the split session, from a host shown without connecting.
-    static func window() -> (MainWindowController, HostSession, SessionID, String) {
+    /// This Mac with one shell, and the far Mac with the split session: the window shows
+    /// the far one's session, as when working remotely. Built without connecting.
+    static func window(phase: HostSession.Phase = .connected) -> (MainWindowController, String) {
         let suite = "axolotty.snapshots.\(UUID().uuidString)"
         let model = AppModel(defaults: UserDefaults(suiteName: suite)!)
-        let host = HostSession(endpoint: .unix(path: "/nonexistent"), client: ClientID(), clientName: "test", isLocal: false)
-        model.add(host, connect: false)
+        let local = HostSession(endpoint: .unix(path: "/nonexistent"), client: ClientID(), clientName: "test", isLocal: true)
+        var here = HostState(host: HostID(), name: "Mac Studio")
+        let w = WorkspaceInfo(id: WorkspaceID(), name: "dotfiles", root: "/Users/me/dotfiles")
+        here.workspaces.append(w)
+        let shell = SessionID()
+        let pane = SidebarSnapshotTests.pane(shell, title: "", program: "zsh", agent: nil, state: nil, ago: 3000)
+        here.panes[pane.id] = pane
+        here.sessions[shell] = SessionInfo(id: shell, workspace: w.id, root: pane.id)
+        here.workspaces[0].sessions.append(shell)
+        model.add(local, connect: false)
+        local.show(here)
+        let far = HostSession(endpoint: .unix(path: "/nonexistent"), client: ClientID(), clientName: "test", isLocal: false)
+        model.add(far, connect: false)
         let (st, sid) = Self.state()
-        host.show(st)
+        far.show(st, phase: phase)
         let wc = MainWindowController(model: model, autosave: false)
         wc.window!.setContentSize(Axo.Metric.windowDefault)
-        wc.show(host, sid)
-        return (wc, host, sid, suite)
+        wc.show(far, sid)
+        return (wc, suite)
     }
 
     static func badges(_ view: NSView) -> [PaneBadge] {
@@ -52,7 +64,7 @@ struct WindowSnapshotTests {
     /// A pane opening is sized several times in one turn; none is a resize, so no size
     /// shows. A resize after shows it. (The first window picture had "54 × 39" on both.)
     @Test func aPaneShowsItsSizeOnAResizeNotOnOpening() async throws {
-        let (wc, _, _, suite) = Self.window()
+        let (wc, suite) = Self.window()
         defer {
             wc.window?.close()
             UserDefaults().removePersistentDomain(forName: suite)
@@ -69,17 +81,11 @@ struct WindowSnapshotTests {
     }
 
     @Test func aSplitSessionAndThePalette() throws {
-        let suite = "axolotty.snapshots.\(UUID().uuidString)"
-        defer { UserDefaults().removePersistentDomain(forName: suite) }
-        let model = AppModel(defaults: UserDefaults(suiteName: suite)!)
-        let host = HostSession(endpoint: .unix(path: "/nonexistent"), client: ClientID(), clientName: "test", isLocal: false)
-        model.add(host, connect: false)
-        let (st, sid) = Self.state()
-        host.show(st)
-        let wc = MainWindowController(model: model, autosave: false)
-        defer { wc.window?.close() }
-        wc.window!.setContentSize(Axo.Metric.windowDefault)
-        wc.show(host, sid)
+        let (wc, suite) = Self.window()
+        defer {
+            wc.window?.close()
+            UserDefaults().removePersistentDomain(forName: suite)
+        }
         try Snapshot.expect(Snapshot.render(window: wc.window!, scale: 1), named: "window@1x")
         wc.palette.toggle(.commands)
         try Snapshot.expect(Snapshot.render(window: wc.window!, scale: 1), named: "window-palette@1x")
@@ -102,17 +108,11 @@ struct WindowSnapshotTests {
     /// The far Mac drops while a split session is open: the panes stay, dimmed, under the
     /// bar that says it is coming back. The moment remote work must not feel remote.
     @Test func aSessionWhoseMacDropped() throws {
-        let suite = "axolotty.snapshots.\(UUID().uuidString)"
-        defer { UserDefaults().removePersistentDomain(forName: suite) }
-        let model = AppModel(defaults: UserDefaults(suiteName: suite)!)
-        let host = HostSession(endpoint: .unix(path: "/nonexistent"), client: ClientID(), clientName: "test", isLocal: false)
-        model.add(host, connect: false)
-        let (st, sid) = Self.state()
-        host.show(st, phase: .connecting)
-        let wc = MainWindowController(model: model, autosave: false)
-        defer { wc.window?.close() }
-        wc.window!.setContentSize(Axo.Metric.windowDefault)
-        wc.show(host, sid)
+        let (wc, suite) = Self.window(phase: .connecting)
+        defer {
+            wc.window?.close()
+            UserDefaults().removePersistentDomain(forName: suite)
+        }
         try Snapshot.expect(Snapshot.render(window: wc.window!, scale: 1), named: "window-reconnecting@1x")
     }
 }
