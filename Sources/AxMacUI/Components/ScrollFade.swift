@@ -12,7 +12,7 @@ final class ScrollFade {
 
     private let mask = CAGradientLayer()
     private weak var scroll: NSScrollView?
-    private var observers: [any NSObjectProtocol] = []
+    private var observers: [NotificationCenter.ObservationToken] = []
 
     init(_ scroll: NSScrollView) {
         self.scroll = scroll
@@ -21,16 +21,19 @@ final class ScrollFade {
         scroll.postsFrameChangedNotifications = true
         scroll.documentView?.postsFrameChangedNotifications = true
         let center = NotificationCenter.default
-        var watched: [(Notification.Name, NSView)] = [(NSView.boundsDidChangeNotification, scroll.contentView),
-                                                      (NSView.frameDidChangeNotification, scroll)]
+        observers = [
+            center.addObserver(of: scroll.contentView, for: .boundsDidChange) { [weak self] _ in self?.update() },
+            center.addObserver(of: scroll, for: .frameDidChange) { [weak self] _ in self?.update() },
+        ]
         // Rows added, removed or folded change the document's height.
-        if let doc = scroll.documentView { watched.append((NSView.frameDidChangeNotification, doc)) }
-        for (name, object) in watched {
-            observers.append(center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.update() }
-            })
+        if let doc = scroll.documentView {
+            observers.append(center.addObserver(of: doc, for: .frameDidChange) { [weak self] _ in self?.update() })
         }
         update()
+    }
+
+    isolated deinit {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     func update() {

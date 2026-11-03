@@ -168,7 +168,11 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The window's key changes, watched while this view is in it.
+    private var keyObservers: [NotificationCenter.ObservationToken] = []
+
     isolated deinit {
+        keyObservers.forEach { NotificationCenter.default.removeObserver($0) }
         mirror.onChange(nil)
         link?.invalidate()
         viewportTimer?.invalidate()
@@ -205,16 +209,18 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         super.viewDidMoveToWindow()
         link?.invalidate()
         link = nil
+        let center = NotificationCenter.default
+        keyObservers.forEach { center.removeObserver($0) }
+        keyObservers = []
         guard let window else { return SecureInput.set(self, false) }
         let l = displayLink(target: self, selector: #selector(tick(_:)))
         l.add(to: .main, forMode: .common)
         link = l
         updateRenderer()
-        NotificationCenter.default.removeObserver(self)
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-            NotificationCenter.default.addObserver(self, selector: #selector(windowKeyChanged(_:)), name: name,
-                                                   object: window)
-        }
+        keyObservers = [
+            center.addObserver(of: window, for: .didBecomeKey) { [weak self] _ in self?.windowKeyChanged(key: true) },
+            center.addObserver(of: window, for: .didResignKey) { [weak self] _ in self?.windowKeyChanged(key: false) },
+        ]
     }
 
     override func viewDidChangeBackingProperties() {
@@ -447,10 +453,9 @@ final class TerminalView: NSView, NSTextInputClient, NSMenuItemValidation {
         return ok
     }
 
-    @objc private func windowKeyChanged(_ note: Notification) {
+    private func windowKeyChanged(key: Bool) {
         applySecureInput()
         guard window?.firstResponder === self else { return }
-        let key = note.name == NSWindow.didBecomeKeyNotification
         if key {
             cursor.focusGained(CACurrentMediaTime())
             takeSize()

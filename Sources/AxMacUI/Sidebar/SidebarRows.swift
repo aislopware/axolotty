@@ -106,19 +106,19 @@ final class SidebarOutlineView: NSOutlineView {
         recolor()
     }
 
-    private var keyObservers: [any NSObjectProtocol] = []
+    private var keyObservers: [NotificationCenter.ObservationToken] = []
 
     /// Like every Mac sidebar, the selection steps back when the window does.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        keyObservers.forEach(NotificationCenter.default.removeObserver)
+        let center = NotificationCenter.default
+        keyObservers.forEach { center.removeObserver($0) }
         keyObservers = []
         guard let w = window else { return }
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-            keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: w, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.recolor() }
-            })
-        }
+        keyObservers = [
+            center.addObserver(of: w, for: .didBecomeKey) { [weak self] _ in self?.recolor() },
+            center.addObserver(of: w, for: .didResignKey) { [weak self] _ in self?.recolor() },
+        ]
     }
 
     private func recolor() {

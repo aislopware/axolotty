@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var attention: AttentionCenter?
     private var appearanceObservation: NSKeyValueObservation?
     private var lastKey: MainWindowController?
-    private var accessibilityObserver: (any NSObjectProtocol)?
+    private var accessibilityObserver: NotificationCenter.ObservationToken?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Layers made before a window exists render for the sharpest screen.
@@ -27,10 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
         }
         accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.model.fontChanged.emit() }
-        }
+            of: NSWorkspace.shared, for: .accessibilityDisplayOptionsDidChange
+        ) { [weak self] _ in self?.model.fontChanged.emit() }
         attention = AttentionCenter(model: model) { [weak self] in self?.keyMainWindow }
         model.startLocal()
         model.startRemotes()

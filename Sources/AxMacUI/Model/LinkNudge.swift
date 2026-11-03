@@ -10,14 +10,14 @@ import Network
 final class LinkNudge {
     private let monitor = NWPathMonitor()
     private var lastPath: String?
-    private var wake: (any NSObjectProtocol)?
+    private var wake: NotificationCenter.ObservationToken?
     private let nudge: () -> Void
 
     init(_ nudge: @escaping () -> Void) {
         self.nudge = nudge
-        wake = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.nudge() } }
+        wake = NSWorkspace.shared.notificationCenter.addObserver(of: NSWorkspace.shared, for: .didWake) { [weak self] _ in
+            self?.nudge()
+        }
         monitor.pathUpdateHandler = { [weak self] path in
             // Which interfaces carry traffic, and whether any does: a change
             // there moves every TCP path; an update that says the same is noise.
