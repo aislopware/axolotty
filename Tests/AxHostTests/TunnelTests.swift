@@ -90,7 +90,7 @@ import Testing
         let got = await blocking { () -> Data? in
             guard let fd = try? TCPSocket.connect(host: "127.0.0.1", port: here) else { return nil }
             defer { close(fd) }
-            timeout(fd)
+            limitWaits(fd)
             var out = Data()
             var buf = [UInt8](repeating: 0, count: 16 << 10)
             while true {
@@ -167,7 +167,7 @@ private func blocking<T: Sendable>(_ work: @escaping @Sendable () -> T) async ->
     await withCheckedContinuation { c in Thread.detachNewThread { c.resume(returning: work()) } }
 }
 
-private func timeout(_ fd: Int32, seconds: Int = 10) {
+private func limitWaits(_ fd: Int32, seconds: Int = 10) {
     var tv = timeval(tv_sec: seconds, tv_usec: 0)
     _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
@@ -212,7 +212,7 @@ private func readRequest(_ fd: Int32) -> Data {
 private func fetch(_ port: UInt16, _ request: Data, halfClose: Bool = false) -> Data? {
     guard let fd = try? TCPSocket.connect(host: "127.0.0.1", port: port, timeout: 2) else { return nil }
     defer { close(fd) }
-    timeout(fd)
+    limitWaits(fd)
     writeAll(fd, request)
     if halfClose { shutdown(fd, SHUT_WR) }
     return readAll(fd)
@@ -238,7 +238,7 @@ private final class DevServer: @unchecked Sendable {
                 let c = accept(fd, nil, nil)
                 guard c >= 0 else { continue }
                 _ = fcntl(c, F_SETFL, fcntl(c, F_GETFL) & ~O_NONBLOCK)
-                timeout(c)
+                limitWaits(c)
                 Thread.detachNewThread {
                     serve(c)
                     close(c)

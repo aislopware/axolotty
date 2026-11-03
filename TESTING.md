@@ -141,6 +141,27 @@ Toxiproxy itself (v2.13, darwin-arm64) speaks TCP only and is a second
 process with an HTTP control plane. The in-process relay reaches the Unix
 socket and needs neither. pf and dummynet need root.
 
+### Allocation budgets
+
+`Allocations.count` (in `AxTestSupport`) counts the heap allocations a block
+makes on its thread, exactly. It sets libmalloc's `malloc_logger` hook, which
+`MallocStackLogging` uses and which every zone calls on each malloc. A count
+is a fact about the code: it is the same on any Mac and under any load, where
+a time bound is not. The budgets hold the hot path:
+- an echo frame decodes with no allocation;
+- an 8 KiB output frame decodes with only its payload's two allocations;
+- encoding a frame makes only its `Data`;
+- a terminal write makes the one allocation libghostty makes;
+- a frame's copy of the screen makes at most two.
+
+Only an optimised build's count means anything. Unoptimised code boxes
+closure captures and copies slices that `-O` keeps on the stack, so the
+suites skip in debug and under sanitizers (which replace malloc and never
+call the hook). `scripts/deep.sh budgets` runs them in release and fails if
+either suite skipped. `theCounterSeesAnAllocationPlantedInTheLoop` is the
+canary. The decoder's budgets fail against its old `Data` buffer, and they
+were written that way.
+
 ## Knobs
 
 | Variable | Default (gate) | Long run | Effect |
@@ -164,7 +185,8 @@ socket and needs neither. pf and dummynet need root.
   stopped repeating, would otherwise pass every step after it;
 - the suite under TSan and under ASan;
 - the socket suites repeated until a failure;
-- the simulations (TCP and QUIC) and the fuzzer at their long budgets.
+- the simulations (TCP and QUIC) and the fuzzer at their long budgets;
+- the allocation budgets, in an optimised build.
 
 It tests HEAD in a worktree of its own (`$TMPDIR/axolotty-deep`, with its
 own `.build`). Work in progress can't break a half-hour run by failing to
@@ -187,6 +209,7 @@ where it could be shown, that test failed before the fix.
 | The ASan step, hung 30 minutes | ASan's fork handler (`asan_mz_force_lock`) deadlocks against other threads' `malloc` on Darwin. The in-process `fork` tests now run alone under ASan. `ptyd`, which forks for real, has one thread | `scripts/deep.sh asan` |
 | Repeated host suites | A process-directed SIGPIPE (in XNU, a write into a pipe whose reader is gone) killed the test process. The writer is not found yet. The app now ignores SIGPIPE, as the daemons do, and a test run logs `AXTEST SIGPIPE`, with every pipe write end open at that moment and the broken ones starred, which fails its deep step. XNU raises EPIPE as a process-wide signal only for descriptors that aren't sockets, and every socket here sets `SO_NOSIGPIPE`, so the writer is a pipe | Open |
 | A repeat run's `outputSurvivesServerDisconnectAndReattach`, then a probe | XNU can post `NOTE_EXIT` a moment before the child is waitable (1 to 4 exits in 5000 with twelve probes running). `ptyd` reaped with `WNOHANG`, so that program stayed a zombie for good. The old holder left 4 of 6000 under load | `HolderTests.everyEndedProgramIsReaped` |
+| The allocation budgets, on first count | `FrameDecoder` kept its bytes in `Data`. Emptying `Data` while keeping its capacity still reallocates it, so every frame cost two allocations before its payload, even in release. It is now an array | `WireAllocationBudgetTests` |
 | A planted off-by-four in the frame check | The fuzzer's random bytes never landed a length a few bytes off a frame's real one | `WireFuzzTests.mutate`, case 7 |
 
 ## What the general playbook leaves out
@@ -229,4 +252,4 @@ are the right ones, but for a remote terminal they leave out:
 | Exhaust 1.9 | Needs Swift 6.4; stateful specs, deterministic `await` interleaving | The candidate if actor interleavings need exploring |
 | Muter | Last release 2023; master mis-scores Swift Testing | Not usable; canaries stand in |
 | swift-snapshot-testing 1.19.7 | Works for NSView | Not for `CAMetalLayer`; the renderer is read back offscreen instead |
-| ordo-one/benchmark 1.38 | Works; p99 thresholds against a baseline | Allocation and throughput budgets, when they are added |
+| ordo-one/benchmark 1.38 | Works; p99 thresholds against a baseline. Its malloc counts come from jemalloc, a second allocator | Not used: `malloc_logger` counts the system allocator's own calls, inside Swift Testing |

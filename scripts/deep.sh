@@ -5,7 +5,7 @@
 # a second SwiftPM on this .build waits silently for the first.
 #
 #   scripts/deep.sh            everything (about 25 minutes)
-#   scripts/deep.sh flakes     one step: canaries | tsan | asan | flakes | sim | quic | fuzz
+#   scripts/deep.sh flakes     one step: canaries | tsan | asan | flakes | sim | quic | fuzz | budgets
 #
 # It tests HEAD, in a worktree of its own with its own .build (AXDEEP_TREE,
 # default $TMPDIR/axolotty-deep). Edits made while it runs can't reach it,
@@ -93,6 +93,14 @@ run sim && step sim 180 1200 env AXSIM_SEEDS=200 swift test --filter LinkSimTest
 # Each seed prints its line as it ends (--nocapture), so the watchdog sees progress.
 run quic && step quic 180 1200 env AXQSIM_SEEDS=200 cargo test --manifest-path Rust/axquic/Cargo.toml --test sim -- --nocapture
 run fuzz && step fuzz 180 900 env AXFUZZ_RUNS=200000 AXMODEL_RUNS=20000 swift test --filter 'WireFuzzTests|SendLanesModelTests'
+# Heap allocations per frame and per write, counted (Allocations): only an
+# optimised build's count means anything, and the suites skip in any other. So
+# both must be seen to pass, not skip. (-enable-testing: AxHostTests imports
+# @testable, and the release build links every test target.)
+run budgets && step budgets 300 1500 bash -c 'set -o pipefail
+    swift test -c release -Xswiftc -enable-testing --filter AllocationBudget 2>&1 | tee .build/deep/budgets.out &&
+    [ "$(grep -c "Suite \"Allocation budgets: .*\" passed" .build/deep/budgets.out)" = 2 ] ||
+    { echo "budgets: failed, or a suite did not run"; exit 1; }'
 
 if [ ${#failed[@]} -gt 0 ]; then
     echo "failed: ${failed[*]}"
