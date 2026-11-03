@@ -3,13 +3,17 @@ import AxModel
 import QuartzCore
 
 /// Over a session whose host is out of reach: the last frame stays where it
-/// was, dimmed, with one quiet capsule that says what is happening and offers
-/// the one thing to do. Never a blank sheet: on a remote link a drop is
-/// routine, and the work should still be there to read while it comes back.
+/// was, dimmed, and a bar docked along the session's top edge says what is
+/// happening and offers the one thing to do. Never a blank sheet: on a remote
+/// link a drop is routine, and the work should still be there to read while
+/// it comes back. Docked, not floating: it belongs to the session, as a
+/// window's info bar does, and spans every pane instead of sitting on one
+/// pane's text or across the seam between two.
 ///
-///                 ┌──────────────────────────────────────┐
-///                 │ ◌  Reconnecting to MacBook Pro   Now │
-///                 └──────────────────────────────────────┘
+///     ╭──────────────────────────────────────────────────────────╮
+///     │ ◌  Reconnecting to MacBook Pro               [Reconnect] │
+///     ├──────────────────────────────────────────────────────────┤
+///     │  (the panes, dimmed)                                     │
 ///
 /// The one thing to do follows what is wrong: reconnect a dropped link, set
 /// Axolotty up on a Mac that lacks it, update one that runs an older one;
@@ -19,20 +23,29 @@ import QuartzCore
 /// prompt); the capsule says so by being there, and clicks reach only it.
 final class LinkVeil: NSView, DesignRefreshable {
     private let scrim = CALayer()
-    private let capsule = Surface(elevation: .float, radius: Axo.Metric.controlLarge / 2)
+    private let bar = Bar()
+    private let rule = CALayer()
     private let spinner = StatusGlyphView(frame: .zero)
     private let label = Label("", font: Axo.Font.smallStrong, color: Axo.Color.text)
-    private let action = Button("Reconnect Now", variant: .ghost, size: .small)
+    private let action = Button("Reconnect Now", variant: .secondary, size: .small)
+    static let barHeight: CGFloat = 36
     private var onAction: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.addSublayer(scrim)
-        addSubview(capsule)
-        capsule.addSubview(spinner)
-        capsule.addSubview(label)
-        capsule.addSubview(action)
+        addSubview(bar)
+        bar.wantsLayer = true
+        label.lineBreakMode = .byTruncatingTail
+        // The panes' own top corners, so the bar reads as their header.
+        bar.layer?.cornerRadius = Axo.Metric.sheetRadius
+        bar.layer?.cornerCurve = .continuous
+        bar.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        bar.layer?.addSublayer(rule)
+        bar.addSubview(spinner)
+        bar.addSubview(label)
+        bar.addSubview(action)
         spinner.activity = .working
         action.target = self
         action.action = #selector(act)
@@ -65,7 +78,11 @@ final class LinkVeil: NSView, DesignRefreshable {
     func designDidChange() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             // The ground's own colour over the panes: they recede, they don't go grey.
-            Axo.Motion.still { scrim.backgroundColor = Axo.Color.ground.withAlphaComponent(0.58).cgColor }
+            Axo.Motion.still {
+                scrim.backgroundColor = Axo.Color.ground.withAlphaComponent(0.5).cgColor
+                bar.layer?.backgroundColor = Axo.Color.elevated.cgColor
+                rule.backgroundColor = Axo.Color.borderSubtle.cgColor
+            }
         }
     }
 
@@ -76,24 +93,23 @@ final class LinkVeil: NSView, DesignRefreshable {
 
     override func layout() {
         super.layout()
-        Axo.Motion.still { scrim.frame = bounds }
-        let h = Axo.Metric.controlLarge
-        let pad = Axo.Space.sm
+        let h = Self.barHeight
+        let pad = Axo.Space.md
+        Axo.Motion.still {
+            scrim.frame = bounds
+            rule.frame = NSRect(x: 0, y: h - hairline, width: bounds.width, height: hairline)
+        }
+        bar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: h)
         let glyph = spinner.isHidden ? 0 : Axo.Metric.statusSlot
-        let lead = spinner.isHidden ? pad + 2 : pad + glyph + Axo.Space.xs
-        let text = ceil(label.intrinsicContentSize.width)
-        let button = action.isHidden ? 0 : ceil(action.intrinsicContentSize.width)
-        let tail = action.isHidden ? pad + 2 : Axo.Space.sm + button + 4
-        let w = lead + text + tail
-        // A third of the way down the stage: where the eye already is.
-        let x = ((bounds.width - w) / 2).rounded()
-        let y = max(Axo.Space.lg, (bounds.height * 0.32 - h / 2).rounded())
-        capsule.frame = NSRect(x: x, y: y, width: w, height: h)
         spinner.frame = NSRect(x: pad, y: ((h - glyph) / 2).rounded(), width: glyph, height: glyph)
-        let lh = ceil(label.intrinsicContentSize.height)
-        label.frame = NSRect(x: lead, y: ((h - lh) / 2).rounded(), width: text, height: lh)
+        let lead = spinner.isHidden ? pad : pad + glyph + Axo.Space.sm
+        let bw = action.isHidden ? 0 : ceil(action.intrinsicContentSize.width)
         let bh = Axo.Metric.controlSmall
-        action.frame = NSRect(x: label.frame.maxX + Axo.Space.sm, y: ((h - bh) / 2).rounded(), width: button, height: bh)
+        action.frame = NSRect(x: bounds.width - pad - bw, y: ((h - bh) / 2).rounded(), width: bw, height: bh)
+        let room = (action.isHidden ? bounds.width - pad : action.frame.minX - Axo.Space.md) - lead
+        let lh = ceil(label.intrinsicContentSize.height)
+        label.frame = NSRect(x: lead, y: ((h - lh) / 2).rounded(), width: max(0, min(room, ceil(label.intrinsicContentSize.width))),
+                             height: lh)
     }
 
     /// Everything under the veil is out of reach until the link is back.
@@ -154,5 +170,10 @@ final class LinkVeil: NSView, DesignRefreshable {
                 self.isHidden = true
             }
         })
+    }
+
+    /// Flipped, so its layer's min-Y corners are the top ones.
+    private final class Bar: NSView {
+        override var isFlipped: Bool { true }
     }
 }
