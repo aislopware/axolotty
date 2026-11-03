@@ -430,9 +430,19 @@ final class PaneContainerView: NSView, TerminalViewDelegate {
     /// "~/…" outside it, nothing at the project root (the header says that).
     static func relative(_ path: String, to root: String) -> String {
         guard !path.isEmpty else { return "" }
+        // A shell reports the resolved path (/private/tmp/…) of a project
+        // opened through its macOS link (/tmp/…): one place, said once.
+        let path = unlinked(path), root = unlinked(root)
         if !root.isEmpty, path == root { return "" }
         if !root.isEmpty, path.hasPrefix(root + "/") { return String(path.dropFirst(root.count + 1)) }
         return BandView.abbreviate(path)
+    }
+
+    private static func unlinked(_ p: String) -> String {
+        for top in ["/private/tmp", "/private/var", "/private/etc"] where p == top || p.hasPrefix(top + "/") {
+            return String(p.dropFirst("/private".count))
+        }
+        return p
     }
 
     private var stripTick: Timer?
