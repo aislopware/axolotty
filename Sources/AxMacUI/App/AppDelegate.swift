@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Layers made before a window exists render for the sharpest screen.
         LayerScale.current = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
+        Axo.Font.registerBundled()
         NSApp.setActivationPolicy(.regular)
         NSApp.mainMenu = MainMenu.build()
         UserDefaults.standard.register(defaults: ["NSWindowRestoresWorkspaceAtLaunch": false])

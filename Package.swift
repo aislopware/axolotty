@@ -60,7 +60,8 @@ let package = Package(
         .executableTarget(name: "axolotty", dependencies: ["AxClient", "AxProtocol", "AxModel", "AxVT"], swiftSettings: strict),
 
         // MARK: UI
-        .target(name: "AxMacUI", dependencies: ["AxClient", "AxRender", "AxModel", "AxVT", "AxProtocol"], swiftSettings: ui),
+        .target(name: "AxMacUI", dependencies: ["AxClient", "AxRender", "AxModel", "AxVT", "AxProtocol"],
+                resources: [.copy("Resources/Fonts")], swiftSettings: ui),
         // `swift run AxolottyDev`: the app without Xcode (dev loop). The shipping bundle comes from App/project.yml.
         // (Not "Axolotty": on case-insensitive volumes it would collide with the `axolotty` CLI.)
         .executableTarget(name: "AxolottyDev", dependencies: ["AxMacUI"], path: "Sources/AxolottyApp", swiftSettings: ui),

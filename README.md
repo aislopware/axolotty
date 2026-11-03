@@ -26,7 +26,7 @@ Programs run in a small PTY holder (`axolotty-ptyd`) under a server (`axolottyd`
   - Find (⌘F);
   - Secure Keyboard Entry while a program reads a password.
 - **What agents produced:** the diff chip in the band, and Open in Editor (⌥⌘O) to read it.
-- **Look:** Axolotty Night and Day, following the system or fixed, in any installed monospaced font.
+- **Look:** Axolotty Night and Day, following the system or fixed. The terminal starts in Geist Mono (the Nerd Fonts Mono build, bundled, so prompt and TUI icons draw on any Mac), and takes any installed monospaced font.
 
 ## Agents drive Axolotty
 
@@ -59,3 +59,7 @@ scripts/package-app.sh                       # dist/Axolotty.app (release, ad ho
 Set `SIGN_IDENTITY` to sign `dist/Axolotty.app` with a Developer ID instead. The app registers the server as a LaunchAgent on first launch; `AXOLOTTY_HOME` keeps a development server and its state separate from your real one.
 
 Design notes live in `.research/design-system.md`.
+
+## Third-party
+
+Geist Mono © 2023 Vercel, patched by Nerd Fonts v3.5.1, under the SIL Open Font License 1.1: `Sources/AxMacUI/Resources/Fonts/LICENSE-GeistMono.txt`, with the icon sets' licences in `README-NerdFonts.md` beside it.

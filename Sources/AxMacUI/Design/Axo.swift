@@ -1,5 +1,6 @@
 import AppKit
 import AxModel
+import CoreText
 import QuartzCore
 import SwiftUI
 
@@ -113,6 +114,22 @@ enum Axo {
         /// Menu-style shortcut text (`⌘1`, `⇧⌘N`): tabular digits so columns align.
         static let shortcut = NSFont.monospacedDigitSystemFont(ofSize: Prim.Size.t3, weight: .regular)
         static let terminalSize: CGFloat = 13
+
+        /// The terminal face Axolotty ships and starts with: Geist Mono, in
+        /// Nerd Fonts' "Mono" build (every icon one cell wide, so prompts and
+        /// TUIs that draw them keep the grid). SIL OFL 1.1; Resources/Fonts.
+        static let bundledFamily = "GeistMono Nerd Font Mono"
+
+        /// Makes the bundled faces available to this process (call once,
+        /// before the first terminal draws).
+        static func registerBundled() {
+            guard let dir = Bundle.module.url(forResource: "Fonts", withExtension: nil),
+                  let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            else { return }
+            for url in files where url.pathExtension == "otf" {
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        }
         static let terminalRange: ClosedRange<CGFloat> = 9 ... 24
 
         /// The terminal face: `family` when it is installed, else SF Mono.

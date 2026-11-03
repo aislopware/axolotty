@@ -31,6 +31,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/
 
 cp "$BIN/AxolottyDev" "$APP/Contents/MacOS/Axolotty"
 for b in axolottyd axolotty-ptyd axolotty; do cp "$BIN/$b" "$APP/Contents/MacOS/$b"; done
+# The UI's SwiftPM resource bundle (the terminal font), where Bundle.module looks in an app.
+cp -R "$BIN/Axolotty_AxMacUI.bundle" "$APP/Contents/Resources/"
 
 "$BIN/AxolottyDev" --write-iconset "$STAGE/AppIcon.iconset"
 iconutil -c icns -o "$APP/Contents/Resources/AppIcon.icns" "$STAGE/AppIcon.iconset"

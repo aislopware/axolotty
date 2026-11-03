@@ -20,9 +20,9 @@ final class Preferences {
         self.defaults = defaults
         defaults.register(defaults: [
             "fontSize": Double(Axo.Font.terminalSize), "themeMode": ThemeMode.system.rawValue,
-            "optionAsAlt": OptionAsAlt.off.rawValue, "fontFamily": "",
+            "optionAsAlt": OptionAsAlt.off.rawValue, "fontFamily": Axo.Font.bundledFamily,
         ])
-        fontFamily = defaults.string(forKey: "fontFamily") ?? ""
+        fontFamily = defaults.string(forKey: "fontFamily") ?? Axo.Font.bundledFamily
         let size = CGFloat(defaults.double(forKey: "fontSize"))
         fontSize = min(max(size, Axo.Font.terminalRange.lowerBound), Axo.Font.terminalRange.upperBound)
         themeMode = ThemeMode(rawValue: defaults.string(forKey: "themeMode") ?? "") ?? .system
